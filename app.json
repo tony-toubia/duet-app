@@ -11,15 +11,23 @@
       "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.duet.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Duet needs microphone access to enable voice communication with your partner.",
-        "UIBackgroundModes": ["audio", "voip"],
-        "BGTaskSchedulerPermittedIdentifiers": ["com.duet.audio"]
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.duet.audio"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -48,12 +56,14 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "./plugins/withDuetAudio"
     ],
     "extra": {
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "201e2c63-094a-45f4-b8f5-2a08c00fca37"
       }
-    }
+    },
+    "owner": "tonytoubia"
   }
 }
