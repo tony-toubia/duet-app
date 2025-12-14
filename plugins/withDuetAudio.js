@@ -829,25 +829,25 @@ function withDuetAudioIOS(config) {
     'ios',
     async (config) => {
       const projectRoot = config.modRequest.projectRoot;
+      const projectName = config.modRequest.projectName || 'Duet';
       const iosDir = path.join(projectRoot, 'ios');
-      const audioDir = path.join(iosDir, 'DuetAudio');
 
-      // Create DuetAudio directory
-      fs.mkdirSync(audioDir, { recursive: true });
+      // Put files directly in the main project directory (e.g., ios/Duet/)
+      const mainProjectDir = path.join(iosDir, projectName);
 
-      // Write Swift file
+      // Write Swift file directly in main project directory
       fs.writeFileSync(
-        path.join(audioDir, 'DuetAudioManager.swift'),
+        path.join(mainProjectDir, 'DuetAudioManager.swift'),
         DUET_AUDIO_MANAGER_SWIFT
       );
 
       // Write Objective-C bridging file
       fs.writeFileSync(
-        path.join(audioDir, 'DuetAudioManager.m'),
+        path.join(mainProjectDir, 'DuetAudioManager.m'),
         DUET_AUDIO_MANAGER_M
       );
 
-      console.log('[withDuetAudio] Created iOS native audio module files in:', audioDir);
+      console.log('[withDuetAudio] Created iOS native audio module files in:', mainProjectDir);
 
       return config;
     },
@@ -857,58 +857,21 @@ function withDuetAudioIOS(config) {
 function withDuetAudioXcodeProject(config) {
   return withXcodeProject(config, async (config) => {
     const xcodeProject = config.modResults;
-    const projectName = config.modRequest.projectName;
+    const projectName = config.modRequest.projectName || 'Duet';
 
-    // Get the main group
-    const mainGroup = xcodeProject.getFirstProject().firstProject.mainGroup;
+    // Add Swift file to project
+    xcodeProject.addSourceFile(
+      `${projectName}/DuetAudioManager.swift`,
+      { target: xcodeProject.getFirstTarget().uuid },
+      xcodeProject.getFirstProject().firstProject.mainGroup
+    );
 
-    // Find or create DuetAudio group
-    let duetAudioGroup = null;
-    const groups = xcodeProject.hash.project.objects['PBXGroup'];
-
-    for (const key in groups) {
-      if (groups[key].name === 'DuetAudio' || groups[key].path === 'DuetAudio') {
-        duetAudioGroup = key;
-        break;
-      }
-    }
-
-    if (!duetAudioGroup) {
-      // Create new group for DuetAudio
-      duetAudioGroup = xcodeProject.addPbxGroup(
-        ['DuetAudioManager.swift', 'DuetAudioManager.m'],
-        'DuetAudio',
-        'DuetAudio'
-      );
-
-      // Add to main group
-      xcodeProject.addToPbxGroup(duetAudioGroup.uuid, mainGroup);
-    }
-
-    // Add source files to build phases
-    const swiftFile = 'DuetAudio/DuetAudioManager.swift';
-    const objcFile = 'DuetAudio/DuetAudioManager.m';
-
-    // Check if files are already added
-    const buildFiles = xcodeProject.hash.project.objects['PBXBuildFile'] || {};
-    let swiftAdded = false;
-    let objcAdded = false;
-
-    for (const key in buildFiles) {
-      const file = buildFiles[key];
-      if (file.fileRef) {
-        const fileRef = xcodeProject.hash.project.objects['PBXFileReference'][file.fileRef];
-        if (fileRef && fileRef.path === 'DuetAudioManager.swift') swiftAdded = true;
-        if (fileRef && fileRef.path === 'DuetAudioManager.m') objcAdded = true;
-      }
-    }
-
-    if (!swiftAdded) {
-      xcodeProject.addSourceFile(swiftFile, null, duetAudioGroup?.uuid);
-    }
-    if (!objcAdded) {
-      xcodeProject.addSourceFile(objcFile, null, duetAudioGroup?.uuid);
-    }
+    // Add Objective-C file to project
+    xcodeProject.addSourceFile(
+      `${projectName}/DuetAudioManager.m`,
+      { target: xcodeProject.getFirstTarget().uuid },
+      xcodeProject.getFirstProject().firstProject.mainGroup
+    );
 
     console.log('[withDuetAudio] Added iOS source files to Xcode project');
 
