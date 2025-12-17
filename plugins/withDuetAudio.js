@@ -65,27 +65,22 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         try {
             audioManager = reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-            // DON'T set audio mode here - we'll do it in startAudioEngine
-            // This prevents interrupting music when the app is opened
-
             // Initialize the handler for ducking timeout checks
             duckingCheckHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
             // Prepare the focus request but don't request it yet
             // We'll request focus dynamically when partner audio arrives
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Use USAGE_VOICE_COMMUNICATION for the focus request
-                // This signals to music apps that voice content needs to be heard and they should duck
-                // Using the same attributes as our AudioTrack for consistency
+                // Use USAGE_ASSISTANT for the focus request - this signals to music apps
+                // that voice content needs to be heard and they should duck
                 val focusAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
 
                 focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                     .setAudioAttributes(focusAttributes)
                     .setAcceptsDelayedFocusGain(true)
-                    .setWillPauseWhenDucked(false)  // We want ducking, not pausing
                     .setOnAudioFocusChangeListener { focusChange ->
                         handleAudioFocusChange(focusChange)
                     }
@@ -156,11 +151,6 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startAudioEngine(promise: Promise) {
         try {
-            // NOW set audio mode to MODE_IN_COMMUNICATION for proper voice routing
-            // We do this here (not in setupAudioSession) to avoid interrupting music on app open
-            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-            android.util.Log.d("DuetAudio", "Audio mode set to MODE_IN_COMMUNICATION")
-
             // Acquire wake lock to keep CPU running in background
             val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
@@ -207,14 +197,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private fun setupAudioTrack() {
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
 
-        // Use USAGE_VOICE_COMMUNICATION for partner audio playback
-        // This ensures consistency with our audio focus request and enables proper ducking
-        // Note: This may route to the earpiece by default; audioManager.isSpeakerphoneOn can control this
+        // Use USAGE_MEDIA for output to allow A2DP (high quality) Bluetooth
+        // This allows the partner's voice to play through the same route as music
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
             .setAudioFormat(
@@ -227,9 +216,6 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             .setBufferSizeInBytes(bufferSize * 2)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
-
-        // Enable speakerphone by default so audio plays through speaker (like music)
-        audioManager?.isSpeakerphoneOn = true
 
         audioTrack?.play()
     }
@@ -273,11 +259,6 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         // Clean up ducking
         duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
         abandonDuckingFocus()
-
-        // Reset audio mode to normal so music apps resume properly
-        audioManager?.mode = AudioManager.MODE_NORMAL
-        audioManager?.isSpeakerphoneOn = false
-        android.util.Log.d("DuetAudio", "Audio mode reset to MODE_NORMAL")
 
         // Release wake lock
         if (wakeLock?.isHeld == true) {
@@ -555,17 +536,27 @@ class DuetAudioManager: RCTEventEmitter {
       let session = AVAudioSession.sharedInstance()
 
       // CRITICAL: Use .ambient mode initially to not interrupt other apps
+      // We'll switch to .playAndRecord only when actually needed
       // This prevents music from stopping when the app opens
-      // We'll switch to .playAndRecord only when startAudioEngine is called
       try session.setCategory(
-        .ambient,  // Ambient mode - mixes with other audio, doesn't interrupt
-        mode: .default,
-        options: []
+        .playAndRecord,
+        mode: .default,  // Use default mode instead of voiceChat to avoid audio route changes
+        options: [
+          .allowBluetooth,       // Support Bluetooth headsets
+          .allowBluetoothA2DP,   // Support high-quality Bluetooth audio
+          .defaultToSpeaker,     // Use speaker when no headphones
+          .mixWithOthers         // Allow mixing with other apps (CRITICAL)
+        ]
       )
 
-      // DON'T activate the session yet - we'll do it in startAudioEngine
-      // This ensures music keeps playing when the app is opened
-      isSessionActive = true  // Mark as configured (not fully active yet)
+      // Optimize for voice
+      try session.setPreferredSampleRate(sampleRate)
+      try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
+
+      // Activate the session - use notifyOthersOnDeactivation to be a good citizen
+      try session.setActive(true, options: [])
+
+      isSessionActive = true
 
       // Listen for interruptions (phone calls, etc.)
       NotificationCenter.default.addObserver(
@@ -664,28 +655,6 @@ class DuetAudioManager: RCTEventEmitter {
     }
 
     do {
-      let session = AVAudioSession.sharedInstance()
-
-      // NOW switch to playAndRecord mode since we're actually starting communication
-      // Use mixWithOthers to allow music to keep playing
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,  // Use default mode instead of voiceChat to avoid audio route changes
-        options: [
-          .allowBluetooth,       // Support Bluetooth headsets
-          .allowBluetoothA2DP,   // Support high-quality Bluetooth audio
-          .defaultToSpeaker,     // Use speaker when no headphones
-          .mixWithOthers         // Allow mixing with other apps (CRITICAL)
-        ]
-      )
-
-      // Optimize for voice
-      try session.setPreferredSampleRate(sampleRate)
-      try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
-
-      // NOW activate the session
-      try session.setActive(true, options: [])
-
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
       mixerNode = AVAudioMixerNode()
@@ -744,15 +713,6 @@ class DuetAudioManager: RCTEventEmitter {
     duckingTimer?.invalidate()
     duckingTimer = nil
     stopDucking()
-
-    // Reset audio session to ambient mode so other apps resume properly
-    do {
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.ambient, mode: .default, options: [])
-      try session.setActive(false, options: [.notifyOthersOnDeactivation])
-    } catch {
-      print("[DuetAudio] Failed to reset audio session: \\(error)")
-    }
 
     resolve(["success": true])
   }
