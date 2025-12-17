@@ -27,6 +27,7 @@ GoogleService-Info.plist
 # OS files
 .DS_Store
 Thumbs.db
+%ProgramData%/
 
 # Logs
 *.log
