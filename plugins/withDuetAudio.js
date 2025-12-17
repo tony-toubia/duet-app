@@ -151,6 +151,11 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startAudioEngine(promise: Promise) {
         try {
+            // Set audio mode to communication - this helps with audio routing and ducking
+            // We do this here (not in setupAudioSession) to avoid affecting music playback on app open
+            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+            android.util.Log.d("DuetAudio", "Audio mode set to MODE_IN_COMMUNICATION")
+
             // Acquire wake lock to keep CPU running in background
             val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
@@ -259,6 +264,10 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         // Clean up ducking
         duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
         abandonDuckingFocus()
+
+        // Reset audio mode to normal so music can resume properly
+        audioManager?.mode = AudioManager.MODE_NORMAL
+        android.util.Log.d("DuetAudio", "Audio mode reset to MODE_NORMAL")
 
         // Release wake lock
         if (wakeLock?.isHeld == true) {
@@ -553,9 +562,9 @@ class DuetAudioManager: RCTEventEmitter {
       try session.setPreferredSampleRate(sampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
 
-      // Activate the session - use notifyOthersOnDeactivation to be a good citizen
-      try session.setActive(true, options: [])
-
+      // DON'T activate the session yet - this can interrupt other audio
+      // The audio engine will activate it implicitly when started
+      // This allows music to keep playing until the user actually joins a room
       isSessionActive = true
 
       // Listen for interruptions (phone calls, etc.)
@@ -655,6 +664,11 @@ class DuetAudioManager: RCTEventEmitter {
     }
 
     do {
+      // NOW activate the audio session - this is when we actually need it
+      // Doing it here instead of setupAudioSession prevents interrupting music on app open
+      let session = AVAudioSession.sharedInstance()
+      try session.setActive(true, options: [])
+
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
       mixerNode = AVAudioMixerNode()
@@ -713,6 +727,14 @@ class DuetAudioManager: RCTEventEmitter {
     duckingTimer?.invalidate()
     duckingTimer = nil
     stopDucking()
+
+    // Deactivate session and notify other apps so they can resume
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setActive(false, options: [.notifyOthersOnDeactivation])
+    } catch {
+      print("[DuetAudio] Failed to deactivate audio session: \\(error)")
+    }
 
     resolve(["success": true])
   }

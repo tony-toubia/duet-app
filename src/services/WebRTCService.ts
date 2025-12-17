@@ -127,16 +127,32 @@ export class WebRTCService {
       this.peerConnection.ondatachannel = (event) => {
         this.setupDataChannel(event.channel);
       };
-      
-      // Get local audio stream (just for establishing connection)
-      // Actual audio capture is handled by native module
+
+      // Handle incoming audio tracks - mute them since we use data channel for audio
+      // This prevents double audio (WebRTC track + data channel)
+      this.peerConnection.ontrack = (event) => {
+        console.log('[WebRTC] Received remote track:', event.track.kind);
+        // Mute incoming audio tracks - we receive audio via data channel instead
+        if (event.track.kind === 'audio') {
+          event.track.enabled = false;
+          console.log('[WebRTC] Muted incoming audio track (using data channel instead)');
+        }
+      };
+
+      // Get local audio stream (needed for WebRTC connection negotiation)
+      // Actual audio capture/transmission is handled by native module via data channel
       this.localStream = await mediaDevices.getUserMedia({
         audio: true,
         video: false,
       });
-      
-      // Add tracks to peer connection
+
+      // Add tracks to peer connection (required for proper WebRTC negotiation)
+      // BUT mute the local audio track - we send audio via data channel, not WebRTC track
       this.localStream.getTracks().forEach((track) => {
+        if (track.kind === 'audio') {
+          track.enabled = false;  // Mute - actual audio goes via data channel
+          console.log('[WebRTC] Local audio track muted (using data channel instead)');
+        }
         this.peerConnection?.addTrack(track, this.localStream!);
       });
       
