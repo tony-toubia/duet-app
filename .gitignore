@@ -29,6 +29,12 @@ GoogleService-Info.plist
 Thumbs.db
 %ProgramData%/
 
+# Temp/generated folders
+temp-assets-only/
+
+# Claude Code local settings
+.claude/
+
 # Logs
 *.log
 npm-debug.log*
