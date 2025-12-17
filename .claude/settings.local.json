@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(powershell -Command \"Get-ChildItem | Select-Object Name, Length\")",
+      "Bash(powershell -Command \"Invoke-WebRequest -Uri ''https://raw.githubusercontent.com/expo/expo/main/templates/expo-template-blank/assets/icon.png'' -OutFile ''icon.png''\")",
+      "Bash(powershell -Command:*)",
+      "Bash(npx eas:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(del app.json)",
+      "Bash(npm install:*)",
+      "Bash(where:*)",
+      "Bash(npx expo start --dev-client --tunnel)",
+      "Bash(taskkill:*)",
+      "Bash(timeout /t:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)"
+    ]
+  }
+}

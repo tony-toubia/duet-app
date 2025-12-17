@@ -104,10 +104,20 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onPartnerJoined: async () => {
         // Partner joined, create offer
+        console.log('[Store] Partner joined! Creating offer...');
         const { webrtc, signaling } = get();
         if (webrtc && signaling) {
-          const offer = await webrtc.createOffer();
-          await signaling.sendOffer(offer);
+          try {
+            set({ connectionState: 'connecting' });
+            const offer = await webrtc.createOffer();
+            console.log('[Store] Offer created, sending via signaling...');
+            await signaling.sendOffer(offer);
+            console.log('[Store] Offer sent successfully');
+          } catch (e) {
+            console.error('[Store] Failed to create/send offer:', e);
+          }
+        } else {
+          console.error('[Store] WebRTC or Signaling not available!', { webrtc: !!webrtc, signaling: !!signaling });
         }
         set({ partnerId: 'partner' }); // Simplified
       },
@@ -161,10 +171,21 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Create signaling service
     const signaling = new SignalingService({
       onOffer: async (offer) => {
+        console.log('[Store] Received offer! Processing...');
         const { webrtc, signaling } = get();
         if (webrtc && signaling) {
-          const answer = await webrtc.handleOffer(offer);
-          await signaling.sendAnswer(answer);
+          try {
+            set({ connectionState: 'connecting' });
+            console.log('[Store] Handling offer and creating answer...');
+            const answer = await webrtc.handleOffer(offer);
+            console.log('[Store] Answer created, sending via signaling...');
+            await signaling.sendAnswer(answer);
+            console.log('[Store] Answer sent successfully');
+          } catch (e) {
+            console.error('[Store] Failed to handle offer:', e);
+          }
+        } else {
+          console.error('[Store] WebRTC or Signaling not available!', { webrtc: !!webrtc, signaling: !!signaling });
         }
       },
       onAnswer: () => {}, // We're joining, we receive offer and send answer

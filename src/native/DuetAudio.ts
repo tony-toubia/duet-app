@@ -107,6 +107,45 @@ export const DuetAudio = {
   },
 
   // =====================
+  // MEDIA CONTROLS
+  // =====================
+
+  /**
+   * Toggle play/pause on the current media player (Spotify, Apple Music, etc.)
+   */
+  mediaPlayPause(): void {
+    DuetAudioManager.mediaPlayPause();
+  },
+
+  /**
+   * Send play command to the current media player
+   */
+  mediaPlay(): void {
+    DuetAudioManager.mediaPlay();
+  },
+
+  /**
+   * Send pause command to the current media player
+   */
+  mediaPause(): void {
+    DuetAudioManager.mediaPause();
+  },
+
+  /**
+   * Skip to next track
+   */
+  mediaNext(): void {
+    DuetAudioManager.mediaNext();
+  },
+
+  /**
+   * Go to previous track
+   */
+  mediaPrevious(): void {
+    DuetAudioManager.mediaPrevious();
+  },
+
+  // =====================
   // EVENT LISTENERS
   // =====================
 

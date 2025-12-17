@@ -240,21 +240,24 @@ export class SignalingService {
    */
   private listenForPartner(): void {
     const membersRef = this.roomRef.child('members');
-    
+
     const unsubscribe = membersRef.on('value', (snapshot: any) => {
       const members = snapshot.val();
+      console.log('[Signaling] Members update:', members ? Object.keys(members).length : 0, 'members');
       if (members) {
         const memberCount = Object.keys(members).length;
-        
+
         if (memberCount === 2) {
+          console.log('[Signaling] Partner joined! Triggering onPartnerJoined callback');
           this.callbacks.onPartnerJoined();
         } else if (memberCount === 1) {
           // Only you left in the room
+          console.log('[Signaling] Partner left (only 1 member remaining)');
           this.callbacks.onPartnerLeft();
         }
       }
     });
-    
+
     this.unsubscribers.push(() => membersRef.off('value', unsubscribe));
   }
   

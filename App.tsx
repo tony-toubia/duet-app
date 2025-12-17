@@ -10,9 +10,13 @@ import {
   ActivityIndicator,
   Share,
   Animated,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from './src/hooks/useDuetStore';
+import { NavigationWidget } from './src/components/NavigationWidget';
 
 // Color palette
 const colors = {
@@ -27,11 +31,48 @@ const colors = {
   danger: '#ef4444',
 };
 
-export default function App() {
+// Media Control Component
+const MediaControls = () => {
+  const [isPlaying, setIsPlaying] = useState(true);
+  const { DuetAudio } = require('./src/native/DuetAudio');
+
+  const handlePrevious = () => {
+    DuetAudio.mediaPrevious();
+  };
+
+  const handlePlayPause = () => {
+    setIsPlaying(!isPlaying);
+    DuetAudio.mediaPlayPause();
+  };
+
+  const handleNext = () => {
+    DuetAudio.mediaNext();
+  };
+
+  return (
+    <View style={styles.mediaControls}>
+      <Text style={styles.mediaTitle}>Media Controls</Text>
+      <View style={styles.mediaButtons}>
+        <TouchableOpacity style={styles.mediaButton} onPress={handlePrevious}>
+          <Text style={styles.mediaButtonText}>⏮</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.mediaButton, styles.mediaButtonMain]} onPress={handlePlayPause}>
+          <Text style={styles.mediaButtonTextMain}>{isPlaying ? '⏸' : '▶️'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.mediaButton} onPress={handleNext}>
+          <Text style={styles.mediaButtonText}>⏭</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+function AppContent() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
+  const insets = useSafeAreaInsets();
+
   // Animated values for visual feedback
   const speakingScale = React.useRef(new Animated.Value(1)).current;
   const partnerScale = React.useRef(new Animated.Value(1)).current;
@@ -163,22 +204,22 @@ export default function App() {
   
   if (!isInitialized) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar style="light" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Initializing audio...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
-  
+
   // Lobby view (not in a room)
   if (!roomCode) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <StatusBar style="light" />
-        
+
         <View style={styles.header}>
           <Text style={styles.title}>Duet</Text>
           <Text style={styles.subtitle}>Stay connected while exploring</Text>
@@ -224,19 +265,19 @@ export default function App() {
         
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            🎵 Play music on Spotify or Apple Music{'\n'}
+            Play music on Spotify or Apple Music{'\n'}
             Your partner's voice will overlay on top
           </Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
-  
+
   // Connected view
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Duet</Text>
@@ -309,14 +350,29 @@ export default function App() {
         </TouchableOpacity>
       </View>
       
+      {/* Media Controls */}
+      <MediaControls />
+
+      {/* Navigation Widget */}
+      <NavigationWidget />
+
       {/* Tip */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          🎵 Music from other apps will automatically{'\n'}
-          lower when your partner speaks
+          Music will automatically lower{'\n'}
+          when your partner speaks
         </Text>
       </View>
-    </SafeAreaView>
+    </View>
+  );
+}
+
+// Main App with SafeAreaProvider
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
 
@@ -498,13 +554,51 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   footer: {
-    paddingVertical: 20,
+    paddingVertical: 16,
     paddingHorizontal: 32,
   },
   footerText: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
+  },
+  // Media Controls
+  mediaControls: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 20,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  mediaTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  mediaButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 24,
+  },
+  mediaButton: {
+    padding: 8,
+  },
+  mediaButtonMain: {
+    backgroundColor: colors.secondary,
+    borderRadius: 30,
+    width: 50,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  },
+  mediaButtonText: {
+    fontSize: 24,
+  },
+  mediaButtonTextMain: {
+    fontSize: 20,
   },
 });

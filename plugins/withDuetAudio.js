@@ -10,11 +10,14 @@ const path = require('path');
 const DUET_AUDIO_MANAGER_KT = `package com.duet.audio
 
 import android.content.Context
+import android.content.Intent
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
+import android.os.PowerManager
 import android.util.Base64
+import android.view.KeyEvent
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.nio.ByteBuffer
@@ -29,9 +32,9 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var audioTrack: AudioTrack? = null
     private var audioManager: AudioManager? = null
 
-    private var isRecording = false
-    private var isMuted = false
-    private var isDeafened = false
+    @Volatile private var isRecording = false
+    @Volatile private var isMuted = false
+    @Volatile private var isDeafened = false
 
     private val sampleRate = 48000
     private val channelConfigIn = AudioFormat.CHANNEL_IN_MONO
@@ -46,6 +49,14 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var echoCanceler: AcousticEchoCanceler? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var focusRequest: AudioFocusRequest? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // Dynamic ducking state
+    private var hasDuckingFocus = false
+    private var lastAudioPlayTime = 0L
+    private val duckingTimeoutMs = 500L // Unduck after 500ms of silence
+    private var duckingCheckHandler: android.os.Handler? = null
+    private var duckingCheckRunnable: Runnable? = null
 
     override fun getName() = "DuetAudioManager"
 
@@ -54,36 +65,29 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         try {
             audioManager = reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
+            // Initialize the handler for ducking timeout checks
+            duckingCheckHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+            // Prepare the focus request but don't request it yet
+            // We'll request focus dynamically when partner audio arrives
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                // Use USAGE_ASSISTANT for the focus request - this signals to music apps
+                // that voice content needs to be heard and they should duck
+                val focusAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
 
                 focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                    .setAudioAttributes(audioAttributes)
+                    .setAudioAttributes(focusAttributes)
                     .setAcceptsDelayedFocusGain(true)
                     .setOnAudioFocusChangeListener { focusChange ->
                         handleAudioFocusChange(focusChange)
                     }
                     .build()
-
-                val result = audioManager?.requestAudioFocus(focusRequest!!)
-
-                if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                    promise.reject("AUDIO_FOCUS_ERROR", "Failed to gain audio focus")
-                    return
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager?.requestAudioFocus(
-                    { focusChange -> handleAudioFocusChange(focusChange) },
-                    AudioManager.STREAM_VOICE_CALL,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-                )
             }
 
-            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+            // Don't request focus here - we'll do it dynamically when partner speaks
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("success", true)
@@ -94,9 +98,68 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
     }
 
+    // Request audio focus to duck other apps (called when partner audio arrives)
+    private fun requestDuckingFocus() {
+        if (hasDuckingFocus) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let {
+                val result = audioManager?.requestAudioFocus(it)
+                hasDuckingFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+                android.util.Log.d("DuetAudio", "Ducking focus requested, granted: ${'$'}hasDuckingFocus")
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val result = audioManager?.requestAudioFocus(
+                { focusChange -> handleAudioFocusChange(focusChange) },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            )
+            hasDuckingFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            android.util.Log.d("DuetAudio", "Ducking focus requested (legacy), granted: ${'$'}hasDuckingFocus")
+        }
+    }
+
+    // Abandon audio focus to restore other apps' volume
+    private fun abandonDuckingFocus() {
+        if (!hasDuckingFocus) return
+
+        android.util.Log.d("DuetAudio", "Abandoning ducking focus")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager?.abandonAudioFocus(null)
+        }
+        hasDuckingFocus = false
+    }
+
+    // Schedule a check to unduck after silence
+    private fun scheduleDuckingTimeout() {
+        duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
+
+        duckingCheckRunnable = Runnable {
+            val timeSinceLastAudio = System.currentTimeMillis() - lastAudioPlayTime
+            if (timeSinceLastAudio >= duckingTimeoutMs) {
+                abandonDuckingFocus()
+            }
+        }
+
+        duckingCheckHandler?.postDelayed(duckingCheckRunnable!!, duckingTimeoutMs)
+    }
+
     @ReactMethod
     fun startAudioEngine(promise: Promise) {
         try {
+            // Acquire wake lock to keep CPU running in background
+            val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "Duet::AudioWakeLock"
+            )
+            wakeLock?.acquire()
+            android.util.Log.d("DuetAudio", "Wake lock acquired")
+
             setupAudioRecord()
             setupAudioTrack()
             startRecording()
@@ -134,11 +197,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private fun setupAudioTrack() {
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
 
+        // Use USAGE_MEDIA for output to allow A2DP (high quality) Bluetooth
+        // This allows the partner's voice to play through the same route as music
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
             .setAudioFormat(
@@ -191,14 +256,16 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         noiseSuppressor?.release()
         noiseSuppressor = null
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager?.abandonAudioFocus(null)
-        }
+        // Clean up ducking
+        duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
+        abandonDuckingFocus()
 
-        audioManager?.mode = AudioManager.MODE_NORMAL
+        // Release wake lock
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+            android.util.Log.d("DuetAudio", "Wake lock released")
+        }
+        wakeLock = null
 
         promise.resolve(Arguments.createMap().apply {
             putBoolean("success", true)
@@ -248,6 +315,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun playAudio(base64Audio: String, sampleRate: Double, channels: Int, promise: Promise) {
         if (isDeafened) {
+            android.util.Log.d("DuetAudio", "playAudio: skipped (deafened)")
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", false)
                 putString("reason", "deafened")
@@ -256,19 +324,29 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
 
         try {
+            // Request ducking focus when partner audio arrives
+            requestDuckingFocus()
+            lastAudioPlayTime = System.currentTimeMillis()
+
             val floatArray = base64ToFloatArray(base64Audio)
-            audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING)
+            val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
+            android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples, wrote ${'$'}written to AudioTrack")
+
+            // Schedule unduck after silence
+            scheduleDuckingTimeout()
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", true)
             })
         } catch (e: Exception) {
+            android.util.Log.e("DuetAudio", "playAudio failed: ${'$'}{e.message}")
             promise.reject("PLAYBACK_ERROR", "Failed to play audio: ${'$'}{e.message}")
         }
     }
 
     @ReactMethod
     fun setMuted(muted: Boolean) {
+        android.util.Log.d("DuetAudio", "setMuted called: ${'$'}muted")
         isMuted = muted
         if (muted && isSpeaking) {
             isSpeaking = false
@@ -280,6 +358,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun setDeafened(deafened: Boolean) {
+        android.util.Log.d("DuetAudio", "setDeafened called: ${'$'}deafened")
         isDeafened = deafened
     }
 
@@ -335,6 +414,47 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             .emit(eventName, params)
     }
 
+    // =====================
+    // MEDIA CONTROLS
+    // =====================
+
+    @ReactMethod
+    fun mediaPlay() {
+        sendMediaKeyEvent(KeyEvent.KEYCODE_MEDIA_PLAY)
+    }
+
+    @ReactMethod
+    fun mediaPause() {
+        sendMediaKeyEvent(KeyEvent.KEYCODE_MEDIA_PAUSE)
+    }
+
+    @ReactMethod
+    fun mediaPlayPause() {
+        sendMediaKeyEvent(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+    }
+
+    @ReactMethod
+    fun mediaNext() {
+        sendMediaKeyEvent(KeyEvent.KEYCODE_MEDIA_NEXT)
+    }
+
+    @ReactMethod
+    fun mediaPrevious() {
+        sendMediaKeyEvent(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+    }
+
+    private fun sendMediaKeyEvent(keyCode: Int) {
+        val audioManager = reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Send key down
+        val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
+        audioManager.dispatchMediaKeyEvent(downEvent)
+
+        // Send key up
+        val upEvent = KeyEvent(KeyEvent.ACTION_UP, keyCode)
+        audioManager.dispatchMediaKeyEvent(upEvent)
+    }
+
     @ReactMethod
     fun addListener(eventName: String) {}
 
@@ -367,6 +487,7 @@ class DuetAudioPackage : ReactPackage {
 
 const DUET_AUDIO_MANAGER_SWIFT = `import AVFoundation
 import Foundation
+import MediaPlayer
 import React
 
 @objc(DuetAudioManager)
@@ -390,6 +511,12 @@ class DuetAudioManager: RCTEventEmitter {
   private var silenceFrames = 0
   private let silenceThreshold = 10 // frames of silence before stopping
 
+  // Dynamic ducking state
+  private var isDucking = false
+  private var lastAudioPlayTime: Date = Date.distantPast
+  private let duckingTimeoutSeconds: TimeInterval = 0.5 // Unduck after 500ms of silence
+  private var duckingTimer: Timer?
+
   // MARK: - RCTEventEmitter
 
   override static func requiresMainQueueSetup() -> Bool {
@@ -408,15 +535,17 @@ class DuetAudioManager: RCTEventEmitter {
     do {
       let session = AVAudioSession.sharedInstance()
 
-      // This is the magic combination for ducking other apps
+      // CRITICAL: Use .ambient mode initially to not interrupt other apps
+      // We'll switch to .playAndRecord only when actually needed
+      // This prevents music from stopping when the app opens
       try session.setCategory(
         .playAndRecord,
-        mode: .voiceChat,
+        mode: .default,  // Use default mode instead of voiceChat to avoid audio route changes
         options: [
-          .duckOthers,           // Duck other audio (Spotify, etc.)
           .allowBluetooth,       // Support Bluetooth headsets
           .allowBluetoothA2DP,   // Support high-quality Bluetooth audio
-          .defaultToSpeaker      // Use speaker when no headphones
+          .defaultToSpeaker,     // Use speaker when no headphones
+          .mixWithOthers         // Allow mixing with other apps (CRITICAL)
         ]
       )
 
@@ -424,8 +553,8 @@ class DuetAudioManager: RCTEventEmitter {
       try session.setPreferredSampleRate(sampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
 
-      // Activate the session
-      try session.setActive(true)
+      // Activate the session - use notifyOthersOnDeactivation to be a good citizen
+      try session.setActive(true, options: [])
 
       isSessionActive = true
 
@@ -448,6 +577,70 @@ class DuetAudioManager: RCTEventEmitter {
       resolve(["success": true, "sampleRate": sampleRate])
     } catch {
       reject("AUDIO_SESSION_ERROR", "Failed to setup audio session: \\(error.localizedDescription)", error)
+    }
+  }
+
+  // MARK: - Dynamic Ducking
+
+  private func startDucking() {
+    guard !isDucking else { return }
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      // Switch to ducking mode
+      try session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [
+          .duckOthers,           // NOW we duck other apps
+          .allowBluetooth,
+          .allowBluetoothA2DP,
+          .defaultToSpeaker
+        ]
+      )
+      // Reactivate to apply the ducking
+      try session.setActive(true)
+      isDucking = true
+    } catch {
+      print("[DuetAudio] Failed to start ducking: \\(error)")
+    }
+  }
+
+  private func stopDucking() {
+    guard isDucking else { return }
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      // Switch back to non-ducking mode
+      try session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [
+          .allowBluetooth,
+          .allowBluetoothA2DP,
+          .defaultToSpeaker,
+          .mixWithOthers         // Back to mixing without ducking
+        ]
+      )
+      // Reactivate to apply the change
+      try session.setActive(true)
+      isDucking = false
+    } catch {
+      print("[DuetAudio] Failed to stop ducking: \\(error)")
+    }
+  }
+
+  private func scheduleDuckingTimeout() {
+    // Cancel any existing timer
+    duckingTimer?.invalidate()
+
+    // Schedule a new timer to check if we should unduck
+    duckingTimer = Timer.scheduledTimer(withTimeInterval: duckingTimeoutSeconds, repeats: false) { [weak self] _ in
+      guard let self = self else { return }
+      let timeSinceLastAudio = Date().timeIntervalSince(self.lastAudioPlayTime)
+      if timeSinceLastAudio >= self.duckingTimeoutSeconds {
+        self.stopDucking()
+      }
     }
   }
 
@@ -515,6 +708,11 @@ class DuetAudioManager: RCTEventEmitter {
     audioEngine = nil
     playerNode = nil
     mixerNode = nil
+
+    // Clean up ducking
+    duckingTimer?.invalidate()
+    duckingTimer = nil
+    stopDucking()
 
     resolve(["success": true])
   }
@@ -588,6 +786,10 @@ class DuetAudioManager: RCTEventEmitter {
       return
     }
 
+    // Start ducking when partner audio arrives
+    startDucking()
+    lastAudioPlayTime = Date()
+
     let format = AVAudioFormat(
       standardFormatWithSampleRate: sampleRate,
       channels: AVAudioChannelCount(channels)
@@ -595,6 +797,10 @@ class DuetAudioManager: RCTEventEmitter {
 
     if let buffer = dataToBuffer(data, format: format) {
       player.scheduleBuffer(buffer, completionHandler: nil)
+
+      // Schedule unduck after silence
+      scheduleDuckingTimeout()
+
       resolve(["played": true])
     } else {
       reject("BUFFER_ERROR", "Failed to create audio buffer", nil)
@@ -620,6 +826,39 @@ class DuetAudioManager: RCTEventEmitter {
   @objc
   func setVadThreshold(_ threshold: Float) {
     vadThreshold = max(0.001, min(0.1, threshold))
+  }
+
+  // MARK: - Media Controls
+  // Use MPMusicPlayerController to send commands to the system music player
+
+  @objc
+  func mediaPlayPause() {
+    let player = MPMusicPlayerController.systemMusicPlayer
+    if player.playbackState == .playing {
+      player.pause()
+    } else {
+      player.play()
+    }
+  }
+
+  @objc
+  func mediaPlay() {
+    MPMusicPlayerController.systemMusicPlayer.play()
+  }
+
+  @objc
+  func mediaPause() {
+    MPMusicPlayerController.systemMusicPlayer.pause()
+  }
+
+  @objc
+  func mediaNext() {
+    MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
+  }
+
+  @objc
+  func mediaPrevious() {
+    MPMusicPlayerController.systemMusicPlayer.skipToPreviousItem()
   }
 
   // MARK: - Utility Functions
@@ -731,6 +970,12 @@ RCT_EXTERN_METHOD(playAudio:(NSString *)base64Audio
 RCT_EXTERN_METHOD(setMuted:(BOOL)muted)
 RCT_EXTERN_METHOD(setDeafened:(BOOL)deafened)
 RCT_EXTERN_METHOD(setVadThreshold:(float)threshold)
+
+RCT_EXTERN_METHOD(mediaPlayPause)
+RCT_EXTERN_METHOD(mediaPlay)
+RCT_EXTERN_METHOD(mediaPause)
+RCT_EXTERN_METHOD(mediaNext)
+RCT_EXTERN_METHOD(mediaPrevious)
 
 @end
 `;
