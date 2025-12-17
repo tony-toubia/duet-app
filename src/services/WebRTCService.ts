@@ -128,14 +128,22 @@ export class WebRTCService {
         this.setupDataChannel(event.channel);
       };
       
-      // Get local audio stream (just for establishing connection)
-      // Actual audio capture is handled by native module
+      // Get local audio stream for WebRTC connection establishment
+      // IMPORTANT: We disable the audio track because actual audio is sent via data channel.
+      // The native module handles audio capture with mute/deafen logic.
+      // If we don't disable this track, audio will bypass the native mute controls!
       this.localStream = await mediaDevices.getUserMedia({
         audio: true,
         video: false,
       });
-      
-      // Add tracks to peer connection
+
+      // Disable all audio tracks - we use data channel for audio, not WebRTC media tracks
+      // This ensures mute/deafen works properly via the native module
+      this.localStream.getAudioTracks().forEach((track) => {
+        track.enabled = false;  // Disable the track so no audio is transmitted via WebRTC
+      });
+
+      // Add tracks to peer connection (needed for connection establishment)
       this.localStream.getTracks().forEach((track) => {
         this.peerConnection?.addTrack(track, this.localStream!);
       });
