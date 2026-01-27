@@ -74,10 +74,10 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             // Prepare the focus request but don't request it yet
             // We'll request focus dynamically when partner audio arrives
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Use USAGE_VOICE_COMMUNICATION to match our AudioTrack configuration
-                // This ensures consistent audio routing and proper ducking behavior
+                // Use USAGE_ASSISTANT - this triggers ducking without switching from A2DP to HFP
+                // on Bluetooth devices (unlike USAGE_VOICE_COMMUNICATION which can force HFP)
                 val focusAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
 
@@ -219,12 +219,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
 
-        // Use USAGE_VOICE_COMMUNICATION for consistent behavior with audio focus
-        // This ensures proper ducking and routing, while still allowing A2DP
+        // Use USAGE_ASSISTANT for playback - this keeps A2DP active on Bluetooth
+        // (unlike USAGE_VOICE_COMMUNICATION which may switch to HFP)
+        // The audio focus request (separate) handles ducking of other apps
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -524,6 +525,7 @@ const DUET_AUDIO_MANAGER_SWIFT = `import AVFoundation
 import Foundation
 import MediaPlayer
 import React
+import UIKit
 
 @objc(DuetAudioManager)
 class DuetAudioManager: RCTEventEmitter {
@@ -555,6 +557,9 @@ class DuetAudioManager: RCTEventEmitter {
   private var lastAudioPlayTime: Date = Date.distantPast
   private let duckingTimeoutSeconds: TimeInterval = 0.5 // Unduck after 500ms of silence
   private var duckingTimer: Timer?
+
+  // Background task tracking
+  private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
   // MARK: - RCTEventEmitter
 
@@ -589,7 +594,7 @@ class DuetAudioManager: RCTEventEmitter {
       )
 
       // Optimize for voice
-      try session.setPreferredSampleRate(sampleRate)
+      try session.setPreferredSampleRate(outputSampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
 
       // DON'T activate the session yet - this can interrupt other audio
@@ -605,7 +610,7 @@ class DuetAudioManager: RCTEventEmitter {
         object: nil
       )
 
-      // Listen for route changes (headphones plugged/unplugged)
+      // Listen for route changes (headphones plugged/unplugged, Bluetooth connect/disconnect)
       NotificationCenter.default.addObserver(
         self,
         selector: #selector(handleRouteChange),
@@ -613,7 +618,12 @@ class DuetAudioManager: RCTEventEmitter {
         object: nil
       )
 
-      resolve(["success": true, "sampleRate": sampleRate])
+      // Log current audio route for debugging
+      let currentRoute = session.currentRoute
+      let outputs = currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")
+      print("[DuetAudio] Audio session configured, current outputs: \\(outputs)")
+
+      resolve(["success": true, "sampleRate": outputSampleRate])
     } catch {
       reject("AUDIO_SESSION_ERROR", "Failed to setup audio session: \\(error.localizedDescription)", error)
     }
@@ -697,6 +707,12 @@ class DuetAudioManager: RCTEventEmitter {
     }
 
     do {
+      // Begin background task to ensure audio setup completes
+      backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+        // Expiration handler - clean up if we're about to be suspended
+        self?.endBackgroundTask()
+      }
+
       // NOW activate the audio session - this is when we actually need it
       // Doing it here instead of setupAudioSession prevents interrupting music on app open
       let session = AVAudioSession.sharedInstance()
@@ -1040,20 +1056,87 @@ class DuetAudioManager: RCTEventEmitter {
       return
     }
 
+    let session = AVAudioSession.sharedInstance()
+    let currentRoute = session.currentRoute
+    let outputs = currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")
+
+    print("[DuetAudio] Route changed: \\(reason.rawValue), outputs: \\(outputs)")
+
     switch reason {
     case .newDeviceAvailable:
-      // New audio device connected (e.g., AirPods)
-      sendEvent(withName: "onConnectionStateChange", body: ["state": "routeChanged", "reason": "deviceConnected"])
+      // New audio device connected (e.g., AirPods, car Bluetooth)
+      // Check if it's a Bluetooth device and ensure A2DP is preserved
+      let isBluetoothA2DP = currentRoute.outputs.contains { output in
+        output.portType == .bluetoothA2DP
+      }
+      let isBluetoothHFP = currentRoute.outputs.contains { output in
+        output.portType == .bluetoothHFP
+      }
+
+      if isBluetoothA2DP {
+        print("[DuetAudio] Bluetooth A2DP connected - high quality audio preserved")
+      } else if isBluetoothHFP {
+        // HFP is voice-optimized but lower quality - try to switch to A2DP if available
+        print("[DuetAudio] Warning: Bluetooth HFP active - attempting to preserve A2DP")
+        reconfigureAudioSessionForBluetooth()
+      }
+
+      sendEvent(withName: "onConnectionStateChange", body: [
+        "state": "routeChanged",
+        "reason": "deviceConnected",
+        "isBluetoothA2DP": isBluetoothA2DP
+      ])
+
     case .oldDeviceUnavailable:
-      // Audio device disconnected
-      sendEvent(withName: "onConnectionStateChange", body: ["state": "routeChanged", "reason": "deviceDisconnected"])
+      // Audio device disconnected - reconfigure session
+      print("[DuetAudio] Device disconnected, reconfiguring audio session")
+      reconfigureAudioSessionForBluetooth()
+      sendEvent(withName: "onConnectionStateChange", body: [
+        "state": "routeChanged",
+        "reason": "deviceDisconnected"
+      ])
+
+    case .categoryChange:
+      // Audio category changed by another app - restore our settings
+      print("[DuetAudio] Category changed externally, reconfiguring")
+      reconfigureAudioSessionForBluetooth()
+
     default:
       break
     }
   }
 
+  private func reconfigureAudioSessionForBluetooth() {
+    do {
+      let session = AVAudioSession.sharedInstance()
+      // Reconfigure with our preferred settings to ensure A2DP is used when available
+      try session.setCategory(
+        .playAndRecord,
+        mode: .default,  // default mode allows A2DP; voiceChat forces HFP
+        options: [
+          .allowBluetooth,
+          .allowBluetoothA2DP,  // Critical for high-quality Bluetooth audio
+          .defaultToSpeaker,
+          isDucking ? .duckOthers : .mixWithOthers
+        ]
+      )
+      try session.setActive(true)
+      print("[DuetAudio] Audio session reconfigured for Bluetooth A2DP")
+    } catch {
+      print("[DuetAudio] Failed to reconfigure audio session: \\(error)")
+    }
+  }
+
+  private func endBackgroundTask() {
+    if backgroundTaskID != .invalid {
+      UIApplication.shared.endBackgroundTask(backgroundTaskID)
+      backgroundTaskID = .invalid
+    }
+  }
+
   deinit {
     NotificationCenter.default.removeObserver(self)
+    endBackgroundTask()
   }
 }
 `;

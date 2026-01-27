@@ -48,7 +48,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   isPartnerSpeaking: false,
   
   duckLevel: 30,
-  vadSensitivity: 50,
+  vadSensitivity: 40, // Default: moderate-low, good for car/road noise environments
   
   webrtc: null,
   signaling: null,

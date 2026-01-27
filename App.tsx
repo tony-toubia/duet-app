@@ -31,6 +31,57 @@ const colors = {
   danger: '#ef4444',
 };
 
+// VAD Sensitivity Control Component
+const SensitivityControl = ({
+  value,
+  onChange
+}: {
+  value: number;
+  onChange: (val: number) => void;
+}) => {
+  // 5 levels: Very Low (20), Low (35), Medium (50), High (65), Very High (80)
+  const levels = [
+    { value: 20, label: 'Low' },
+    { value: 35, label: '' },
+    { value: 50, label: 'Med' },
+    { value: 65, label: '' },
+    { value: 80, label: 'High' },
+  ];
+
+  return (
+    <View style={styles.sensitivityContainer}>
+      <Text style={styles.sensitivityTitle}>Mic Sensitivity</Text>
+      <View style={styles.sensitivityLevels}>
+        {levels.map((level, index) => {
+          const isActive = value >= level.value - 7;
+          return (
+            <TouchableOpacity
+              key={level.value}
+              style={[
+                styles.sensitivityDot,
+                isActive && styles.sensitivityDotActive,
+              ]}
+              onPress={() => onChange(level.value)}
+            >
+              {level.label ? (
+                <Text style={[
+                  styles.sensitivityLabel,
+                  isActive && styles.sensitivityLabelActive,
+                ]}>{level.label}</Text>
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.sensitivityHint}>
+        {value < 35 ? 'Best for quiet environments' :
+         value > 65 ? 'Best for loud environments' :
+         'Balanced for most situations'}
+      </Text>
+    </View>
+  );
+};
+
 // Media Control Component
 const MediaControls = () => {
   const [isPlaying, setIsPlaying] = useState(true);
@@ -84,12 +135,14 @@ function AppContent() {
     isDeafened,
     isSpeaking,
     isPartnerSpeaking,
+    vadSensitivity,
     initialize,
     createRoom,
     joinRoom,
     leaveRoom,
     setMuted,
     setDeafened,
+    setVadSensitivity,
   } = useDuetStore();
   
   // Initialize on mount
@@ -353,6 +406,9 @@ function AppContent() {
       {/* Media Controls */}
       <MediaControls />
 
+      {/* Sensitivity Control */}
+      <SensitivityControl value={vadSensitivity} onChange={setVadSensitivity} />
+
       {/* Navigation Widget */}
       <NavigationWidget />
 
@@ -600,5 +656,54 @@ const styles = StyleSheet.create({
   },
   mediaButtonTextMain: {
     fontSize: 20,
+  },
+  // Sensitivity Control
+  sensitivityContainer: {
+    backgroundColor: colors.surface,
+    marginHorizontal: 20,
+    marginTop: 12,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  sensitivityTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  sensitivityLevels: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  sensitivityDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  sensitivityDotActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.text,
+  },
+  sensitivityLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  sensitivityLabelActive: {
+    color: colors.text,
+  },
+  sensitivityHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
