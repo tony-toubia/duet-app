@@ -1,7 +1,10 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { DuetAudio } from '@/native/DuetAudio';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
+import { crashlyticsService } from '@/services/CrashlyticsService';
+import { pushNotificationService } from '@/services/PushNotificationService';
 
 interface DuetState {
   // Connection
@@ -59,27 +62,51 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   
   initialize: async () => {
     try {
+      // Initialize Crashlytics first for error tracking
+      await crashlyticsService.initialize();
+      crashlyticsService.log('[Store] Initializing...');
+
+      // Initialize push notifications
+      await pushNotificationService.initialize({
+        onPartnerLeft: (roomCode) => {
+          crashlyticsService.log(`[Push] Partner left room: ${roomCode}`);
+          // If we're in this room, handle the disconnect
+          const state = get();
+          if (state.roomCode === roomCode) {
+            set({ partnerId: null, connectionState: 'disconnected' });
+          }
+        },
+      });
+
       // Initialize native audio
-      await DuetAudio.setupAudioSession();
-      
+      const audioResult = await DuetAudio.setupAudioSession();
+      crashlyticsService.logAudioSetup(Platform.OS, audioResult.sampleRate);
+
       // Set up audio event listeners
       DuetAudio.onVoiceActivity((event) => {
         set({ isSpeaking: event.speaking });
       });
-      
+
       DuetAudio.onAudioData((data) => {
         // Send audio to partner via WebRTC with metadata
         const { webrtc } = get();
         webrtc?.sendAudioData(data.audio, data.sampleRate, data.channels);
       });
-      
+
       DuetAudio.onConnectionStateChange((event) => {
         console.log('[Audio] Connection state:', event.state);
+        crashlyticsService.log(`[Audio] State: ${event.state}`);
       });
-      
+
+      DuetAudio.onError((error) => {
+        crashlyticsService.logAudioError(new Error(error.message), 'runtime');
+      });
+
       console.log('[Store] Initialized');
+      crashlyticsService.log('[Store] Initialized successfully');
     } catch (error) {
       console.error('[Store] Initialization failed:', error);
+      crashlyticsService.recordError(error as Error, 'Store initialization');
       throw error;
     }
   },
@@ -133,6 +160,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const webrtc = new WebRTCService({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
+        crashlyticsService.logWebRTCStateChange(state);
       },
       onAudioData: async (packet) => {
         // Play received audio with proper sample rate (this triggers ducking in native code)
@@ -144,15 +172,16 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
+        crashlyticsService.logWebRTCError(error, 'createRoom');
       },
     });
-    
+
     set({ signaling, webrtc, isHost: true });
-    
+
     // Initialize services
     await signaling.initialize();
     await webrtc.initialize();
-    
+
     // Set up ICE candidate forwarding
     webrtc.onLocalIceCandidate = (candidate) => {
       signaling.sendIceCandidate(candidate);
@@ -161,10 +190,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Create room
     const roomCode = await signaling.createRoom();
     set({ roomCode });
-    
+    crashlyticsService.logRoomCreated(roomCode);
+
     // Start audio engine
     await DuetAudio.startAudioEngine();
-    
+    crashlyticsService.logAudioEngineStart();
+
     return roomCode;
   },
   
@@ -207,6 +238,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const webrtc = new WebRTCService({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
+        crashlyticsService.logWebRTCStateChange(state);
       },
       onAudioData: async (packet) => {
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
@@ -216,39 +248,47 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
+        crashlyticsService.logWebRTCError(error, 'joinRoom');
       },
     });
-    
+
     set({ signaling, webrtc, isHost: false, roomCode: code });
-    
+
     // Initialize services
     await signaling.initialize();
     await webrtc.initialize();
-    
+
     // Set up ICE candidate forwarding
     webrtc.onLocalIceCandidate = (candidate) => {
       signaling.sendIceCandidate(candidate);
     };
-    
+
     // Join room
     await signaling.joinRoom(code);
     set({ partnerId: 'partner' });
-    
+    crashlyticsService.logRoomJoined(code);
+
     // Start audio engine
     await DuetAudio.startAudioEngine();
+    crashlyticsService.logAudioEngineStart();
   },
   
   leaveRoom: async () => {
     const { webrtc, signaling } = get();
-    
+
+    crashlyticsService.log('[Store] Leaving room...');
+
     // Stop audio
     await DuetAudio.stopAudioEngine();
+    crashlyticsService.logAudioEngineStop();
     DuetAudio.removeAllListeners();
-    
+
     // Close connections
     webrtc?.close();
     await signaling?.leave();
-    
+
+    crashlyticsService.logRoomLeft();
+
     set({
       webrtc: null,
       signaling: null,

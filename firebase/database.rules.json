@@ -1,0 +1,131 @@
+{
+  "rules": {
+    "rooms": {
+      // Index for querying old rooms for cleanup
+      ".indexOn": ["createdAt"],
+
+      "$roomCode": {
+        // Anyone can read room data (needed for joining)
+        ".read": true,
+
+        // Room can be created by anyone, but structure must be valid
+        ".write": "!data.exists() || auth != null",
+
+        // Validate room structure
+        ".validate": "newData.hasChildren(['createdAt', 'createdBy'])",
+
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() <= now"
+        },
+
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+
+        "members": {
+          "$memberId": {
+            // Members can add themselves
+            ".write": true,
+            ".validate": "newData.hasChildren(['role', 'joinedAt'])",
+
+            "role": {
+              ".validate": "newData.isString() && (newData.val() == 'offerer' || newData.val() == 'answerer')"
+            },
+
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
+
+        // WebRTC signaling data
+        "offer": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['type', 'sdp'])",
+
+          "type": {
+            ".validate": "newData.isString() && newData.val() == 'offer'"
+          },
+
+          "sdp": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 10000"
+          }
+        },
+
+        "answer": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['type', 'sdp'])",
+
+          "type": {
+            ".validate": "newData.isString() && newData.val() == 'answer'"
+          },
+
+          "sdp": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 10000"
+          }
+        },
+
+        "offerCandidates": {
+          "$candidateId": {
+            ".write": true,
+            ".validate": "newData.hasChildren(['candidate', 'sdpMid', 'sdpMLineIndex'])",
+
+            "candidate": {
+              ".validate": "newData.isString() && newData.val().length < 1000"
+            },
+
+            "sdpMid": {
+              ".validate": "newData.isString()"
+            },
+
+            "sdpMLineIndex": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
+
+        "answerCandidates": {
+          "$candidateId": {
+            ".write": true,
+            ".validate": "newData.hasChildren(['candidate', 'sdpMid', 'sdpMLineIndex'])",
+
+            "candidate": {
+              ".validate": "newData.isString() && newData.val().length < 1000"
+            },
+
+            "sdpMid": {
+              ".validate": "newData.isString()"
+            },
+
+            "sdpMLineIndex": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        }
+      }
+    },
+
+    // Push notification tokens (for partner disconnect notifications)
+    "users": {
+      "$userId": {
+        // Users can only read/write their own data
+        ".read": "$userId == auth.uid",
+        ".write": "$userId == auth.uid",
+
+        "pushToken": {
+          ".validate": "newData.isString() && newData.val().length < 500"
+        },
+
+        "platform": {
+          ".validate": "newData.isString() && (newData.val() == 'ios' || newData.val() == 'android')"
+        }
+      }
+    },
+
+    // Deny access to everything else
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

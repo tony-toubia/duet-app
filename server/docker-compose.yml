@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: duet-turn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+    environment:
+      - DETECT_EXTERNAL_IP=yes
+      - DETECT_RELAY_IP=yes
+    # For non-host mode, use these ports:
+    # ports:
+    #   - "3478:3478/udp"     # STUN/TURN UDP
+    #   - "3478:3478/tcp"     # STUN/TURN TCP
+    #   - "5349:5349/tcp"     # STUN/TURN TLS
+    #   - "49152-65535:49152-65535/udp"  # Relay ports
+
+  # Optional: Redis for multi-server deployments
+  # redis:
+  #   image: redis:alpine
+  #   container_name: duet-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"

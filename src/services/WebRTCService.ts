@@ -4,40 +4,16 @@ import {
   RTCIceCandidate,
   mediaDevices,
 } from 'react-native-webrtc';
+import { getIceServers } from '@/config/turn';
 
-// WebRTC configuration with STUN and TURN servers
-// STUN: Discovers public IP (works when both peers can reach each other directly)
-// TURN: Relays traffic when direct connection fails (symmetric NAT, firewalls)
-const rtcConfig = {
-  iceServers: [
-    // STUN servers for NAT traversal discovery
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-
-    // TURN servers for relay when direct connection fails
-    // Using Open Relay Project's free TURN servers
-    // Note: For production, deploy your own TURN server (coturn) for reliability
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ],
+// WebRTC configuration
+// ICE servers loaded from config for easy production deployment
+const getRtcConfig = () => ({
+  iceServers: getIceServers(),
   iceCandidatePoolSize: 10,
   // Try all transports - will prefer direct, fall back to relay
   iceTransportPolicy: 'all' as const,
-};
+});
 
 export type ConnectionState = 
   | 'disconnected'
@@ -96,7 +72,7 @@ export class WebRTCService {
   async initialize(): Promise<void> {
     try {
       // Create peer connection
-      this.peerConnection = new RTCPeerConnection(rtcConfig);
+      this.peerConnection = new RTCPeerConnection(getRtcConfig());
       
       // Handle ICE candidates
       this.peerConnection.onicecandidate = (event) => {
