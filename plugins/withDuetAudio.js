@@ -36,7 +36,10 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @Volatile private var isMuted = false
     @Volatile private var isDeafened = false
 
-    private val sampleRate = 48000
+    // Standard sample rate for capture (we always capture at 48kHz for consistency)
+    private val captureSampleRate = 48000
+    // Playback sample rate - dynamically set based on received audio
+    private var playbackSampleRate = 48000
     private val channelConfigIn = AudioFormat.CHANNEL_IN_MONO
     private val channelConfigOut = AudioFormat.CHANNEL_OUT_MONO
     private val audioFormat = AudioFormat.ENCODING_PCM_FLOAT
@@ -71,16 +74,17 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             // Prepare the focus request but don't request it yet
             // We'll request focus dynamically when partner audio arrives
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Use USAGE_ASSISTANT for the focus request - this signals to music apps
-                // that voice content needs to be heard and they should duck
+                // Use USAGE_VOICE_COMMUNICATION to match our AudioTrack configuration
+                // This ensures consistent audio routing and proper ducking behavior
                 val focusAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
 
                 focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                     .setAudioAttributes(focusAttributes)
                     .setAcceptsDelayedFocusGain(true)
+                    .setWillPauseWhenDucked(false) // Don't pause, just duck
                     .setOnAudioFocusChangeListener { focusChange ->
                         handleAudioFocusChange(focusChange)
                     }
@@ -91,7 +95,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("success", true)
-                putInt("sampleRate", sampleRate)
+                putInt("sampleRate", captureSampleRate)
             })
         } catch (e: Exception) {
             promise.reject("AUDIO_SESSION_ERROR", "Failed to setup audio session: ${'$'}{e.message}")
@@ -151,10 +155,11 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startAudioEngine(promise: Promise) {
         try {
-            // Set audio mode to communication - this helps with audio routing and ducking
-            // We do this here (not in setupAudioSession) to avoid affecting music playback on app open
-            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-            android.util.Log.d("DuetAudio", "Audio mode set to MODE_IN_COMMUNICATION")
+            // IMPORTANT: Do NOT use MODE_IN_COMMUNICATION - it forces Bluetooth to switch from
+            // A2DP (high quality music) to HFP/SCO (low quality voice), breaking audio companion
+            // Instead, we keep MODE_NORMAL and rely on audio focus for ducking
+            // audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION // REMOVED - breaks A2DP
+            android.util.Log.d("DuetAudio", "Audio mode kept as MODE_NORMAL to preserve A2DP")
 
             // Acquire wake lock to keep CPU running in background
             val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -178,11 +183,11 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     }
 
     private fun setupAudioRecord() {
-        val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfigIn, audioFormat)
+        val bufferSize = AudioRecord.getMinBufferSize(captureSampleRate, channelConfigIn, audioFormat)
 
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            sampleRate,
+            captureSampleRate,
             channelConfigIn,
             audioFormat,
             bufferSize * 2
@@ -200,15 +205,27 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     }
 
     private fun setupAudioTrack() {
+        setupAudioTrackWithSampleRate(playbackSampleRate)
+    }
+
+    private fun setupAudioTrackWithSampleRate(sampleRate: Int) {
+        // Stop and release existing track if any
+        audioTrack?.let {
+            if (it.state == AudioTrack.STATE_INITIALIZED) {
+                it.stop()
+                it.release()
+            }
+        }
+
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
 
-        // Use USAGE_MEDIA for output to allow A2DP (high quality) Bluetooth
-        // This allows the partner's voice to play through the same route as music
+        // Use USAGE_VOICE_COMMUNICATION for consistent behavior with audio focus
+        // This ensures proper ducking and routing, while still allowing A2DP
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
             .setAudioFormat(
@@ -222,7 +239,9 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
+        playbackSampleRate = sampleRate
         audioTrack?.play()
+        android.util.Log.d("DuetAudio", "AudioTrack configured for ${'$'}sampleRate Hz")
     }
 
     private fun startRecording() {
@@ -265,9 +284,8 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
         abandonDuckingFocus()
 
-        // Reset audio mode to normal so music can resume properly
-        audioManager?.mode = AudioManager.MODE_NORMAL
-        android.util.Log.d("DuetAudio", "Audio mode reset to MODE_NORMAL")
+        // Audio mode is already MODE_NORMAL (we don't change it to preserve A2DP)
+        android.util.Log.d("DuetAudio", "Audio engine stopped, ducking focus abandoned")
 
         // Release wake lock
         if (wakeLock?.isHeld == true) {
@@ -307,7 +325,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             val base64 = floatArrayToBase64(buffer, length)
             sendEvent("onAudioData", Arguments.createMap().apply {
                 putString("audio", base64)
-                putInt("sampleRate", sampleRate)
+                putInt("sampleRate", captureSampleRate)
                 putInt("channels", 1)
             })
         }
@@ -333,13 +351,21 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
 
         try {
+            val receivedSampleRate = sampleRate.toInt()
+
+            // Check if we need to reconfigure AudioTrack for different sample rate
+            if (receivedSampleRate != playbackSampleRate && receivedSampleRate > 0) {
+                android.util.Log.d("DuetAudio", "Sample rate changed from ${'$'}playbackSampleRate to ${'$'}receivedSampleRate, reconfiguring AudioTrack")
+                setupAudioTrackWithSampleRate(receivedSampleRate)
+            }
+
             // Request ducking focus when partner audio arrives
             requestDuckingFocus()
             lastAudioPlayTime = System.currentTimeMillis()
 
             val floatArray = base64ToFloatArray(base64Audio)
             val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
-            android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples, wrote ${'$'}written to AudioTrack")
+            android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples at ${'$'}receivedSampleRate Hz, wrote ${'$'}written to AudioTrack")
 
             // Schedule unduck after silence
             scheduleDuckingTimeout()
@@ -505,14 +531,18 @@ class DuetAudioManager: RCTEventEmitter {
   private var audioEngine: AVAudioEngine?
   private var playerNode: AVAudioPlayerNode?
   private var mixerNode: AVAudioMixerNode?
+  private var audioConverter: AVAudioConverter?
 
   private var isSessionActive = false
   private var isMuted = false
   private var isDeafened = false
 
-  // Audio format for streaming (matches WebRTC Opus decoded output)
-  private let sampleRate: Double = 48000
+  // Standard output sample rate - always output at 48kHz for cross-platform consistency
+  private let outputSampleRate: Double = 48000
   private let channels: AVAudioChannelCount = 1
+
+  // Actual device input sample rate (may differ from outputSampleRate)
+  private var inputSampleRate: Double = 48000
 
   // VAD (Voice Activity Detection) settings
   private var vadThreshold: Float = 0.01
@@ -596,20 +626,22 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      // Switch to ducking mode
+      // Use .default mode (not .voiceChat) to preserve A2DP Bluetooth routing
+      // .voiceChat mode forces HFP which has lower audio quality
       try session.setCategory(
         .playAndRecord,
-        mode: .voiceChat,
+        mode: .default,  // Preserve audio routing (A2DP stays active)
         options: [
-          .duckOthers,           // NOW we duck other apps
+          .duckOthers,           // Duck other apps
           .allowBluetooth,
-          .allowBluetoothA2DP,
+          .allowBluetoothA2DP,   // Critical: keep A2DP for high quality music
           .defaultToSpeaker
         ]
       )
       // Reactivate to apply the ducking
       try session.setActive(true)
       isDucking = true
+      print("[DuetAudio] Started ducking (mode: default)")
     } catch {
       print("[DuetAudio] Failed to start ducking: \\(error)")
     }
@@ -620,10 +652,10 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      // Switch back to non-ducking mode
+      // Switch back to non-ducking mode while preserving audio routing
       try session.setCategory(
         .playAndRecord,
-        mode: .voiceChat,
+        mode: .default,  // Keep default mode for consistent routing
         options: [
           .allowBluetooth,
           .allowBluetoothA2DP,
@@ -634,6 +666,7 @@ class DuetAudioManager: RCTEventEmitter {
       // Reactivate to apply the change
       try session.setActive(true)
       isDucking = false
+      print("[DuetAudio] Stopped ducking (music resumes)")
     } catch {
       print("[DuetAudio] Failed to stop ducking: \\(error)")
     }
@@ -684,21 +717,36 @@ class DuetAudioManager: RCTEventEmitter {
       engine.attach(player)
       engine.attach(mixer)
 
-      // Get the format for our audio
-      let format = AVAudioFormat(
-        standardFormatWithSampleRate: sampleRate,
+      // Standard output format at 48kHz for cross-platform consistency
+      let outputFormat = AVAudioFormat(
+        standardFormatWithSampleRate: outputSampleRate,
         channels: channels
       )!
 
       // Connect: player -> mixer -> main output
-      engine.connect(player, to: mixer, format: format)
-      engine.connect(mixer, to: engine.mainMixerNode, format: format)
+      engine.connect(player, to: mixer, format: outputFormat)
+      engine.connect(mixer, to: engine.mainMixerNode, format: outputFormat)
 
-      // Install tap on input (microphone) to capture audio
+      // Get the actual input format from the device
       let inputNode = engine.inputNode
       let inputFormat = inputNode.outputFormat(forBus: 0)
+      inputSampleRate = inputFormat.sampleRate
 
-      inputNode.installTap(onBus: 0, bufferSize: 960, format: inputFormat) { [weak self] buffer, time in
+      print("[DuetAudio] Device input sample rate: \\(inputSampleRate) Hz, output: \\(outputSampleRate) Hz")
+
+      // Create converter if input sample rate differs from our standard output rate
+      if inputSampleRate != outputSampleRate {
+        audioConverter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        print("[DuetAudio] Created audio converter for resampling \\(inputSampleRate) -> \\(outputSampleRate)")
+      } else {
+        audioConverter = nil
+      }
+
+      // Install tap on input (microphone) to capture audio
+      // Use a larger buffer for resampling headroom
+      let bufferSize: AVAudioFrameCount = inputSampleRate != outputSampleRate ? 2048 : 960
+
+      inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: inputFormat) { [weak self] buffer, time in
         self?.processInputBuffer(buffer)
       }
 
@@ -722,6 +770,7 @@ class DuetAudioManager: RCTEventEmitter {
     audioEngine = nil
     playerNode = nil
     mixerNode = nil
+    audioConverter = nil
 
     // Clean up ducking
     duckingTimer?.invalidate()
@@ -764,14 +813,54 @@ class DuetAudioManager: RCTEventEmitter {
 
     // Only send audio data when speaking (saves bandwidth)
     if isSpeaking {
-      if let data = bufferToBase64(buffer) {
+      // Resample to standard 48kHz if needed for cross-platform consistency
+      let outputBuffer: AVAudioPCMBuffer
+      if let converter = audioConverter {
+        // Need to resample
+        guard let resampledBuffer = resampleBuffer(buffer, using: converter) else {
+          print("[DuetAudio] Failed to resample audio buffer")
+          return
+        }
+        outputBuffer = resampledBuffer
+      } else {
+        // No resampling needed
+        outputBuffer = buffer
+      }
+
+      if let data = bufferToBase64(outputBuffer) {
         sendEvent(withName: "onAudioData", body: [
           "audio": data,
-          "sampleRate": buffer.format.sampleRate,
-          "channels": buffer.format.channelCount
+          "sampleRate": outputSampleRate,  // Always send at standard rate
+          "channels": channels
         ])
       }
     }
+  }
+
+  private func resampleBuffer(_ inputBuffer: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
+    // Calculate output frame count based on sample rate ratio
+    let ratio = outputSampleRate / inputBuffer.format.sampleRate
+    let outputFrameCount = AVAudioFrameCount(Double(inputBuffer.frameLength) * ratio)
+
+    guard let outputFormat = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels),
+          let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCount) else {
+      return nil
+    }
+
+    var error: NSError?
+    let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+      outStatus.pointee = .haveData
+      return inputBuffer
+    }
+
+    let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+
+    if status == .error {
+      print("[DuetAudio] Conversion error: \\(error?.localizedDescription ?? "unknown")")
+      return nil
+    }
+
+    return outputBuffer
   }
 
   private func calculateRMS(_ buffer: AVAudioPCMBuffer) -> Float {

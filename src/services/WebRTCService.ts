@@ -28,9 +28,15 @@ export type ConnectionState =
   | 'reconnecting'
   | 'failed';
 
+export interface AudioPacket {
+  audio: string;      // base64 encoded audio data
+  sampleRate: number; // sample rate in Hz (should be 48000)
+  channels: number;   // number of channels (should be 1)
+}
+
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
-  onAudioData: (data: string) => void;
+  onAudioData: (data: AudioPacket) => void;
   onError: (error: Error) => void;
 }
 
@@ -277,11 +283,17 @@ export class WebRTCService {
   }
   
   /**
-   * Send audio data to peer
+   * Send audio data to peer with metadata
    */
-  sendAudioData(base64Audio: string): void {
+  sendAudioData(base64Audio: string, sampleRate: number = 48000, channels: number = 1): void {
     if (this.dataChannel?.readyState === 'open') {
-      this.dataChannel.send(base64Audio);
+      // Send as JSON packet with metadata for cross-platform compatibility
+      const packet: AudioPacket = {
+        audio: base64Audio,
+        sampleRate,
+        channels,
+      };
+      this.dataChannel.send(JSON.stringify(packet));
     }
   }
   
@@ -300,8 +312,19 @@ export class WebRTCService {
     };
     
     channel.onmessage = (event) => {
-      // Received audio data from peer
-      this.callbacks.onAudioData(event.data);
+      // Received audio data from peer - parse JSON packet
+      try {
+        const packet: AudioPacket = JSON.parse(event.data);
+        this.callbacks.onAudioData(packet);
+      } catch (e) {
+        // Fallback for legacy raw base64 data (backward compatibility)
+        console.warn('[WebRTC] Received non-JSON data, using defaults');
+        this.callbacks.onAudioData({
+          audio: event.data,
+          sampleRate: 48000,
+          channels: 1,
+        });
+      }
     };
     
     channel.onerror = (error) => {

@@ -68,9 +68,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       });
       
       DuetAudio.onAudioData((data) => {
-        // Send audio to partner via WebRTC
+        // Send audio to partner via WebRTC with metadata
         const { webrtc } = get();
-        webrtc?.sendAudioData(data.audio);
+        webrtc?.sendAudioData(data.audio, data.sampleRate, data.channels);
       });
       
       DuetAudio.onConnectionStateChange((event) => {
@@ -134,12 +134,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
       },
-      onAudioData: async (data) => {
-        // Play received audio
-        await DuetAudio.playAudio(data);
+      onAudioData: async (packet) => {
+        // Play received audio with proper sample rate (this triggers ducking in native code)
+        await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
         set({ isPartnerSpeaking: true });
-        // Reset after short delay
-        setTimeout(() => set({ isPartnerSpeaking: false }), 200);
+        // Reset after delay matching the native ducking timeout (500ms)
+        // This keeps UI in sync with audio ducking behavior
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
@@ -207,10 +208,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
       },
-      onAudioData: async (data) => {
-        await DuetAudio.playAudio(data);
+      onAudioData: async (packet) => {
+        await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
         set({ isPartnerSpeaking: true });
-        setTimeout(() => set({ isPartnerSpeaking: false }), 200);
+        // Match native ducking timeout (500ms)
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
