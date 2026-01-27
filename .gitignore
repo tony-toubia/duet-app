@@ -44,3 +44,21 @@ yarn-error.log*
 # Build outputs
 *.jks
 *.keystore
+
+# Terraform
+server/terraform/.terraform/
+server/terraform/*.tfstate
+server/terraform/*.tfstate.*
+server/terraform/*.tfplan
+server/terraform/terraform.tfvars
+server/terraform/.terraform.lock.hcl
+
+# Firebase Functions
+firebase/functions/lib/
+firebase/functions/node_modules/
+
+# Certificates
+server/certs/
+*.pem
+*.crt
+*.key

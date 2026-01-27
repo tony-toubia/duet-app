@@ -1,0 +1,143 @@
+#cloud-config
+
+# Duet TURN Server - Cloud Init Configuration
+# Automatically configures coturn on first boot
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - docker.io
+  - docker-compose
+  - certbot
+  - ufw
+
+write_files:
+  # Docker Compose file
+  - path: /opt/duet-turn/docker-compose.yml
+    content: |
+      version: '3.8'
+      services:
+        coturn:
+          image: coturn/coturn:latest
+          container_name: duet-turn
+          restart: unless-stopped
+          network_mode: host
+          volumes:
+            - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+            - ./certs:/etc/coturn/certs:ro
+          logging:
+            driver: "json-file"
+            options:
+              max-size: "10m"
+              max-file: "3"
+
+  # TURN server configuration
+  - path: /opt/duet-turn/turnserver.conf
+    content: |
+      # Duet TURN Server Configuration
+
+      listening-port=3478
+      tls-listening-port=5349
+
+      min-port=49152
+      max-port=65535
+
+      realm=${domain != "" ? domain : "duet.local"}
+
+      user=${turn_username}:${turn_password}
+
+      fingerprint
+      lt-cred-mech
+
+      no-multicast-peers
+      no-cli
+      no-tlsv1
+      no-tlsv1_1
+
+      max-bps=1000000
+      total-quota=100
+      stale-nonce=600
+
+      relay-threads=2
+
+      log-file=stdout
+
+      %{ if domain != "" }
+      cert=/etc/coturn/certs/fullchain.pem
+      pkey=/etc/coturn/certs/privkey.pem
+      %{ endif }
+
+  # Setup script
+  - path: /opt/duet-turn/setup.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+
+      # Get public IP
+      PUBLIC_IP=$(curl -s http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || curl -s ifconfig.me)
+      echo "Public IP: $PUBLIC_IP"
+
+      # Add external-ip to config
+      echo "external-ip=$PUBLIC_IP" >> /opt/duet-turn/turnserver.conf
+
+      # Setup TLS if domain provided
+      %{ if domain != "" && email != "" }
+      echo "Setting up TLS for ${domain}..."
+      certbot certonly --standalone -d ${domain} --email ${email} --agree-tos --non-interactive
+
+      mkdir -p /opt/duet-turn/certs
+      cp /etc/letsencrypt/live/${domain}/fullchain.pem /opt/duet-turn/certs/
+      cp /etc/letsencrypt/live/${domain}/privkey.pem /opt/duet-turn/certs/
+      chmod 644 /opt/duet-turn/certs/*.pem
+
+      # Setup auto-renewal
+      echo "0 0 * * * root certbot renew --quiet && cp /etc/letsencrypt/live/${domain}/*.pem /opt/duet-turn/certs/ && docker restart duet-turn" > /etc/cron.d/certbot-renew
+      %{ else }
+      mkdir -p /opt/duet-turn/certs
+      %{ endif }
+
+      # Start TURN server
+      cd /opt/duet-turn
+      docker-compose up -d
+
+      echo "TURN server started!"
+      echo "URL: turn://$PUBLIC_IP:3478"
+
+  # Health check script
+  - path: /opt/duet-turn/health-check.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      if docker ps | grep -q duet-turn; then
+        echo "TURN server is running"
+        exit 0
+      else
+        echo "TURN server is NOT running"
+        docker-compose -f /opt/duet-turn/docker-compose.yml up -d
+        exit 1
+      fi
+
+runcmd:
+  # Configure firewall
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 3478/udp
+  - ufw allow 3478/tcp
+  - ufw allow 5349/tcp
+  - ufw allow 49152:65535/udp
+  - ufw --force enable
+
+  # Enable Docker
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Run setup
+  - /opt/duet-turn/setup.sh
+
+  # Setup health check cron
+  - echo "*/5 * * * * root /opt/duet-turn/health-check.sh >> /var/log/turn-health.log 2>&1" > /etc/cron.d/turn-health
+
+final_message: "Duet TURN server setup complete!"

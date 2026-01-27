@@ -1,0 +1,18 @@
+# Duet TURN Server - Terraform Variables
+# Copy to terraform.tfvars and fill in values
+
+# DigitalOcean API token
+# Create at: https://cloud.digitalocean.com/account/api/tokens
+do_token = "dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Deployment region
+# Options: nyc1, nyc3, sfo3, lon1, fra1, sgp1, blr1, tor1
+region = "nyc1"
+
+# TURN server credentials
+turn_username = "duet"
+turn_password = "generate-with-openssl-rand-hex-32"
+
+# Optional: Domain for TLS (recommended for production)
+# domain = "turn.yourdomain.com"
+# email = "admin@yourdomain.com"

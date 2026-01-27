@@ -1,0 +1,102 @@
+name: Deploy TURN Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      region:
+        description: 'Deployment region'
+        required: true
+        type: choice
+        default: 'nyc1'
+        options:
+          - nyc1
+          - sfo3
+          - lon1
+          - fra1
+          - sgp1
+      domain:
+        description: 'Domain for TLS (optional)'
+        required: false
+        type: string
+      email:
+        description: 'Email for Let''s Encrypt (required if domain set)'
+        required: false
+        type: string
+
+env:
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+  TF_VAR_turn_username: ${{ secrets.TURN_USERNAME }}
+  TF_VAR_turn_password: ${{ secrets.TURN_PASSWORD }}
+  TF_VAR_region: ${{ github.event.inputs.region }}
+  TF_VAR_domain: ${{ github.event.inputs.domain }}
+  TF_VAR_email: ${{ github.event.inputs.email }}
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+
+      - name: Get Outputs
+        if: github.event.inputs.action == 'apply'
+        id: outputs
+        run: |
+          echo "turn_ip=$(terraform output -raw turn_server_ip)" >> $GITHUB_OUTPUT
+          echo "turn_url=$(terraform output -raw turn_url)" >> $GITHUB_OUTPUT
+
+      - name: Update App Config Instructions
+        if: github.event.inputs.action == 'apply'
+        run: |
+          echo "## TURN Server Deployed! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Server IP:** ${{ steps.outputs.outputs.turn_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Update \`src/config/turn.ts\`:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`typescript" >> $GITHUB_STEP_SUMMARY
+          echo "const PRODUCTION_TURN: TurnServer[] = [" >> $GITHUB_STEP_SUMMARY
+          echo "  {" >> $GITHUB_STEP_SUMMARY
+          echo "    urls: 'turn:${{ steps.outputs.outputs.turn_ip }}:3478'," >> $GITHUB_STEP_SUMMARY
+          echo "    username: '\${{ secrets.TURN_USERNAME }}'," >> $GITHUB_STEP_SUMMARY
+          echo "    credential: '\${{ secrets.TURN_PASSWORD }}'," >> $GITHUB_STEP_SUMMARY
+          echo "  }," >> $GITHUB_STEP_SUMMARY
+          echo "  {" >> $GITHUB_STEP_SUMMARY
+          echo "    urls: 'turn:${{ steps.outputs.outputs.turn_ip }}:3478?transport=tcp'," >> $GITHUB_STEP_SUMMARY
+          echo "    username: '\${{ secrets.TURN_USERNAME }}'," >> $GITHUB_STEP_SUMMARY
+          echo "    credential: '\${{ secrets.TURN_PASSWORD }}'," >> $GITHUB_STEP_SUMMARY
+          echo "  }," >> $GITHUB_STEP_SUMMARY
+          echo "];" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
