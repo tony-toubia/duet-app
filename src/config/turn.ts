@@ -1,9 +1,12 @@
 /**
  * TURN Server Configuration
  *
- * For production, replace the fallback servers with your own coturn deployment.
- * See /server/README.md for deployment instructions.
+ * Production TURN credentials are read from EAS environment variables
+ * via expo-constants. Set TURN_SERVER_IP, TURN_USERNAME, and TURN_PASSWORD
+ * as EAS environment variables.
  */
+
+import Constants from 'expo-constants';
 
 export interface TurnServer {
   urls: string | string[];
@@ -17,25 +20,30 @@ export interface TurnConfig {
 
 /**
  * Production TURN server configuration
- *
- * To use your own TURN server:
- * 1. Deploy coturn using /server/docker-compose.yml
- * 2. Update the values below
- * 3. For dynamic credentials, fetch from your backend instead
+ * Reads from EAS environment variables via app.config.js extra
  */
-const PRODUCTION_TURN: TurnServer[] = [
-  // Your own TURN server (uncomment and configure)
-  // {
-  //   urls: 'turn:turn.yourdomain.com:3478',
-  //   username: 'duet',
-  //   credential: 'YOUR_TURN_PASSWORD',
-  // },
-  // {
-  //   urls: 'turn:turn.yourdomain.com:5349?transport=tcp',
-  //   username: 'duet',
-  //   credential: 'YOUR_TURN_PASSWORD',
-  // },
-];
+function getProductionTurn(): TurnServer[] {
+  const ip = Constants.expoConfig?.extra?.turnServerIp;
+  const username = Constants.expoConfig?.extra?.turnUsername;
+  const password = Constants.expoConfig?.extra?.turnPassword;
+
+  if (!ip || !username || !password) {
+    return [];
+  }
+
+  return [
+    {
+      urls: `turn:${ip}:3478`,
+      username,
+      credential: password,
+    },
+    {
+      urls: `turn:${ip}:3478?transport=tcp`,
+      username,
+      credential: password,
+    },
+  ];
+}
 
 /**
  * Fallback TURN servers (free, but less reliable for production)
@@ -72,7 +80,8 @@ const STUN_SERVERS: TurnServer[] = [
  */
 export function getIceServers(): TurnServer[] {
   // Use production TURN if configured, otherwise fall back
-  const turnServers = PRODUCTION_TURN.length > 0 ? PRODUCTION_TURN : FALLBACK_TURN;
+  const productionTurn = getProductionTurn();
+  const turnServers = productionTurn.length > 0 ? productionTurn : FALLBACK_TURN;
 
   return [...STUN_SERVERS, ...turnServers];
 }

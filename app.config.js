@@ -61,7 +61,10 @@ module.exports = {
     extra: {
       eas: {
         projectId: "201e2c63-094a-45f4-b8f5-2a08c00fca37"
-      }
+      },
+      turnServerIp: process.env.TURN_SERVER_IP || "",
+      turnUsername: process.env.TURN_USERNAME || "",
+      turnPassword: process.env.TURN_PASSWORD || "",
     },
     owner: "tonytoubia"
   }
