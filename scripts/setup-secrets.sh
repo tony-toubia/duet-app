@@ -17,6 +17,11 @@
 
 set -e
 
+# Windows: add common GitHub CLI install paths
+if [[ "$OS" == "Windows_NT" ]]; then
+    export PATH="$PATH:/c/Program Files/GitHub CLI:/c/Program Files (x86)/GitHub CLI"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,11 +43,23 @@ echo -e "${BOLD}╔════════════════════�
 echo -e "${BOLD}║   Duet App - GitHub Secrets Setup    ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 
-# Check gh CLI
-if ! command -v gh &> /dev/null; then
+# Check gh CLI - use gh.exe explicitly on Windows
+if [[ "$OS" == "Windows_NT" ]]; then
+    GH_CMD="gh.exe"
+else
+    GH_CMD="gh"
+fi
+
+if ! command -v "$GH_CMD" &> /dev/null; then
     echo -e "${RED}Error: GitHub CLI (gh) not found.${NC}"
     echo "Install: brew install gh (macOS) or see https://cli.github.com"
     exit 1
+fi
+
+# On Windows, alias gh to gh.exe for the rest of the script
+if [[ "$OS" == "Windows_NT" ]]; then
+    alias gh='gh.exe'
+    shopt -s expand_aliases
 fi
 
 # Check gh auth

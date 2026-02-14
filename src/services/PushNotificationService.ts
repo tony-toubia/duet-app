@@ -155,7 +155,7 @@ class PushNotificationService {
             [{ text: 'OK' }]
           );
         }
-        this.callbacks.onPartnerLeft?.(data.roomCode);
+        this.callbacks.onPartnerLeft?.(data.roomCode as string);
         break;
 
       default:

@@ -21,7 +21,7 @@ export function useDuetConnection() {
   const initialize = useCallback(async () => {
     try {
       setError(null);
-      const audioConfig = await DuetAudio.configureAudioSession();
+      const audioConfig = await DuetAudio.setupAudioSession();
       console.log('Audio session configured:', audioConfig);
 
       const oderId = await signIn();
@@ -81,7 +81,7 @@ export function useDuetConnection() {
   const disconnect = useCallback(async () => {
     webrtcRef.current?.disconnect();
     webrtcRef.current = null;
-    await DuetAudio.deactivateAudioSession();
+    await DuetAudio.stopAudioEngine();
     setIsInitialized(false);
     setRoomId(null);
     setRemoteStream(null);

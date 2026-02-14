@@ -1,33 +1,17 @@
 // src/services/firebase.ts
 // Firebase configuration for WebRTC signaling
+// Uses @react-native-firebase (native SDK)
 
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, remove, push, onChildAdded } from 'firebase/database';
-import { getAuth, signInAnonymously } from 'firebase/auth';
-
-// Replace with your Firebase config
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
-const auth = getAuth(app);
+import auth from '@react-native-firebase/auth';
+import database from '@react-native-firebase/database';
 
 export const signIn = async (): Promise<string> => {
-  const result = await signInAnonymously(auth);
+  const result = await auth().signInAnonymously();
   return result.user.uid;
 };
 
 export const createRoom = async (roomId: string, oderId: string) => {
-  const roomRef = ref(database, `rooms/${roomId}`);
-  await set(roomRef, {
+  await database().ref(`rooms/${roomId}`).set({
     createdBy: oderId,
     createdAt: Date.now(),
     members: { [oderId]: true }
@@ -36,37 +20,34 @@ export const createRoom = async (roomId: string, oderId: string) => {
 };
 
 export const joinRoom = async (roomId: string, oderId: string) => {
-  const memberRef = ref(database, `rooms/${roomId}/members/${oderId}`);
-  await set(memberRef, true);
+  await database().ref(`rooms/${roomId}/members/${oderId}`).set(true);
 };
 
 export const leaveRoom = async (roomId: string, oderId: string) => {
-  const memberRef = ref(database, `rooms/${roomId}/members/${oderId}`);
-  await remove(memberRef);
+  await database().ref(`rooms/${roomId}/members/${oderId}`).remove();
 };
 
 export const sendSignal = async (roomId: string, oderId: string, signal: any) => {
-  const signalRef = ref(database, `rooms/${roomId}/signals`);
-  await push(signalRef, { oderId, signal, timestamp: Date.now() });
+  await database().ref(`rooms/${roomId}/signals`).push({ oderId, signal, timestamp: Date.now() });
 };
 
 export const listenForSignals = (
-  roomId: string, 
+  roomId: string,
   myPeerId: string,
   onSignal: (signal: any, fromPeerId: string) => void
 ) => {
-  const signalsRef = ref(database, `rooms/${roomId}/signals`);
-  return onChildAdded(signalsRef, (snapshot) => {
+  const signalsRef = database().ref(`rooms/${roomId}/signals`);
+  signalsRef.on('child_added', (snapshot) => {
     const data = snapshot.val();
     if (data.oderId !== myPeerId) {
       onSignal(data.signal, data.oderId);
     }
   });
+  return () => signalsRef.off('child_added');
 };
 
 export const sendIceCandidate = async (roomId: string, oderId: string, candidate: any) => {
-  const candidateRef = ref(database, `rooms/${roomId}/candidates`);
-  await push(candidateRef, { oderId, candidate, timestamp: Date.now() });
+  await database().ref(`rooms/${roomId}/candidates`).push({ oderId, candidate, timestamp: Date.now() });
 };
 
 export const listenForIceCandidates = (
@@ -74,13 +55,12 @@ export const listenForIceCandidates = (
   myPeerId: string,
   onCandidate: (candidate: any) => void
 ) => {
-  const candidatesRef = ref(database, `rooms/${roomId}/candidates`);
-  return onChildAdded(candidatesRef, (snapshot) => {
+  const candidatesRef = database().ref(`rooms/${roomId}/candidates`);
+  candidatesRef.on('child_added', (snapshot) => {
     const data = snapshot.val();
     if (data.oderId !== myPeerId) {
       onCandidate(data.candidate);
     }
   });
+  return () => candidatesRef.off('child_added');
 };
-
-export { database, auth };

@@ -71,17 +71,19 @@ export class WebRTCService {
       });
     }
 
-    this.peerConnection.ontrack = (event) => {
+    const pc = this.peerConnection as any;
+
+    pc.ontrack = (event: any) => {
       if (event.streams?.[0]) this.callbacks.onRemoteStream(event.streams[0]);
     };
 
-    this.peerConnection.onicecandidate = (event) => {
+    pc.onicecandidate = (event: any) => {
       if (event.candidate) {
         sendIceCandidate(this.roomId, this.oderId, event.candidate.toJSON());
       }
     };
 
-    this.peerConnection.onconnectionstatechange = () => {
+    pc.onconnectionstatechange = () => {
       const state = this.peerConnection?.connectionState;
       if (state === 'connected') this.callbacks.onConnectionStateChange('connected');
       else if (state === 'disconnected' || state === 'closed') this.callbacks.onConnectionStateChange('disconnected');
