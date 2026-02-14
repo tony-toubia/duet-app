@@ -68,6 +68,11 @@ variable "email" {
   default     = ""
 }
 
+variable "ssh_public_key" {
+  description = "SSH public key for droplet access"
+  type        = string
+}
+
 # =====================
 # DIGITALOCEAN PROVIDER
 # =====================
@@ -104,7 +109,7 @@ resource "digitalocean_droplet" "turn" {
 
 resource "digitalocean_ssh_key" "turn" {
   name       = "duet-turn-key"
-  public_key = file("~/.ssh/id_rsa.pub")
+  public_key = var.ssh_public_key
 }
 
 # =====================
