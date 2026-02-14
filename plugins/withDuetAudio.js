@@ -552,11 +552,7 @@ class DuetAudioManager: RCTEventEmitter {
   private var silenceFrames = 0
   private let silenceThreshold = 10 // frames of silence before stopping
 
-  // Dynamic ducking state
-  private var isDucking = false
-  private var lastAudioPlayTime: Date = Date.distantPast
-  private let duckingTimeoutSeconds: TimeInterval = 0.5 // Unduck after 500ms of silence
-  private var duckingTimer: Timer?
+  // Ducking is handled via audio session category - set once when engine starts
 
   // Background task tracking
   private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -629,74 +625,19 @@ class DuetAudioManager: RCTEventEmitter {
     }
   }
 
-  // MARK: - Dynamic Ducking
-
-  private func startDucking() {
-    guard !isDucking else { return }
-
-    do {
-      let session = AVAudioSession.sharedInstance()
-      // Use both .mixWithOthers AND .duckOthers together
-      // Using .duckOthers alone causes music apps to pause instead of duck
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,
-        options: [
-          .mixWithOthers,        // Keep mixing (prevents pause/interruption)
-          .duckOthers,           // Lower other apps' volume
-          .allowBluetooth,
-          .allowBluetoothA2DP,
-          .defaultToSpeaker
-        ]
-      )
-      isDucking = true
-      print("[DuetAudio] Started ducking")
-    } catch {
-      print("[DuetAudio] Failed to start ducking: \\(error)")
-    }
-  }
-
-  private func stopDucking() {
-    guard isDucking else { return }
-
-    do {
-      let session = AVAudioSession.sharedInstance()
-      // Briefly deactivate with notification so other apps restore volume
-      try session.setActive(false, options: [.notifyOthersOnDeactivation])
-
-      // Switch back to non-ducking mode
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,
-        options: [
-          .mixWithOthers,
-          .allowBluetooth,
-          .allowBluetoothA2DP,
-          .defaultToSpeaker
-        ]
-      )
-      // Reactivate our session
-      try session.setActive(true)
-      isDucking = false
-      print("[DuetAudio] Stopped ducking")
-    } catch {
-      print("[DuetAudio] Failed to stop ducking: \\(error)")
-    }
-  }
-
-  private func scheduleDuckingTimeout() {
-    // Cancel any existing timer
-    duckingTimer?.invalidate()
-
-    // Schedule a new timer to check if we should unduck
-    duckingTimer = Timer.scheduledTimer(withTimeInterval: duckingTimeoutSeconds, repeats: false) { [weak self] _ in
-      guard let self = self else { return }
-      let timeSinceLastAudio = Date().timeIntervalSince(self.lastAudioPlayTime)
-      if timeSinceLastAudio >= self.duckingTimeoutSeconds {
-        self.stopDucking()
-      }
-    }
-  }
+  // MARK: - Audio Mixing
+  //
+  // iOS audio mixing strategy: We use .mixWithOthers WITHOUT .duckOthers.
+  //
+  // Why no .duckOthers:
+  // - Video streaming apps (Disney+, Netflix, YouTube) pause entirely when
+  //   they receive a ducking interruption from another app's audio session.
+  // - Music apps may also pause instead of lowering volume.
+  // - Each setCategory() call with .duckOthers sends interruption notifications.
+  //
+  // Instead, partner voice simply mixes on top of whatever media is playing.
+  // The user can adjust media volume via the app's volume controls.
+  // This is how Discord, Telegram, and other voice chat apps work on iOS.
 
   // MARK: - Audio Engine
 
@@ -717,6 +658,7 @@ class DuetAudioManager: RCTEventEmitter {
 
       // NOW activate the audio session - this is when we actually need it
       // Doing it here instead of setupAudioSession prevents interrupting music on app open
+      // Audio session uses .mixWithOthers so partner voice plays on top of media
       let session = AVAudioSession.sharedInstance()
       try session.setActive(true, options: [])
 
@@ -789,11 +731,6 @@ class DuetAudioManager: RCTEventEmitter {
     playerNode = nil
     mixerNode = nil
     audioConverter = nil
-
-    // Clean up ducking
-    duckingTimer?.invalidate()
-    duckingTimer = nil
-    stopDucking()
 
     // Deactivate session and notify other apps so they can resume
     do {
@@ -915,10 +852,6 @@ class DuetAudioManager: RCTEventEmitter {
       return
     }
 
-    // Start ducking when partner audio arrives
-    startDucking()
-    lastAudioPlayTime = Date()
-
     let format = AVAudioFormat(
       standardFormatWithSampleRate: sampleRate,
       channels: AVAudioChannelCount(channels)
@@ -926,9 +859,6 @@ class DuetAudioManager: RCTEventEmitter {
 
     if let buffer = dataToBuffer(data, format: format) {
       player.scheduleBuffer(buffer, completionHandler: nil)
-
-      // Schedule unduck after silence
-      scheduleDuckingTimeout()
 
       resolve(["played": true])
     } else {
@@ -1116,10 +1046,10 @@ class DuetAudioManager: RCTEventEmitter {
         .playAndRecord,
         mode: .default,  // default mode allows A2DP; voiceChat forces HFP
         options: [
+          .mixWithOthers,
           .allowBluetooth,
           .allowBluetoothA2DP,  // Critical for high-quality Bluetooth audio
-          .defaultToSpeaker,
-          isDucking ? .duckOthers : .mixWithOthers
+          .defaultToSpeaker
         ]
       )
       try session.setActive(true)

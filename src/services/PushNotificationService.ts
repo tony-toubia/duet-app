@@ -42,6 +42,11 @@ class PushNotificationService {
 
       console.log('[Push] Permission granted');
 
+      // Register for remote messages (required on iOS before getToken)
+      if (!messaging().isDeviceRegisteredForRemoteMessages) {
+        await messaging().registerDeviceForRemoteMessages();
+      }
+
       // Get and register token
       await this.registerToken();
 
