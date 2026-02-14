@@ -155,6 +155,14 @@ export const DuetAudio = {
     DuetAudioManager.mediaPrevious();
   },
 
+  /**
+   * Get current media playback state.
+   * Returns { isPlaying: boolean, unknown?: boolean }
+   */
+  async getMediaPlaybackState(): Promise<{ isPlaying: boolean; unknown?: boolean }> {
+    return await DuetAudioManager.getMediaPlaybackState();
+  },
+
   // =====================
   // EVENT LISTENERS
   // =====================

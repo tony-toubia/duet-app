@@ -492,6 +492,15 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun getMediaPlaybackState(resolve: Promise) {
+        val audioManager = reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val isPlaying = audioManager.isMusicActive
+        val result = Arguments.createMap()
+        result.putBoolean("isPlaying", isPlaying)
+        resolve.resolve(result)
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {}
 
     @ReactMethod
@@ -999,6 +1008,28 @@ class DuetAudioManager: RCTEventEmitter {
     DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRPreviousTrack)
   }
 
+  // Query current media playback state via MediaRemote
+  private typealias MRMediaRemoteGetNowPlayingInfoFunc = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
+
+  @objc
+  func getMediaPlaybackState(_ resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    DuetAudioManager.loadMediaRemote()
+    guard let bundle = DuetAudioManager.mediaRemoteBundle,
+          let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingInfo" as CFString) else {
+      // Fallback: can't detect, report unknown
+      resolve(["isPlaying": false, "unknown": true])
+      return
+    }
+
+    let getNowPlaying = unsafeBitCast(ptr, to: MRMediaRemoteGetNowPlayingInfoFunc.self)
+    getNowPlaying(DispatchQueue.main) { info in
+      // kMRMediaRemoteNowPlayingInfoPlaybackRate: 1.0 = playing, 0.0 = paused
+      let playbackRate = info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double ?? 0.0
+      let isPlaying = playbackRate > 0.0
+      resolve(["isPlaying": isPlaying])
+    }
+  }
+
   // MARK: - Utility Functions
 
   private func bufferToBase64(_ buffer: AVAudioPCMBuffer) -> String? {
@@ -1177,6 +1208,9 @@ RCT_EXTERN_METHOD(mediaPlay)
 RCT_EXTERN_METHOD(mediaPause)
 RCT_EXTERN_METHOD(mediaNext)
 RCT_EXTERN_METHOD(mediaPrevious)
+
+RCT_EXTERN_METHOD(getMediaPlaybackState:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
 
 @end
 `;

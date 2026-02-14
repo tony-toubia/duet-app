@@ -175,7 +175,10 @@ export const NavigationWidget: React.FC = () => {
   const installedMedia = mediaAppIds.filter(id => installedApps.has(id));
   const installedNav = navAppIds.filter(id => installedApps.has(id));
 
-  if (installedMedia.length === 0 && installedNav.length === 0) return null;
+  // Always show at least Spotify and Google Maps as fallbacks (they open in browser)
+  const displayMedia = installedMedia.length > 0 ? installedMedia : ['spotify' as AppId];
+  const displayNav = installedNav.length > 0 ? installedNav : ['google_maps' as AppId];
+  const displayApps = [...displayMedia, ...displayNav];
 
   return (
     <View style={styles.container}>
@@ -197,7 +200,7 @@ export const NavigationWidget: React.FC = () => {
 
       {/* App buttons in a flex-wrap row */}
       <View style={styles.appsRow}>
-        {[...installedMedia, ...installedNav].map(id => {
+        {displayApps.map(id => {
           const app = getAppInfo(id);
           return (
             <TouchableOpacity

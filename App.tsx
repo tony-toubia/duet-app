@@ -167,15 +167,42 @@ const AvatarCircle = ({
 };
 
 // =====================
-// Media Player Component (minimizable)
+// Media Player Component (minimizable, with playback state detection)
 // =====================
 const MediaPlayer = ({ minimized, onToggleMinimized }: { minimized: boolean; onToggleMinimized: () => void }) => {
   const { DuetAudio } = require('./src/native/DuetAudio');
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Poll for media playback state
+  useEffect(() => {
+    let mounted = true;
+
+    const pollState = async () => {
+      try {
+        const state = await DuetAudio.getMediaPlaybackState();
+        if (mounted && !state.unknown) {
+          setIsPlaying(state.isPlaying);
+        }
+      } catch {}
+    };
+
+    pollState();
+    const interval = setInterval(pollState, 2000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
+
+  const handlePlayPause = () => {
+    DuetAudio.mediaPlayPause();
+    // Optimistically toggle, will be corrected by next poll
+    setIsPlaying(prev => !prev);
+  };
 
   if (minimized) {
     return (
       <TouchableOpacity style={roomStyles.mediaMinimized} onPress={onToggleMinimized}>
-        <Text style={roomStyles.mediaMinimizedText}>Media Controls</Text>
+        <Text style={roomStyles.mediaMinimizedText}>
+          {isPlaying ? '▶  Now Playing' : '⏸  Paused'}
+        </Text>
         <Text style={roomStyles.mediaExpandIcon}>▲</Text>
       </TouchableOpacity>
     );
@@ -191,8 +218,8 @@ const MediaPlayer = ({ minimized, onToggleMinimized }: { minimized: boolean; onT
         <TouchableOpacity style={roomStyles.mediaSmallBtn} onPress={() => DuetAudio.mediaPrevious()}>
           <Text style={roomStyles.mediaSmallBtnText}>⏮</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={roomStyles.mediaPlayBtn} onPress={() => DuetAudio.mediaPlayPause()}>
-          <Text style={roomStyles.mediaPlayBtnText}>⏯</Text>
+        <TouchableOpacity style={roomStyles.mediaPlayBtn} onPress={handlePlayPause}>
+          <Text style={roomStyles.mediaPlayBtnText}>{isPlaying ? '⏸' : '▶'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={roomStyles.mediaSmallBtn} onPress={() => DuetAudio.mediaNext()}>
           <Text style={roomStyles.mediaSmallBtnText}>⏭</Text>
