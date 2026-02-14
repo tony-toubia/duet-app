@@ -16,6 +16,9 @@ module.exports = {
       supportsTablet: false,
       bundleIdentifier: "com.duet.app",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
+      entitlements: {
+        "aps-environment": "development"
+      },
       infoPlist: {
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
         UIBackgroundModes: ["audio", "voip"],

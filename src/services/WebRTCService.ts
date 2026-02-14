@@ -2,7 +2,6 @@ import {
   RTCPeerConnection,
   RTCSessionDescription,
   RTCIceCandidate,
-  mediaDevices,
 } from 'react-native-webrtc';
 import { getIceServers } from '@/config/turn';
 
@@ -44,7 +43,6 @@ export class WebRTCService {
   private peerConnection: RTCPeerConnection | null = null;
   private dataChannel: RTCDataChannel | null = null;
   private callbacks: WebRTCCallbacks;
-  private localStream: MediaStream | null = null;
 
   // Connection state
   private _connectionState: ConnectionState = 'disconnected';
@@ -129,33 +127,15 @@ export class WebRTCService {
         this.setupDataChannel(event.channel);
       };
 
-      // Handle incoming audio tracks - mute them since we use data channel for audio
-      // This prevents double audio (WebRTC track + data channel)
+      // No audio tracks are used - all audio goes via data channel
       pc.ontrack = (event: any) => {
-        console.log('[WebRTC] Received remote track:', event.track.kind);
-        // Mute incoming audio tracks - we receive audio via data channel instead
-        if (event.track.kind === 'audio') {
-          event.track.enabled = false;
-          console.log('[WebRTC] Muted incoming audio track (using data channel instead)');
-        }
+        console.log('[WebRTC] Unexpected remote track:', event.track.kind);
       };
 
-      // Get local audio stream (needed for WebRTC connection negotiation)
-      // Actual audio capture/transmission is handled by native module via data channel
-      this.localStream = await mediaDevices.getUserMedia({
-        audio: true,
-        video: false,
-      }) as any;
-
-      // Add tracks to peer connection (required for proper WebRTC negotiation)
-      // BUT mute the local audio track - we send audio via data channel, not WebRTC track
-      this.localStream!.getTracks().forEach((track: any) => {
-        if (track.kind === 'audio') {
-          track.enabled = false;  // Mute - actual audio goes via data channel
-          console.log('[WebRTC] Local audio track muted (using data channel instead)');
-        }
-        (this.peerConnection as any)?.addTrack(track, this.localStream!);
-      });
+      // NOTE: We do NOT call getUserMedia here. Audio capture is handled entirely
+      // by the native DuetAudio module and sent via data channel, not WebRTC audio tracks.
+      // Calling getUserMedia would claim the mic and conflict with the native AudioRecord
+      // on Android, causing the native capture to silently fail.
       
       console.log('[WebRTC] Initialized successfully');
     } catch (error) {
@@ -181,11 +161,8 @@ export class WebRTCService {
     });
     this.setupDataChannel(channel as any);
     
-    // Create and set local offer
-    const offer = await this.peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: false,
-    });
+    // Create and set local offer (no audio/video tracks - using data channel only)
+    const offer = await this.peerConnection.createOffer({} as any);
     
     await this.peerConnection.setLocalDescription(offer);
     
@@ -340,9 +317,6 @@ export class WebRTCService {
     console.log('[WebRTC] Closing connection');
     this.dataChannel?.close();
     this.dataChannel = null;
-
-    this.localStream?.getTracks().forEach((track) => track.stop());
-    this.localStream = null;
 
     this.peerConnection?.close();
     this.peerConnection = null;

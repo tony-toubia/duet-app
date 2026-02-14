@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 import { DuetAudio } from '@/native/DuetAudio';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
@@ -192,6 +192,16 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     set({ roomCode });
     crashlyticsService.logRoomCreated(roomCode);
 
+    // Request mic permission on Android (iOS handles via infoPlist)
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.warn('[Store] Microphone permission denied');
+      }
+    }
+
     // Start audio engine
     await DuetAudio.startAudioEngine();
     crashlyticsService.logAudioEngineStart();
@@ -267,6 +277,16 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     await signaling.joinRoom(code);
     set({ partnerId: 'partner' });
     crashlyticsService.logRoomJoined(code);
+
+    // Request mic permission on Android (iOS handles via infoPlist)
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      );
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.warn('[Store] Microphone permission denied');
+      }
+    }
 
     // Start audio engine
     await DuetAudio.startAudioEngine();

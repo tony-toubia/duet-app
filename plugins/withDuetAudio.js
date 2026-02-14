@@ -636,22 +636,21 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      // Use .default mode (not .voiceChat) to preserve A2DP Bluetooth routing
-      // .voiceChat mode forces HFP which has lower audio quality
+      // Use both .mixWithOthers AND .duckOthers together
+      // Using .duckOthers alone causes music apps to pause instead of duck
       try session.setCategory(
         .playAndRecord,
-        mode: .default,  // Preserve audio routing (A2DP stays active)
+        mode: .default,
         options: [
-          .duckOthers,           // Duck other apps
+          .mixWithOthers,        // Keep mixing (prevents pause/interruption)
+          .duckOthers,           // Lower other apps' volume
           .allowBluetooth,
-          .allowBluetoothA2DP,   // Critical: keep A2DP for high quality music
+          .allowBluetoothA2DP,
           .defaultToSpeaker
         ]
       )
-      // Reactivate to apply the ducking
-      try session.setActive(true)
       isDucking = true
-      print("[DuetAudio] Started ducking (mode: default)")
+      print("[DuetAudio] Started ducking")
     } catch {
       print("[DuetAudio] Failed to start ducking: \\(error)")
     }
@@ -662,21 +661,24 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      // Switch back to non-ducking mode while preserving audio routing
+      // Briefly deactivate with notification so other apps restore volume
+      try session.setActive(false, options: [.notifyOthersOnDeactivation])
+
+      // Switch back to non-ducking mode
       try session.setCategory(
         .playAndRecord,
-        mode: .default,  // Keep default mode for consistent routing
+        mode: .default,
         options: [
+          .mixWithOthers,
           .allowBluetooth,
           .allowBluetoothA2DP,
-          .defaultToSpeaker,
-          .mixWithOthers         // Back to mixing without ducking
+          .defaultToSpeaker
         ]
       )
-      // Reactivate to apply the change
+      // Reactivate our session
       try session.setActive(true)
       isDucking = false
-      print("[DuetAudio] Stopped ducking (music resumes)")
+      print("[DuetAudio] Stopped ducking")
     } catch {
       print("[DuetAudio] Failed to stop ducking: \\(error)")
     }
