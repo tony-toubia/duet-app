@@ -106,6 +106,16 @@ export const DuetAudio = {
     DuetAudioManager.setVadThreshold(threshold);
   },
 
+  /**
+   * iOS only: Enable/disable ducking of other audio when partner speaks.
+   * When enabled, other apps' audio volume lowers during partner speech.
+   * Warning: some apps (Spotify, Disney+) may pause instead of ducking.
+   * Default: false (mixing only).
+   */
+  setDuckingEnabled(enabled: boolean): void {
+    DuetAudioManager.setDuckingEnabled(enabled);
+  },
+
   // =====================
   // MEDIA CONTROLS
   // =====================

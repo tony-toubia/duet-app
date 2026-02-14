@@ -552,7 +552,9 @@ class DuetAudioManager: RCTEventEmitter {
   private var silenceFrames = 0
   private let silenceThreshold = 10 // frames of silence before stopping
 
-  // Ducking is handled via audio session category - set once when engine starts
+  // Ducking toggle - default OFF (mix only). User can enable to duck other apps,
+  // but some apps (Spotify, Disney+) may pause instead of ducking.
+  private var duckingEnabled = false
 
   // Background task tracking
   private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -601,19 +603,46 @@ class DuetAudioManager: RCTEventEmitter {
     resolve(["success": true, "sampleRate": outputSampleRate])
   }
 
-  // MARK: - Audio Mixing
+  // MARK: - Audio Session Options
   //
-  // iOS audio mixing strategy: We use .mixWithOthers WITHOUT .duckOthers.
-  //
-  // Why no .duckOthers:
-  // - Video streaming apps (Disney+, Netflix, YouTube) pause entirely when
-  //   they receive a ducking interruption from another app's audio session.
-  // - Music apps may also pause instead of lowering volume.
-  // - Each setCategory() call with .duckOthers sends interruption notifications.
-  //
-  // Instead, partner voice simply mixes on top of whatever media is playing.
-  // The user can adjust media volume via the app's volume controls.
-  // This is how Discord, Telegram, and other voice chat apps work on iOS.
+  // Default: .mixWithOthers only (no ducking). Partner voice overlays on top.
+  // Optional: User can enable ducking (.duckOthers) which lowers other apps' volume
+  // when partner speaks. Warning: some apps (Spotify, Disney+) may pause instead.
+
+  private func audioSessionOptions() -> AVAudioSession.CategoryOptions {
+    var options: AVAudioSession.CategoryOptions = [
+      .mixWithOthers,
+      .allowBluetooth,
+      .allowBluetoothA2DP,
+      .defaultToSpeaker
+    ]
+    if duckingEnabled {
+      options.insert(.duckOthers)
+    }
+    return options
+  }
+
+  @objc
+  func setDuckingEnabled(_ enabled: Bool) {
+    let changed = duckingEnabled != enabled
+    duckingEnabled = enabled
+    print("[DuetAudio] Ducking \\(enabled ? "enabled" : "disabled")")
+
+    // If the engine is running, reconfigure the audio session live
+    if changed, audioEngine?.isRunning == true {
+      do {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+          .playAndRecord,
+          mode: .default,
+          options: audioSessionOptions()
+        )
+        print("[DuetAudio] Audio session reconfigured with ducking=\\(enabled)")
+      } catch {
+        print("[DuetAudio] Failed to reconfigure ducking: \\(error)")
+      }
+    }
+  }
 
   // MARK: - Audio Engine
 
@@ -640,12 +669,7 @@ class DuetAudioManager: RCTEventEmitter {
       try session.setCategory(
         .playAndRecord,
         mode: .default,
-        options: [
-          .mixWithOthers,        // Mix with other apps (CRITICAL - prevents pause)
-          .allowBluetooth,
-          .allowBluetoothA2DP,
-          .defaultToSpeaker
-        ]
+        options: audioSessionOptions()
       )
       try session.setPreferredSampleRate(outputSampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
@@ -877,46 +901,84 @@ class DuetAudioManager: RCTEventEmitter {
   }
 
   // MARK: - Media Controls
-  // Must dispatch to main thread - MPMusicPlayerController requires it
+  //
+  // iOS has no public API to control third-party media apps (Spotify, etc.)
+  // like Android's dispatchMediaKeyEvent. MPMusicPlayerController.systemMusicPlayer
+  // only works with Apple Music and crashes with other media apps.
+  //
+  // We use the private MediaRemote.framework via runtime dynamic linking to send
+  // system-wide media commands. This is the same approach used by Discord, Shazam,
+  // and other popular apps. The functions are loaded at runtime to avoid linking issues.
+
+  private static var mediaRemoteBundle: CFBundle?
+  private static var mediaRemoteLoaded = false
+
+  private typealias MRMediaRemoteSendCommandFunc = @convention(c) (Int, AnyObject?) -> Bool
+
+  private static func loadMediaRemote() {
+    guard !mediaRemoteLoaded else { return }
+    mediaRemoteLoaded = true
+
+    let path = "/System/Library/PrivateFrameworks/MediaRemote.framework"
+    guard let url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, path as CFString, .cfurlposixPathStyle, true) else {
+      print("[DuetAudio] Failed to create MediaRemote URL")
+      return
+    }
+    mediaRemoteBundle = CFBundleCreate(kCFAllocatorDefault, url)
+    if let bundle = mediaRemoteBundle {
+      CFBundleLoadExecutable(bundle)
+      print("[DuetAudio] MediaRemote.framework loaded successfully")
+    } else {
+      print("[DuetAudio] Failed to load MediaRemote.framework")
+    }
+  }
+
+  private static func sendMediaRemoteCommand(_ command: Int) {
+    loadMediaRemote()
+    guard let bundle = mediaRemoteBundle else {
+      print("[DuetAudio] MediaRemote not available")
+      return
+    }
+
+    guard let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteSendCommand" as CFString) else {
+      print("[DuetAudio] MRMediaRemoteSendCommand not found")
+      return
+    }
+
+    let sendCommand = unsafeBitCast(ptr, to: MRMediaRemoteSendCommandFunc.self)
+    let _ = sendCommand(command, nil)
+  }
+
+  // MediaRemote command constants
+  private static let kMRPlay = 0
+  private static let kMRPause = 1
+  private static let kMRTogglePlayPause = 2
+  private static let kMRNextTrack = 4
+  private static let kMRPreviousTrack = 5
 
   @objc
   func mediaPlayPause() {
-    DispatchQueue.main.async {
-      let player = MPMusicPlayerController.systemMusicPlayer
-      if player.playbackState == .playing {
-        player.pause()
-      } else {
-        player.play()
-      }
-    }
+    DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRTogglePlayPause)
   }
 
   @objc
   func mediaPlay() {
-    DispatchQueue.main.async {
-      MPMusicPlayerController.systemMusicPlayer.play()
-    }
+    DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRPlay)
   }
 
   @objc
   func mediaPause() {
-    DispatchQueue.main.async {
-      MPMusicPlayerController.systemMusicPlayer.pause()
-    }
+    DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRPause)
   }
 
   @objc
   func mediaNext() {
-    DispatchQueue.main.async {
-      MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
-    }
+    DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRNextTrack)
   }
 
   @objc
   func mediaPrevious() {
-    DispatchQueue.main.async {
-      MPMusicPlayerController.systemMusicPlayer.skipToPreviousItem()
-    }
+    DuetAudioManager.sendMediaRemoteCommand(DuetAudioManager.kMRPreviousTrack)
   }
 
   // MARK: - Utility Functions
@@ -1044,12 +1106,7 @@ class DuetAudioManager: RCTEventEmitter {
       try session.setCategory(
         .playAndRecord,
         mode: .default,  // default mode allows A2DP; voiceChat forces HFP
-        options: [
-          .mixWithOthers,
-          .allowBluetooth,
-          .allowBluetoothA2DP,  // Critical for high-quality Bluetooth audio
-          .defaultToSpeaker
-        ]
+        options: audioSessionOptions()
       )
       try session.setActive(true)
       print("[DuetAudio] Audio session reconfigured for Bluetooth A2DP")
@@ -1095,6 +1152,7 @@ RCT_EXTERN_METHOD(playAudio:(NSString *)base64Audio
 RCT_EXTERN_METHOD(setMuted:(BOOL)muted)
 RCT_EXTERN_METHOD(setDeafened:(BOOL)deafened)
 RCT_EXTERN_METHOD(setVadThreshold:(float)threshold)
+RCT_EXTERN_METHOD(setDuckingEnabled:(BOOL)enabled)
 
 RCT_EXTERN_METHOD(mediaPlayPause)
 RCT_EXTERN_METHOD(mediaPlay)

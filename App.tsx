@@ -1,17 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   TextInput,
   StyleSheet,
-  SafeAreaView,
   Alert,
   ActivityIndicator,
   Share,
   Animated,
-  Platform,
   ScrollView,
+  useWindowDimensions,
+  Switch,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,15 +32,28 @@ const colors = {
   danger: '#ef4444',
 };
 
+// Responsive breakpoint
+const TABLET_MIN_WIDTH = 600;
+const CONTENT_MAX_WIDTH = 480;
+
+function useLayout() {
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= TABLET_MIN_WIDTH;
+  const contentWidth = isTablet ? Math.min(CONTENT_MAX_WIDTH, width * 0.6) : width;
+  const scale = isTablet ? 1.25 : 1;
+  return { width, height, isTablet, contentWidth, scale };
+}
+
 // VAD Sensitivity Control Component
 const SensitivityControl = ({
   value,
-  onChange
+  onChange,
+  scale,
 }: {
   value: number;
   onChange: (val: number) => void;
+  scale: number;
 }) => {
-  // 5 levels: Very Low (20), Low (35), Medium (50), High (65), Very High (80)
   const levels = [
     { value: 20, label: 'Low' },
     { value: 35, label: '' },
@@ -48,17 +62,20 @@ const SensitivityControl = ({
     { value: 80, label: 'High' },
   ];
 
+  const dotSize = 32 * scale;
+
   return (
     <View style={styles.sensitivityContainer}>
-      <Text style={styles.sensitivityTitle}>Mic Sensitivity</Text>
+      <Text style={[styles.sensitivityTitle, { fontSize: 12 * scale }]}>Mic Sensitivity</Text>
       <View style={styles.sensitivityLevels}>
-        {levels.map((level, index) => {
+        {levels.map((level) => {
           const isActive = value >= level.value - 7;
           return (
             <TouchableOpacity
               key={level.value}
               style={[
                 styles.sensitivityDot,
+                { width: dotSize, height: dotSize, borderRadius: dotSize / 2 },
                 isActive && styles.sensitivityDotActive,
               ]}
               onPress={() => onChange(level.value)}
@@ -66,6 +83,7 @@ const SensitivityControl = ({
               {level.label ? (
                 <Text style={[
                   styles.sensitivityLabel,
+                  { fontSize: 9 * scale },
                   isActive && styles.sensitivityLabelActive,
                 ]}>{level.label}</Text>
               ) : null}
@@ -73,7 +91,7 @@ const SensitivityControl = ({
           );
         })}
       </View>
-      <Text style={styles.sensitivityHint}>
+      <Text style={[styles.sensitivityHint, { fontSize: 11 * scale }]}>
         {value < 35 ? 'Best for quiet environments' :
          value > 65 ? 'Best for loud environments' :
          'Balanced for most situations'}
@@ -83,7 +101,7 @@ const SensitivityControl = ({
 };
 
 // Media Control Component
-const MediaControls = () => {
+const MediaControls = ({ scale }: { scale: number }) => {
   const [isPlaying, setIsPlaying] = useState(true);
   const { DuetAudio } = require('./src/native/DuetAudio');
 
@@ -100,18 +118,23 @@ const MediaControls = () => {
     DuetAudio.mediaNext();
   };
 
+  const mainBtnSize = 50 * scale;
+
   return (
     <View style={styles.mediaControls}>
-      <Text style={styles.mediaTitle}>Media Controls</Text>
+      <Text style={[styles.mediaTitle, { fontSize: 12 * scale }]}>Media Controls</Text>
       <View style={styles.mediaButtons}>
         <TouchableOpacity style={styles.mediaButton} onPress={handlePrevious}>
-          <Text style={styles.mediaButtonText}>⏮</Text>
+          <Text style={[styles.mediaButtonText, { fontSize: 24 * scale }]}>⏮</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.mediaButton, styles.mediaButtonMain]} onPress={handlePlayPause}>
-          <Text style={styles.mediaButtonTextMain}>{isPlaying ? '⏸' : '▶️'}</Text>
+        <TouchableOpacity
+          style={[styles.mediaButtonMain, { width: mainBtnSize, height: mainBtnSize, borderRadius: mainBtnSize / 2 }]}
+          onPress={handlePlayPause}
+        >
+          <Text style={{ fontSize: 20 * scale }}>{isPlaying ? '⏸' : '▶️'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.mediaButton} onPress={handleNext}>
-          <Text style={styles.mediaButtonText}>⏭</Text>
+          <Text style={[styles.mediaButtonText, { fontSize: 24 * scale }]}>⏭</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -123,11 +146,12 @@ function AppContent() {
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const insets = useSafeAreaInsets();
+  const { isTablet, contentWidth, scale } = useLayout();
 
   // Animated values for visual feedback
   const speakingScale = React.useRef(new Animated.Value(1)).current;
   const partnerScale = React.useRef(new Animated.Value(1)).current;
-  
+
   const {
     connectionState,
     roomCode,
@@ -136,6 +160,7 @@ function AppContent() {
     isSpeaking,
     isPartnerSpeaking,
     vadSensitivity,
+    duckingEnabled,
     initialize,
     createRoom,
     joinRoom,
@@ -143,9 +168,9 @@ function AppContent() {
     setMuted,
     setDeafened,
     setVadSensitivity,
+    setDuckingEnabled,
   } = useDuetStore();
-  
-  // Initialize on mount
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -156,33 +181,30 @@ function AppContent() {
       }
     };
     init();
-    
+
     return () => {
       leaveRoom();
     };
   }, []);
-  
-  // Animate when speaking
+
   useEffect(() => {
     Animated.spring(speakingScale, {
       toValue: isSpeaking ? 1.1 : 1,
       useNativeDriver: true,
     }).start();
   }, [isSpeaking]);
-  
+
   useEffect(() => {
     Animated.spring(partnerScale, {
       toValue: isPartnerSpeaking ? 1.1 : 1,
       useNativeDriver: true,
     }).start();
   }, [isPartnerSpeaking]);
-  
+
   const handleCreateRoom = async () => {
     setIsLoading(true);
     try {
       const code = await createRoom();
-      
-      // Offer to share the code
       Alert.alert(
         'Room Created',
         `Share this code with your partner: ${code}`,
@@ -197,13 +219,12 @@ function AppContent() {
       setIsLoading(false);
     }
   };
-  
+
   const handleJoinRoom = async () => {
     if (joinCode.length !== 6) {
       Alert.alert('Invalid Code', 'Please enter a 6-character room code');
       return;
     }
-    
     setIsLoading(true);
     try {
       await joinRoom(joinCode.toUpperCase());
@@ -213,7 +234,7 @@ function AppContent() {
       setIsLoading(false);
     }
   };
-  
+
   const handleLeave = () => {
     Alert.alert(
       'Leave Room',
@@ -224,7 +245,7 @@ function AppContent() {
       ]
     );
   };
-  
+
   const shareCode = async (code: string) => {
     try {
       await Share.share({
@@ -234,7 +255,7 @@ function AppContent() {
       console.log('Share cancelled');
     }
   };
-  
+
   const getConnectionColor = () => {
     switch (connectionState) {
       case 'connected': return colors.success;
@@ -244,7 +265,7 @@ function AppContent() {
       default: return colors.textMuted;
     }
   };
-  
+
   const getConnectionText = () => {
     switch (connectionState) {
       case 'connected': return 'Connected';
@@ -254,7 +275,22 @@ function AppContent() {
       default: return 'Disconnected';
     }
   };
-  
+
+  // Responsive sizes
+  const voiceIndicatorSize = 120 * scale;
+  const voiceEmojiSize = 36 * scale;
+  const controlEmojiSize = 24 * scale;
+  const controlMinWidth = 80 * scale;
+
+  // Wrapper that centers content on tablet
+  const ContentWrapper = ({ children, style }: { children: React.ReactNode; style?: any }) => (
+    <View style={[{ width: '100%', alignItems: 'center' }, style]}>
+      <View style={{ width: contentWidth, maxWidth: '100%' }}>
+        {children}
+      </View>
+    </View>
+  );
+
   if (!isInitialized) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -274,30 +310,28 @@ function AppContent() {
         <StatusBar style="light" />
 
         <View style={styles.header}>
-          <Text style={styles.title}>Duet</Text>
-          <Text style={styles.subtitle}>Stay connected while exploring</Text>
+          <Text style={[styles.title, { fontSize: 32 * scale }]}>Duet</Text>
+          <Text style={[styles.subtitle, { fontSize: 16 * scale }]}>Stay connected while exploring</Text>
         </View>
-        
+
         <View style={styles.lobbyContent}>
-          {/* Create Room */}
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[styles.primaryButton, { paddingVertical: 16 * scale, paddingHorizontal: 48 * scale, minWidth: 200 * scale }]}
             onPress={handleCreateRoom}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color={colors.text} />
             ) : (
-              <Text style={styles.buttonText}>Create Room</Text>
+              <Text style={[styles.buttonText, { fontSize: 18 * scale }]}>Create Room</Text>
             )}
           </TouchableOpacity>
-          
-          <Text style={styles.orText}>or</Text>
-          
-          {/* Join Room */}
+
+          <Text style={[styles.orText, { fontSize: 16 * scale }]}>or</Text>
+
           <View style={styles.joinSection}>
             <TextInput
-              style={styles.codeInput}
+              style={[styles.codeInput, { fontSize: 20 * scale, width: 180 * scale, paddingVertical: 16 * scale }]}
               placeholder="ENTER CODE"
               placeholderTextColor={colors.textMuted}
               value={joinCode}
@@ -307,17 +341,17 @@ function AppContent() {
               autoCorrect={false}
             />
             <TouchableOpacity
-              style={[styles.secondaryButton, joinCode.length !== 6 && styles.buttonDisabled]}
+              style={[styles.secondaryButton, { paddingVertical: 16 * scale, paddingHorizontal: 24 * scale }, joinCode.length !== 6 && styles.buttonDisabled]}
               onPress={handleJoinRoom}
               disabled={isLoading || joinCode.length !== 6}
             >
-              <Text style={styles.buttonText}>Join</Text>
+              <Text style={[styles.buttonText, { fontSize: 18 * scale }]}>Join</Text>
             </TouchableOpacity>
           </View>
         </View>
-        
+
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
+          <Text style={[styles.footerText, { fontSize: 13 * scale }]}>
             Play music on Spotify or Apple Music{'\n'}
             Your partner's voice will overlay on top
           </Text>
@@ -326,99 +360,133 @@ function AppContent() {
     );
   }
 
-  // Connected view
+  // Connected view - use ScrollView so it works on all screen sizes
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Duet</Text>
-        <View style={styles.connectionStatus}>
-          <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
-          <Text style={[styles.statusText, { color: getConnectionColor() }]}>
-            {getConnectionText()}
-          </Text>
+      <ScrollView
+        contentContainerStyle={[styles.connectedScroll, { alignItems: 'center' }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ width: contentWidth, maxWidth: '100%' }}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={[styles.title, { fontSize: 32 * scale }]}>Duet</Text>
+            <View style={styles.connectionStatus}>
+              <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
+              <Text style={[styles.statusText, { color: getConnectionColor(), fontSize: 14 * scale }]}>
+                {getConnectionText()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Room Code */}
+          <View style={styles.roomCodeSection}>
+            <Text style={[styles.roomCodeLabel, { fontSize: 14 * scale }]}>Room Code</Text>
+            <TouchableOpacity onPress={() => shareCode(roomCode)}>
+              <Text style={[styles.roomCode, { fontSize: 36 * scale }]}>{roomCode}</Text>
+            </TouchableOpacity>
+            <Text style={[styles.tapToShare, { fontSize: 12 * scale }]}>Tap to share</Text>
+          </View>
+
+          {/* Voice Indicators */}
+          <View style={[styles.voiceSection, { gap: 32 * scale, paddingVertical: 24 * scale }]}>
+            <Animated.View style={[
+              styles.voiceIndicator,
+              {
+                width: voiceIndicatorSize,
+                height: voiceIndicatorSize,
+                borderRadius: voiceIndicatorSize / 2,
+                transform: [{ scale: speakingScale }],
+              },
+              isSpeaking && styles.voiceIndicatorActive,
+            ]}>
+              <Text style={{ fontSize: voiceEmojiSize }}>🎤</Text>
+              <Text style={[styles.voiceLabel, { fontSize: 14 * scale }]}>You</Text>
+              {isMuted && <Text style={[styles.mutedLabel, { fontSize: 10 * scale }]}>MUTED</Text>}
+            </Animated.View>
+
+            <Animated.View style={[
+              styles.voiceIndicator,
+              {
+                width: voiceIndicatorSize,
+                height: voiceIndicatorSize,
+                borderRadius: voiceIndicatorSize / 2,
+                transform: [{ scale: partnerScale }],
+              },
+              isPartnerSpeaking && styles.voiceIndicatorActive,
+            ]}>
+              <Text style={{ fontSize: voiceEmojiSize }}>👤</Text>
+              <Text style={[styles.voiceLabel, { fontSize: 14 * scale }]}>Partner</Text>
+              {isDeafened && <Text style={[styles.mutedLabel, { fontSize: 10 * scale }]}>DEAFENED</Text>}
+            </Animated.View>
+          </View>
+
+          {/* Controls */}
+          <View style={[styles.controls, { gap: 16 * scale }]}>
+            <TouchableOpacity
+              style={[styles.controlButton, { minWidth: controlMinWidth, paddingVertical: 16 * scale, paddingHorizontal: 20 * scale }, isMuted && styles.controlButtonActive]}
+              onPress={() => setMuted(!isMuted)}
+            >
+              <Text style={{ fontSize: controlEmojiSize }}>{isMuted ? '🔇' : '🎤'}</Text>
+              <Text style={[styles.controlLabel, { fontSize: 12 * scale }]}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.controlButton, { minWidth: controlMinWidth, paddingVertical: 16 * scale, paddingHorizontal: 20 * scale }, isDeafened && styles.controlButtonActive]}
+              onPress={() => setDeafened(!isDeafened)}
+            >
+              <Text style={{ fontSize: controlEmojiSize }}>{isDeafened ? '🔕' : '🔊'}</Text>
+              <Text style={[styles.controlLabel, { fontSize: 12 * scale }]}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.controlButton, styles.leaveButton, { minWidth: controlMinWidth, paddingVertical: 16 * scale, paddingHorizontal: 20 * scale }]}
+              onPress={handleLeave}
+            >
+              <Text style={{ fontSize: controlEmojiSize }}>📵</Text>
+              <Text style={[styles.controlLabel, { fontSize: 12 * scale }]}>Leave</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Media Controls */}
+          <MediaControls scale={scale} />
+
+          {/* Sensitivity Control */}
+          <SensitivityControl value={vadSensitivity} onChange={setVadSensitivity} scale={scale} />
+
+          {/* iOS Ducking Toggle */}
+          {Platform.OS === 'ios' && (
+            <View style={[styles.duckingContainer, { marginHorizontal: 20 }]}>
+              <View style={styles.duckingRow}>
+                <View style={styles.duckingTextContainer}>
+                  <Text style={[styles.duckingTitle, { fontSize: 12 * scale }]}>Lower other audio</Text>
+                  <Text style={[styles.duckingWarning, { fontSize: 10 * scale }]}>Some apps may pause instead</Text>
+                </View>
+                <Switch
+                  value={duckingEnabled}
+                  onValueChange={setDuckingEnabled}
+                  trackColor={{ false: colors.secondary, true: colors.primary }}
+                  thumbColor={colors.text}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Navigation Widget */}
+          <NavigationWidget />
+
+          {/* Tip */}
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { fontSize: 13 * scale }]}>
+              {duckingEnabled && Platform.OS === 'ios'
+                ? `Other audio lowers when\nyour partner speaks`
+                : `Your partner's voice mixes over\nany playing media`}
+            </Text>
+          </View>
         </View>
-      </View>
-      
-      {/* Room Code */}
-      <View style={styles.roomCodeSection}>
-        <Text style={styles.roomCodeLabel}>Room Code</Text>
-        <TouchableOpacity onPress={() => shareCode(roomCode)}>
-          <Text style={styles.roomCode}>{roomCode}</Text>
-        </TouchableOpacity>
-        <Text style={styles.tapToShare}>Tap to share</Text>
-      </View>
-      
-      {/* Voice Indicators */}
-      <View style={styles.voiceSection}>
-        {/* You */}
-        <Animated.View style={[
-          styles.voiceIndicator,
-          { transform: [{ scale: speakingScale }] },
-          isSpeaking && styles.voiceIndicatorActive,
-        ]}>
-          <Text style={styles.voiceEmoji}>🎤</Text>
-          <Text style={styles.voiceLabel}>You</Text>
-          {isMuted && <Text style={styles.mutedLabel}>MUTED</Text>}
-        </Animated.View>
-        
-        {/* Partner */}
-        <Animated.View style={[
-          styles.voiceIndicator,
-          { transform: [{ scale: partnerScale }] },
-          isPartnerSpeaking && styles.voiceIndicatorActive,
-        ]}>
-          <Text style={styles.voiceEmoji}>👤</Text>
-          <Text style={styles.voiceLabel}>Partner</Text>
-          {isDeafened && <Text style={styles.mutedLabel}>DEAFENED</Text>}
-        </Animated.View>
-      </View>
-      
-      {/* Controls */}
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.controlButton, isMuted && styles.controlButtonActive]}
-          onPress={() => setMuted(!isMuted)}
-        >
-          <Text style={styles.controlEmoji}>{isMuted ? '🔇' : '🎤'}</Text>
-          <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.controlButton, isDeafened && styles.controlButtonActive]}
-          onPress={() => setDeafened(!isDeafened)}
-        >
-          <Text style={styles.controlEmoji}>{isDeafened ? '🔕' : '🔊'}</Text>
-          <Text style={styles.controlLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.controlButton, styles.leaveButton]}
-          onPress={handleLeave}
-        >
-          <Text style={styles.controlEmoji}>📵</Text>
-          <Text style={styles.controlLabel}>Leave</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Media Controls */}
-      <MediaControls />
-
-      {/* Sensitivity Control */}
-      <SensitivityControl value={vadSensitivity} onChange={setVadSensitivity} />
-
-      {/* Navigation Widget */}
-      <NavigationWidget />
-
-      {/* Tip */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          Music will automatically lower{'\n'}
-          when your partner speaks
-        </Text>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -441,6 +509,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  connectedScroll: {
+    flexGrow: 1,
+    paddingBottom: 16,
   },
   header: {
     alignItems: 'center',
@@ -545,7 +617,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   voiceSection: {
-    flex: 1,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -553,9 +624,9 @@ const styles = StyleSheet.create({
   },
   voiceIndicator: {
     backgroundColor: colors.surface,
-    borderRadius: 100,
     width: 120,
     height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -564,9 +635,6 @@ const styles = StyleSheet.create({
   voiceIndicatorActive: {
     borderColor: colors.success,
     backgroundColor: colors.secondary,
-  },
-  voiceEmoji: {
-    fontSize: 36,
   },
   voiceLabel: {
     color: colors.text,
@@ -600,9 +668,6 @@ const styles = StyleSheet.create({
   },
   leaveButton: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  controlEmoji: {
-    fontSize: 24,
   },
   controlLabel: {
     color: colors.text,
@@ -654,9 +719,6 @@ const styles = StyleSheet.create({
   mediaButtonText: {
     fontSize: 24,
   },
-  mediaButtonTextMain: {
-    fontSize: 20,
-  },
   // Sensitivity Control
   sensitivityContainer: {
     backgroundColor: colors.surface,
@@ -705,5 +767,31 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center',
     marginTop: 8,
+  },
+  // Ducking Toggle
+  duckingContainer: {
+    backgroundColor: colors.surface,
+    marginTop: 12,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  duckingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  duckingTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  duckingTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  duckingWarning: {
+    color: colors.warning,
+    fontSize: 10,
+    marginTop: 2,
   },
 });

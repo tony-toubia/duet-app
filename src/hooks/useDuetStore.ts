@@ -22,6 +22,7 @@ interface DuetState {
   // Settings
   duckLevel: number; // 0-100, percentage of original volume when ducking
   vadSensitivity: number; // 0-100, higher = more sensitive
+  duckingEnabled: boolean; // iOS only: attempt to duck other audio (may pause some apps)
   
   // Services (non-serialized)
   webrtc: WebRTCService | null;
@@ -36,6 +37,7 @@ interface DuetState {
   setDeafened: (deafened: boolean) => void;
   setDuckLevel: (level: number) => void;
   setVadSensitivity: (sensitivity: number) => void;
+  setDuckingEnabled: (enabled: boolean) => void;
 }
 
 export const useDuetStore = create<DuetState>((set, get) => ({
@@ -52,6 +54,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   
   duckLevel: 30,
   vadSensitivity: 40, // Default: moderate-low, good for car/road noise environments
+  duckingEnabled: false, // Default off - mixing only; ducking may pause some apps
   
   webrtc: null,
   signaling: null,
@@ -346,6 +349,14 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const threshold = 0.001 + (0.099 * (100 - sensitivity) / 100);
     DuetAudio.setVadThreshold(threshold);
     set({ vadSensitivity: sensitivity });
+  },
+
+  setDuckingEnabled: (enabled: boolean) => {
+    // iOS only: toggle between mixing and ducking
+    if (Platform.OS === 'ios') {
+      DuetAudio.setDuckingEnabled(enabled);
+    }
+    set({ duckingEnabled: enabled });
   },
 }));
 
