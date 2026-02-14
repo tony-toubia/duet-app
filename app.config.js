@@ -23,7 +23,14 @@ module.exports = {
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
         UIBackgroundModes: ["audio", "voip"],
         BGTaskSchedulerPermittedIdentifiers: ["com.duet.audio"],
-        ITSAppUsesNonExemptEncryption: false
+        ITSAppUsesNonExemptEncryption: false,
+        LSApplicationQueriesSchemes: [
+          "spotify",
+          "youtube",
+          "youtubemusic",
+          "comgooglemaps",
+          "waze"
+        ]
       }
     },
     android: {

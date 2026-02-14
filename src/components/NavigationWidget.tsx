@@ -3,172 +3,216 @@ import { View, Text, StyleSheet, Linking, Platform, TouchableOpacity, AppState, 
 
 // Colors (matching main app)
 const colors = {
-  surface: '#16213e',
   text: '#ffffff',
-  textMuted: '#a0a0a0',
-  primary: '#e94560',
-  secondary: '#0f3460',
+  textMuted: '#b0b8c8',
+  primary: '#e8734a',
   success: '#4ade80',
+  glass: 'rgba(255, 255, 255, 0.12)',
+  glassBorder: 'rgba(255, 255, 255, 0.18)',
 };
 
-type NavApp = 'google_maps' | 'apple_maps' | 'waze';
+// All supported quick-launch apps
+type AppId =
+  | 'spotify'
+  | 'apple_music'
+  | 'youtube'
+  | 'youtube_music'
+  | 'google_maps'
+  | 'apple_maps'
+  | 'waze';
 
-interface InstalledApps {
-  google_maps: boolean;
-  apple_maps: boolean;
-  waze: boolean;
+interface AppInfo {
+  id: AppId;
+  label: string;
+  icon: string;
+  urlScheme: string;
+  iosUrlScheme?: string; // override for iOS if different
+  androidUrlScheme?: string; // override for Android if different
+  iosOnly?: boolean;
+  fallbackUrl: string;
 }
 
+const ALL_APPS: AppInfo[] = [
+  {
+    id: 'spotify',
+    label: 'Spotify',
+    icon: '🎵',
+    urlScheme: 'spotify://',
+    fallbackUrl: 'https://open.spotify.com',
+  },
+  {
+    id: 'apple_music',
+    label: 'Music',
+    icon: '🎶',
+    urlScheme: 'music://',
+    iosOnly: true,
+    fallbackUrl: 'https://music.apple.com',
+  },
+  {
+    id: 'youtube',
+    label: 'YouTube',
+    icon: '▶️',
+    urlScheme: 'youtube://',
+    fallbackUrl: 'https://youtube.com',
+  },
+  {
+    id: 'youtube_music',
+    label: 'YT Music',
+    icon: '🎧',
+    urlScheme: 'youtubemusic://',
+    fallbackUrl: 'https://music.youtube.com',
+  },
+  {
+    id: 'google_maps',
+    label: 'Maps',
+    icon: '📍',
+    urlScheme: 'comgooglemaps://',
+    androidUrlScheme: 'google.navigation:',
+    fallbackUrl: 'https://maps.google.com',
+  },
+  {
+    id: 'apple_maps',
+    label: 'Maps',
+    icon: '🗺️',
+    urlScheme: 'maps://',
+    iosOnly: true,
+    fallbackUrl: 'https://maps.apple.com',
+  },
+  {
+    id: 'waze',
+    label: 'Waze',
+    icon: '🚗',
+    urlScheme: 'waze://',
+    fallbackUrl: 'https://waze.com',
+  },
+];
+
 /**
- * NavigationWidget - Quick access to navigation apps
- *
- * Shows installed navigation apps and provides quick launch buttons.
- * When returning from a nav app, shows a prominent "Return to Navigation" button.
+ * QuickLaunchWidget - Dynamically detects installed apps and shows quick-launch buttons.
+ * Combines media apps (Spotify, Apple Music, YouTube, etc.) with navigation apps.
  */
 export const NavigationWidget: React.FC = () => {
-  const [installedApps, setInstalledApps] = useState<InstalledApps>({
-    google_maps: false,
-    apple_maps: Platform.OS === 'ios', // Apple Maps always available on iOS
-    waze: false,
-  });
-  const [lastUsedApp, setLastUsedApp] = useState<NavApp | null>(null);
-  const [recentlyReturnedFromNav, setRecentlyReturnedFromNav] = useState(false);
+  const [installedApps, setInstalledApps] = useState<Set<AppId>>(new Set());
+  const [lastUsedApp, setLastUsedApp] = useState<AppId | null>(null);
+  const [recentlyReturned, setRecentlyReturned] = useState(false);
 
-  // Check which nav apps are installed
-  const checkInstalledApps = useCallback(async () => {
-    const googleMapsUrl = Platform.OS === 'ios' ? 'comgooglemaps://' : 'google.navigation:q=test';
-    const wazeUrl = 'waze://';
-
-    const [hasGoogleMaps, hasWaze] = await Promise.all([
-      Linking.canOpenURL(googleMapsUrl).catch(() => false),
-      Linking.canOpenURL(wazeUrl).catch(() => false),
-    ]);
-
-    setInstalledApps({
-      google_maps: hasGoogleMaps,
-      apple_maps: Platform.OS === 'ios',
-      waze: hasWaze,
-    });
+  const getUrlScheme = useCallback((app: AppInfo): string => {
+    if (Platform.OS === 'ios' && app.iosUrlScheme) return app.iosUrlScheme;
+    if (Platform.OS === 'android' && app.androidUrlScheme) return app.androidUrlScheme;
+    return app.urlScheme;
   }, []);
 
-  useEffect(() => {
-    checkInstalledApps();
-  }, [checkInstalledApps]);
+  // Check which apps are installed
+  const detectApps = useCallback(async () => {
+    const candidates = ALL_APPS.filter(app => {
+      if (app.iosOnly && Platform.OS !== 'ios') return false;
+      return true;
+    });
 
-  // Track when user returns to app (possibly from navigation)
+    const results = await Promise.all(
+      candidates.map(async (app) => {
+        // Apple Music / Apple Maps are always available on iOS
+        if (Platform.OS === 'ios' && (app.id === 'apple_music' || app.id === 'apple_maps')) {
+          return { id: app.id, installed: true };
+        }
+        try {
+          const url = getUrlScheme(app);
+          const can = await Linking.canOpenURL(url);
+          return { id: app.id, installed: can };
+        } catch {
+          return { id: app.id, installed: false };
+        }
+      })
+    );
+
+    const found = new Set<AppId>();
+    results.forEach(r => { if (r.installed) found.add(r.id); });
+    setInstalledApps(found);
+  }, [getUrlScheme]);
+
   useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
+    detectApps();
+  }, [detectApps]);
+
+  // Track when user returns from an external app
+  useEffect(() => {
+    const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active' && lastUsedApp) {
-        // User returned to app after using navigation
-        setRecentlyReturnedFromNav(true);
-        // Clear the "return" prompt after 30 seconds
-        setTimeout(() => setRecentlyReturnedFromNav(false), 30000);
+        setRecentlyReturned(true);
+        setTimeout(() => setRecentlyReturned(false), 30000);
       }
     };
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    return () => subscription?.remove();
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub?.remove();
   }, [lastUsedApp]);
 
-  // Open navigation app
-  const openNavApp = async (app: NavApp) => {
-    let url = '';
-
-    switch (app) {
-      case 'google_maps':
-        // Open Google Maps - if there's active navigation it will resume
-        url = Platform.OS === 'ios' ? 'comgooglemaps://' : 'google.navigation:';
-        break;
-      case 'apple_maps':
-        url = 'maps://';
-        break;
-      case 'waze':
-        url = 'waze://';
-        break;
-    }
+  const openApp = async (appId: AppId) => {
+    const app = ALL_APPS.find(a => a.id === appId);
+    if (!app) return;
 
     try {
+      const url = getUrlScheme(app);
       const supported = await Linking.canOpenURL(url);
       if (supported) {
-        setLastUsedApp(app);
-        setRecentlyReturnedFromNav(false);
+        setLastUsedApp(appId);
+        setRecentlyReturned(false);
         await Linking.openURL(url);
       } else {
-        // Fallback to web/store
-        const fallbackUrls: Record<NavApp, string> = {
-          google_maps: 'https://maps.google.com',
-          waze: 'https://waze.com',
-          apple_maps: 'https://maps.apple.com',
-        };
-        await Linking.openURL(fallbackUrls[app]);
+        await Linking.openURL(app.fallbackUrl);
       }
     } catch (error) {
-      console.log('Failed to open navigation app:', error);
+      console.log('Failed to open app:', error);
     }
   };
 
-  const getAppName = (app: NavApp): string => {
-    switch (app) {
-      case 'google_maps': return 'Google Maps';
-      case 'apple_maps': return 'Apple Maps';
-      case 'waze': return 'Waze';
-    }
-  };
+  const getAppInfo = (id: AppId) => ALL_APPS.find(a => a.id === id)!;
 
-  const getAppIcon = (app: NavApp): string => {
-    switch (app) {
-      case 'google_maps': return '📍';
-      case 'apple_maps': return '🗺️';
-      case 'waze': return '🚗';
-    }
-  };
+  // Split into media and nav categories
+  const mediaAppIds: AppId[] = ['spotify', 'apple_music', 'youtube', 'youtube_music'];
+  const navAppIds: AppId[] = ['google_maps', 'apple_maps', 'waze'];
 
-  // Get list of installed apps for display
-  const availableApps = (Object.keys(installedApps) as NavApp[]).filter(
-    app => installedApps[app]
-  );
+  const installedMedia = mediaAppIds.filter(id => installedApps.has(id));
+  const installedNav = navAppIds.filter(id => installedApps.has(id));
+
+  if (installedMedia.length === 0 && installedNav.length === 0) return null;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Navigation</Text>
+      <Text style={styles.title}>Quick Launch</Text>
 
-      {/* Show "Return to Navigation" if user recently came back from a nav app */}
-      {recentlyReturnedFromNav && lastUsedApp && (
+      {/* Return-to button */}
+      {recentlyReturned && lastUsedApp && (
         <TouchableOpacity
           style={styles.returnButton}
-          onPress={() => openNavApp(lastUsedApp)}
+          onPress={() => openApp(lastUsedApp)}
         >
-          <Text style={styles.returnIcon}>{getAppIcon(lastUsedApp)}</Text>
-          <View style={styles.returnTextContainer}>
-            <Text style={styles.returnTitle}>Return to Navigation</Text>
-            <Text style={styles.returnSubtitle}>{getAppName(lastUsedApp)}</Text>
+          <Text style={styles.returnIcon}>{getAppInfo(lastUsedApp).icon}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.returnTitle}>Return to {getAppInfo(lastUsedApp).label}</Text>
           </View>
           <Text style={styles.returnArrow}>→</Text>
         </TouchableOpacity>
       )}
 
-      {/* Quick launch buttons */}
-      <View style={styles.quickLaunch}>
-        {!recentlyReturnedFromNav && (
-          <Text style={styles.quickLaunchLabel}>Open Navigation</Text>
-        )}
-        <View style={styles.navButtons}>
-          {availableApps.map(app => (
+      {/* App buttons in a flex-wrap row */}
+      <View style={styles.appsRow}>
+        {[...installedMedia, ...installedNav].map(id => {
+          const app = getAppInfo(id);
+          return (
             <TouchableOpacity
-              key={app}
+              key={id}
               style={[
-                styles.navButton,
-                lastUsedApp === app && styles.navButtonLastUsed,
+                styles.appButton,
+                lastUsedApp === id && styles.appButtonLastUsed,
               ]}
-              onPress={() => openNavApp(app)}
+              onPress={() => openApp(id)}
             >
-              <Text style={styles.navButtonIcon}>{getAppIcon(app)}</Text>
-              <Text style={styles.navButtonText}>
-                {app === 'google_maps' ? 'Google' : app === 'apple_maps' ? 'Apple' : 'Waze'}
-              </Text>
+              <Text style={styles.appIcon}>{app.icon}</Text>
+              <Text style={styles.appLabel}>{app.label}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -176,85 +220,70 @@ export const NavigationWidget: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
     marginHorizontal: 20,
-    marginTop: 12,
     borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
   title: {
-    color: colors.textMuted,
-    fontSize: 12,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  // Return to Navigation button
   returnButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: colors.success,
   },
   returnIcon: {
-    fontSize: 28,
-    marginRight: 12,
-  },
-  returnTextContainer: {
-    flex: 1,
+    fontSize: 22,
+    marginRight: 10,
   },
   returnTitle: {
     color: colors.text,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  returnSubtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 14,
+    fontWeight: '500',
   },
   returnArrow: {
     color: colors.success,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
   },
-  // Quick launch section
-  quickLaunch: {
-    alignItems: 'center',
-  },
-  quickLaunchLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginBottom: 8,
-  },
-  navButtons: {
+  appsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 12,
+    gap: 8,
   },
-  navButton: {
-    backgroundColor: colors.secondary,
+  appButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
     alignItems: 'center',
-    minWidth: 65,
+    minWidth: 58,
   },
-  navButtonLastUsed: {
+  appButtonLastUsed: {
     borderWidth: 1,
     borderColor: colors.primary,
   },
-  navButtonIcon: {
-    fontSize: 20,
-    marginBottom: 4,
+  appIcon: {
+    fontSize: 18,
+    marginBottom: 3,
   },
-  navButtonText: {
+  appLabel: {
     color: colors.text,
-    fontSize: 11,
+    fontSize: 10,
   },
 });
 

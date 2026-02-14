@@ -1,4 +1,4 @@
-const { withMainApplication, withDangerousMod, withXcodeProject, withInfoPlist } = require('@expo/config-plugins');
+const { withMainApplication, withDangerousMod, withXcodeProject, withInfoPlist, AndroidConfig } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -1329,10 +1329,66 @@ function withDuetAudioXcodeProject(config) {
 // MAIN EXPORT
 // =====================
 
+// Add Android <queries> for canOpenURL on Android 11+
+function withAndroidQueries(config) {
+  return withDangerousMod(config, [
+    'android',
+    async (config) => {
+      const projectRoot = config.modRequest.projectRoot;
+      const manifestPath = path.join(
+        projectRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'
+      );
+
+      if (fs.existsSync(manifestPath)) {
+        let manifest = fs.readFileSync(manifestPath, 'utf-8');
+
+        // Only add if not already present
+        if (!manifest.includes('<queries>')) {
+          // Insert <queries> block before closing </manifest>
+          const queriesBlock = `
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="spotify" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="youtube" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="youtubemusic" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="comgooglemaps" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="waze" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
+        </intent>
+    </queries>`;
+
+          manifest = manifest.replace('</manifest>', queriesBlock + '\n</manifest>');
+          fs.writeFileSync(manifestPath, manifest);
+          console.log('[withDuetAudio] Added Android <queries> for Quick Launch app detection');
+        }
+      }
+
+      return config;
+    },
+  ]);
+}
+
 module.exports = function withDuetAudio(config) {
   // Android
   config = withDuetAudioAndroid(config);
   config = withDuetAudioMainApplication(config);
+  config = withAndroidQueries(config);
 
   // iOS
   config = withDuetAudioIOS(config);

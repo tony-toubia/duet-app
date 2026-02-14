@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,26 +9,34 @@ import {
   ActivityIndicator,
   Share,
   Animated,
+  Easing,
   useWindowDimensions,
   Switch,
   Platform,
+  Image,
+  ImageBackground,
+  ScrollView,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from './src/hooks/useDuetStore';
 import { NavigationWidget } from './src/components/NavigationWidget';
 
-// Color palette
+// Brand color palette
 const colors = {
   background: '#1a1a2e',
   surface: '#16213e',
-  primary: '#e94560',
+  primary: '#e8734a',      // warm orange (brand)
+  primaryLight: '#f0956e',
   secondary: '#0f3460',
   text: '#ffffff',
-  textMuted: '#a0a0a0',
+  textMuted: '#b0b8c8',
+  textDark: '#2d3650',
   success: '#4ade80',
   warning: '#fbbf24',
   danger: '#ef4444',
+  glass: 'rgba(255, 255, 255, 0.12)',
+  glassBorder: 'rgba(255, 255, 255, 0.18)',
 };
 
 // Responsive breakpoint
@@ -41,8 +49,163 @@ function useLayout() {
   return { width, height, isTablet, isLandscape };
 }
 
-// VAD Sensitivity Control Component
-const SensitivityControl = ({
+// =====================
+// Animated pulse rings for active speaker
+// =====================
+const PulseRings = ({ active }: { active: boolean }) => {
+  const ring1 = useRef(new Animated.Value(0)).current;
+  const ring2 = useRef(new Animated.Value(0)).current;
+  const ring3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (active) {
+      const createPulse = (anim: Animated.Value, delay: number) =>
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 1800,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(anim, {
+              toValue: 0,
+              duration: 0,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+
+      const a1 = createPulse(ring1, 0);
+      const a2 = createPulse(ring2, 600);
+      const a3 = createPulse(ring3, 1200);
+      a1.start();
+      a2.start();
+      a3.start();
+
+      return () => {
+        a1.stop();
+        a2.stop();
+        a3.stop();
+        ring1.setValue(0);
+        ring2.setValue(0);
+        ring3.setValue(0);
+      };
+    } else {
+      ring1.setValue(0);
+      ring2.setValue(0);
+      ring3.setValue(0);
+    }
+  }, [active]);
+
+  if (!active) return null;
+
+  const makeRingStyle = (anim: Animated.Value) => ({
+    position: 'absolute' as const,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+    transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] }) }],
+  });
+
+  return (
+    <>
+      <Animated.View style={makeRingStyle(ring1)} />
+      <Animated.View style={makeRingStyle(ring2)} />
+      <Animated.View style={makeRingStyle(ring3)} />
+    </>
+  );
+};
+
+// =====================
+// Avatar circle component
+// =====================
+const AvatarCircle = ({
+  label,
+  initials,
+  isSpeaking,
+  isMuted,
+  isDeafened,
+}: {
+  label: string;
+  initials: string;
+  isSpeaking: boolean;
+  isMuted?: boolean;
+  isDeafened?: boolean;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: isSpeaking ? 1.05 : 1,
+      useNativeDriver: true,
+      friction: 6,
+    }).start();
+  }, [isSpeaking]);
+
+  return (
+    <View style={roomStyles.avatarWrapper}>
+      <PulseRings active={isSpeaking} />
+      <Animated.View
+        style={[
+          roomStyles.avatarCircle,
+          isSpeaking && roomStyles.avatarCircleActive,
+          { transform: [{ scale }] },
+        ]}
+      >
+        <Text style={roomStyles.avatarInitials}>{initials}</Text>
+      </Animated.View>
+      <Text style={roomStyles.avatarLabel}>{label}</Text>
+      {isMuted && <Text style={roomStyles.avatarStatus}>Muted</Text>}
+      {isDeafened && <Text style={roomStyles.avatarStatus}>Deafened</Text>}
+    </View>
+  );
+};
+
+// =====================
+// Media Player Component (minimizable)
+// =====================
+const MediaPlayer = ({ minimized, onToggleMinimized }: { minimized: boolean; onToggleMinimized: () => void }) => {
+  const { DuetAudio } = require('./src/native/DuetAudio');
+
+  if (minimized) {
+    return (
+      <TouchableOpacity style={roomStyles.mediaMinimized} onPress={onToggleMinimized}>
+        <Text style={roomStyles.mediaMinimizedText}>Media Controls</Text>
+        <Text style={roomStyles.mediaExpandIcon}>▲</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={roomStyles.mediaCard}>
+      <TouchableOpacity style={roomStyles.mediaMinimizeBar} onPress={onToggleMinimized}>
+        <Text style={roomStyles.mediaCollapseIcon}>▼</Text>
+      </TouchableOpacity>
+      <Text style={roomStyles.mediaTrackTitle}>Media Controls</Text>
+      <View style={roomStyles.mediaPlayerControls}>
+        <TouchableOpacity style={roomStyles.mediaSmallBtn} onPress={() => DuetAudio.mediaPrevious()}>
+          <Text style={roomStyles.mediaSmallBtnText}>⏮</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={roomStyles.mediaPlayBtn} onPress={() => DuetAudio.mediaPlayPause()}>
+          <Text style={roomStyles.mediaPlayBtnText}>⏯</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={roomStyles.mediaSmallBtn} onPress={() => DuetAudio.mediaNext()}>
+          <Text style={roomStyles.mediaSmallBtnText}>⏭</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// =====================
+// Voice Sensitivity (horizontal bar style)
+// =====================
+const VoiceSensitivity = ({
   value,
   onChange,
 }: {
@@ -58,76 +221,46 @@ const SensitivityControl = ({
   ];
 
   return (
-    <View style={styles.sensitivityContainer}>
-      <Text style={styles.sensitivityTitle}>Mic Sensitivity</Text>
-      <View style={styles.sensitivityLevels}>
-        {levels.map((level) => {
+    <View style={roomStyles.sensitivityCard}>
+      <Text style={roomStyles.sensitivityTitle}>Voice Sensitivity</Text>
+      <View style={roomStyles.sensitivityTrack}>
+        {levels.map((level, i) => {
           const isActive = value >= level.value - 7;
           return (
             <TouchableOpacity
               key={level.value}
               style={[
-                styles.sensitivityDot,
-                isActive && styles.sensitivityDotActive,
+                roomStyles.sensitivitySegment,
+                isActive && roomStyles.sensitivitySegmentActive,
+                i === 0 && { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 },
+                i === levels.length - 1 && { borderTopRightRadius: 6, borderBottomRightRadius: 6 },
               ]}
               onPress={() => onChange(level.value)}
-            >
-              {level.label ? (
-                <Text style={[
-                  styles.sensitivityLabel,
-                  isActive && styles.sensitivityLabelActive,
-                ]}>{level.label}</Text>
-              ) : null}
-            </TouchableOpacity>
+            />
           );
         })}
       </View>
-      <Text style={styles.sensitivityHint}>
-        {value < 35 ? 'Best for quiet environments' :
-         value > 65 ? 'Best for loud environments' :
-         'Balanced for most situations'}
-      </Text>
-    </View>
-  );
-};
-
-// Media Control Component — no play/pause state tracking since we can't
-// reliably query system media state. Just show a universal toggle button.
-const MediaControls = () => {
-  const { DuetAudio } = require('./src/native/DuetAudio');
-
-  return (
-    <View style={styles.mediaControls}>
-      <Text style={styles.mediaTitle}>Media Controls</Text>
-      <View style={styles.mediaButtons}>
-        <TouchableOpacity style={styles.mediaButton} onPress={() => DuetAudio.mediaPrevious()}>
-          <Text style={styles.mediaButtonText}>⏮</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.mediaButtonMain}
-          onPress={() => DuetAudio.mediaPlayPause()}
-        >
-          <Text style={styles.mediaButtonTextMain}>⏯</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.mediaButton} onPress={() => DuetAudio.mediaNext()}>
-          <Text style={styles.mediaButtonText}>⏭</Text>
-        </TouchableOpacity>
+      <View style={roomStyles.sensitivityLabels}>
+        <Text style={roomStyles.sensitivityLabelText}>Low</Text>
+        <Text style={roomStyles.sensitivityLabelText}>Med</Text>
+        <Text style={roomStyles.sensitivityLabelText}>High</Text>
       </View>
     </View>
   );
 };
 
+// =====================
+// Main App Content
+// =====================
 function AppContent() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showJoinInput, setShowJoinInput] = useState(false);
+  const [mediaMinimized, setMediaMinimized] = useState(false);
   const insets = useSafeAreaInsets();
   const { isTablet, isLandscape } = useLayout();
   const useTwoColumn = isTablet && isLandscape;
-
-  // Animated values for visual feedback
-  const speakingScale = React.useRef(new Animated.Value(1)).current;
-  const partnerScale = React.useRef(new Animated.Value(1)).current;
 
   const {
     connectionState,
@@ -164,27 +297,13 @@ function AppContent() {
     };
   }, []);
 
-  useEffect(() => {
-    Animated.spring(speakingScale, {
-      toValue: isSpeaking ? 1.1 : 1,
-      useNativeDriver: true,
-    }).start();
-  }, [isSpeaking]);
-
-  useEffect(() => {
-    Animated.spring(partnerScale, {
-      toValue: isPartnerSpeaking ? 1.1 : 1,
-      useNativeDriver: true,
-    }).start();
-  }, [isPartnerSpeaking]);
-
   const handleCreateRoom = async () => {
     setIsLoading(true);
     try {
       const code = await createRoom();
       Alert.alert(
         'Room Created',
-        `Share this code with your partner: ${code}`,
+        `Share this code: ${code}`,
         [
           { text: 'Copy & Share', onPress: () => shareCode(code) },
           { text: 'OK' },
@@ -253,6 +372,7 @@ function AppContent() {
     }
   };
 
+  // Loading screen
   if (!isInitialized) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -265,280 +385,283 @@ function AppContent() {
     );
   }
 
-  // Lobby view (not in a room)
+  // =====================
+  // LOBBY VIEW
+  // =====================
   if (!roomCode) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={styles.lobbyContainer}>
         <StatusBar style="light" />
-
-        <View style={styles.header}>
-          <Text style={styles.title}>Duet</Text>
-          <Text style={styles.subtitle}>Stay connected while exploring</Text>
+        <View style={styles.lobbyTopBg} />
+        <View style={styles.lobbyBottomBg} />
+        <View style={styles.lobbyImageContainer}>
+          <Image
+            source={require('./assets/duet-home-bg.png')}
+            style={styles.lobbyImage}
+            resizeMode="contain"
+          />
         </View>
-
-        <View style={styles.lobbyContent}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleCreateRoom}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={colors.text} />
-            ) : (
-              <Text style={styles.buttonText}>Create Room</Text>
-            )}
-          </TouchableOpacity>
-
-          <Text style={styles.orText}>or</Text>
-
-          <View style={styles.joinSection}>
-            <TextInput
-              style={styles.codeInput}
-              placeholder="ENTER CODE"
-              placeholderTextColor={colors.textMuted}
-              value={joinCode}
-              onChangeText={(text) => setJoinCode(text.toUpperCase())}
-              maxLength={6}
-              autoCapitalize="characters"
-              autoCorrect={false}
+        <View style={[styles.lobbyOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <View style={styles.lobbyHeader}>
+            <Image
+              source={require('./assets/duet-logo.png')}
+              style={styles.lobbyLogo}
+              resizeMode="contain"
             />
-            <TouchableOpacity
-              style={[styles.secondaryButton, joinCode.length !== 6 && styles.buttonDisabled]}
-              onPress={handleJoinRoom}
-              disabled={isLoading || joinCode.length !== 6}
-            >
-              <Text style={styles.buttonText}>Join</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Play music on Spotify or Apple Music{'\n'}
-            Your partner's voice will overlay on top
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Connected view — two-column on tablet landscape, single column otherwise
-  if (useTwoColumn) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <StatusBar style="light" />
-
-        {/* Compact header row */}
-        <View style={styles.headerRow}>
-          <Text style={styles.title}>Duet</Text>
-          <View style={styles.connectionStatus}>
-            <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
-            <Text style={[styles.statusText, { color: getConnectionColor() }]}>
-              {getConnectionText()}
+            <Text style={styles.lobbyTitle}>Duet</Text>
+            <Text style={styles.lobbyTagline}>
+              Always-on voice connection.{'\n'}Together, even when apart.
             </Text>
           </View>
-          <TouchableOpacity onPress={() => shareCode(roomCode)}>
-            <Text style={styles.roomCodeInline}>{roomCode}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Two-column layout */}
-        <View style={styles.twoColumnContainer}>
-          {/* Left column: Voice indicators + controls */}
-          <View style={styles.leftColumn}>
-            <View style={styles.voiceSection}>
-              <Animated.View style={[
-                styles.voiceIndicator,
-                { transform: [{ scale: speakingScale }] },
-                isSpeaking && styles.voiceIndicatorActive,
-              ]}>
-                <Text style={styles.voiceEmoji}>🎤</Text>
-                <Text style={styles.voiceLabel}>You</Text>
-                {isMuted && <Text style={styles.mutedLabel}>MUTED</Text>}
-              </Animated.View>
-
-              <Animated.View style={[
-                styles.voiceIndicator,
-                { transform: [{ scale: partnerScale }] },
-                isPartnerSpeaking && styles.voiceIndicatorActive,
-              ]}>
-                <Text style={styles.voiceEmoji}>👤</Text>
-                <Text style={styles.voiceLabel}>Partner</Text>
-                {isDeafened && <Text style={styles.mutedLabel}>DEAFENED</Text>}
-              </Animated.View>
-            </View>
-
-            <View style={styles.controls}>
-              <TouchableOpacity
-                style={[styles.controlButton, isMuted && styles.controlButtonActive]}
-                onPress={() => setMuted(!isMuted)}
-              >
-                <Text style={styles.controlEmoji}>{isMuted ? '🔇' : '🎤'}</Text>
-                <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.controlButton, isDeafened && styles.controlButtonActive]}
-                onPress={() => setDeafened(!isDeafened)}
-              >
-                <Text style={styles.controlEmoji}>{isDeafened ? '🔕' : '🔊'}</Text>
-                <Text style={styles.controlLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.controlButton, styles.leaveButton]}
-                onPress={handleLeave}
-              >
-                <Text style={styles.controlEmoji}>📵</Text>
-                <Text style={styles.controlLabel}>Leave</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Right column: Media, sensitivity, ducking, nav */}
-          <View style={styles.rightColumn}>
-            <MediaControls />
-            <SensitivityControl value={vadSensitivity} onChange={setVadSensitivity} />
-
-            {Platform.OS === 'ios' && (
-              <View style={styles.duckingContainer}>
-                <View style={styles.duckingRow}>
-                  <View style={styles.duckingTextContainer}>
-                    <Text style={styles.duckingTitle}>Lower other audio</Text>
-                    <Text style={styles.duckingWarning}>Some apps may pause instead</Text>
-                  </View>
-                  <Switch
-                    value={duckingEnabled}
-                    onValueChange={setDuckingEnabled}
-                    trackColor={{ false: colors.secondary, true: colors.primary }}
-                    thumbColor={colors.text}
-                  />
-                </View>
+          <View style={{ flex: 1 }} />
+          <View style={styles.lobbyButtons}>
+            <TouchableOpacity
+              style={styles.startRoomButton}
+              onPress={handleCreateRoom}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.startRoomText}>Start a Room</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.joinRoomButton}
+              onPress={() => {
+                Alert.prompt
+                  ? Alert.prompt('Join Room', 'Enter the room code:', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Join',
+                        onPress: (code?: string) => {
+                          if (code && code.length === 6) {
+                            setJoinCode(code.toUpperCase());
+                            joinRoom(code.toUpperCase()).catch((err: any) =>
+                              Alert.alert('Error', err.message || 'Failed to join room')
+                            );
+                          } else {
+                            Alert.alert('Invalid Code', 'Please enter a 6-character room code');
+                          }
+                        },
+                      },
+                    ], 'plain-text', '', 'default')
+                  : setShowJoinInput(true)
+              }}
+              disabled={isLoading}
+            >
+              <Text style={styles.joinRoomText}>Join Room</Text>
+            </TouchableOpacity>
+            {showJoinInput && (
+              <View style={styles.joinInputRow}>
+                <TextInput
+                  style={styles.joinInput}
+                  placeholder="ENTER CODE"
+                  placeholderTextColor="#999"
+                  value={joinCode}
+                  onChangeText={(text) => setJoinCode(text.toUpperCase())}
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[styles.joinGoButton, joinCode.length !== 6 && styles.buttonDisabled]}
+                  onPress={handleJoinRoom}
+                  disabled={isLoading || joinCode.length !== 6}
+                >
+                  <Text style={styles.joinGoText}>Go</Text>
+                </TouchableOpacity>
               </View>
             )}
-
-            <NavigationWidget />
           </View>
         </View>
       </View>
     );
   }
 
-  // Single-column connected view (phone or portrait tablet)
-  return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <StatusBar style="light" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Duet</Text>
-        <View style={styles.connectionStatus}>
-          <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
-          <Text style={[styles.statusText, { color: getConnectionColor() }]}>
-            {getConnectionText()}
-          </Text>
-        </View>
-      </View>
-
-      {/* Room Code */}
-      <View style={styles.roomCodeSection}>
-        <Text style={styles.roomCodeLabel}>Room Code</Text>
-        <TouchableOpacity onPress={() => shareCode(roomCode)}>
-          <Text style={styles.roomCode}>{roomCode}</Text>
+  // =====================
+  // ROOM VIEW (connected)
+  // =====================
+  const roomContent = (
+    <>
+      {/* Top Bar: Room ID left, connection status center, Leave right */}
+      <View style={[roomStyles.topBar, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => shareCode(roomCode)} style={roomStyles.roomIdContainer}>
+          <View style={[roomStyles.statusDot, { backgroundColor: getConnectionColor() }]} />
+          <Text style={roomStyles.roomIdText}>{roomCode}</Text>
         </TouchableOpacity>
-        <Text style={styles.tapToShare}>Tap to share</Text>
+        <Text style={[roomStyles.connectionText, { color: getConnectionColor() }]}>
+          {getConnectionText()}
+        </Text>
+        <TouchableOpacity onPress={handleLeave} style={roomStyles.leaveBtn}>
+          <Text style={roomStyles.leaveBtnText}>Leave</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Voice Indicators */}
-      <View style={[styles.voiceSection, { flex: 1 }]}>
-        <Animated.View style={[
-          styles.voiceIndicator,
-          { transform: [{ scale: speakingScale }] },
-          isSpeaking && styles.voiceIndicatorActive,
-        ]}>
-          <Text style={styles.voiceEmoji}>🎤</Text>
-          <Text style={styles.voiceLabel}>You</Text>
-          {isMuted && <Text style={styles.mutedLabel}>MUTED</Text>}
-        </Animated.View>
-
-        <Animated.View style={[
-          styles.voiceIndicator,
-          { transform: [{ scale: partnerScale }] },
-          isPartnerSpeaking && styles.voiceIndicatorActive,
-        ]}>
-          <Text style={styles.voiceEmoji}>👤</Text>
-          <Text style={styles.voiceLabel}>Partner</Text>
-          {isDeafened && <Text style={styles.mutedLabel}>DEAFENED</Text>}
-        </Animated.View>
+      {/* Avatars */}
+      <View style={roomStyles.avatarsRow}>
+        <AvatarCircle
+          label="You"
+          initials="Y"
+          isSpeaking={isSpeaking}
+          isMuted={isMuted}
+        />
+        <AvatarCircle
+          label="Partner"
+          initials="P"
+          isSpeaking={isPartnerSpeaking}
+          isDeafened={isDeafened}
+        />
       </View>
 
-      {/* Controls */}
-      <View style={styles.controls}>
+      {/* Mute / Deafen buttons */}
+      <View style={roomStyles.actionRow}>
         <TouchableOpacity
-          style={[styles.controlButton, isMuted && styles.controlButtonActive]}
+          style={[roomStyles.actionBtn, isMuted && roomStyles.actionBtnActive]}
           onPress={() => setMuted(!isMuted)}
         >
-          <Text style={styles.controlEmoji}>{isMuted ? '🔇' : '🎤'}</Text>
-          <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+          <Text style={roomStyles.actionIcon}>{isMuted ? '🔇' : '🎤'}</Text>
+          <Text style={roomStyles.actionLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.controlButton, isDeafened && styles.controlButtonActive]}
+          style={[roomStyles.actionBtn, isDeafened && roomStyles.actionBtnActive]}
           onPress={() => setDeafened(!isDeafened)}
         >
-          <Text style={styles.controlEmoji}>{isDeafened ? '🔕' : '🔊'}</Text>
-          <Text style={styles.controlLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.controlButton, styles.leaveButton]}
-          onPress={handleLeave}
-        >
-          <Text style={styles.controlEmoji}>📵</Text>
-          <Text style={styles.controlLabel}>Leave</Text>
+          <Text style={roomStyles.actionIcon}>{isDeafened ? '🔕' : '🔊'}</Text>
+          <Text style={roomStyles.actionLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Media Controls */}
-      <MediaControls />
-
-      {/* Sensitivity Control */}
-      <SensitivityControl value={vadSensitivity} onChange={setVadSensitivity} />
+      {/* Voice Sensitivity */}
+      <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
 
       {/* iOS Ducking Toggle */}
       {Platform.OS === 'ios' && (
-        <View style={[styles.duckingContainer, { marginHorizontal: 20 }]}>
-          <View style={styles.duckingRow}>
-            <View style={styles.duckingTextContainer}>
-              <Text style={styles.duckingTitle}>Lower other audio</Text>
-              <Text style={styles.duckingWarning}>Some apps may pause instead</Text>
+        <View style={roomStyles.duckingCard}>
+          <View style={roomStyles.duckingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={roomStyles.duckingTitle}>Lower other audio</Text>
+              <Text style={roomStyles.duckingWarning}>Some apps may pause instead</Text>
             </View>
             <Switch
               value={duckingEnabled}
               onValueChange={setDuckingEnabled}
-              trackColor={{ false: colors.secondary, true: colors.primary }}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
               thumbColor={colors.text}
             />
           </View>
         </View>
       )}
 
-      {/* Navigation Widget */}
-      <NavigationWidget />
+      {/* Media Player */}
+      <MediaPlayer minimized={mediaMinimized} onToggleMinimized={() => setMediaMinimized(!mediaMinimized)} />
 
-      {/* Tip */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          {duckingEnabled && Platform.OS === 'ios'
-            ? `Other audio lowers when\nyour partner speaks`
-            : `Your partner's voice mixes over\nany playing media`}
-        </Text>
+      {/* Quick Launch */}
+      <NavigationWidget />
+    </>
+  );
+
+  // Tablet two-column layout
+  if (useTwoColumn) {
+    return (
+      <ImageBackground
+        source={require('./assets/duet-room-bg.png')}
+        style={roomStyles.roomBg}
+        resizeMode="cover"
+      >
+        <View style={roomStyles.roomOverlay}>
+          <StatusBar style="light" />
+          <View style={[roomStyles.topBar, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity onPress={() => shareCode(roomCode)} style={roomStyles.roomIdContainer}>
+              <View style={[roomStyles.statusDot, { backgroundColor: getConnectionColor() }]} />
+              <Text style={roomStyles.roomIdText}>{roomCode}</Text>
+            </TouchableOpacity>
+            <Text style={[roomStyles.connectionText, { color: getConnectionColor() }]}>
+              {getConnectionText()}
+            </Text>
+            <TouchableOpacity onPress={handleLeave} style={roomStyles.leaveBtn}>
+              <Text style={roomStyles.leaveBtnText}>Leave</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={roomStyles.twoColContainer}>
+            {/* Left: Avatars + controls */}
+            <View style={roomStyles.twoColLeft}>
+              <View style={roomStyles.avatarsRow}>
+                <AvatarCircle label="You" initials="Y" isSpeaking={isSpeaking} isMuted={isMuted} />
+                <AvatarCircle label="Partner" initials="P" isSpeaking={isPartnerSpeaking} isDeafened={isDeafened} />
+              </View>
+              <View style={roomStyles.actionRow}>
+                <TouchableOpacity
+                  style={[roomStyles.actionBtn, isMuted && roomStyles.actionBtnActive]}
+                  onPress={() => setMuted(!isMuted)}
+                >
+                  <Text style={roomStyles.actionIcon}>{isMuted ? '🔇' : '🎤'}</Text>
+                  <Text style={roomStyles.actionLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[roomStyles.actionBtn, isDeafened && roomStyles.actionBtnActive]}
+                  onPress={() => setDeafened(!isDeafened)}
+                >
+                  <Text style={roomStyles.actionIcon}>{isDeafened ? '🔕' : '🔊'}</Text>
+                  <Text style={roomStyles.actionLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {/* Right: Sensitivity, media, nav */}
+            <View style={roomStyles.twoColRight}>
+              <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
+              {Platform.OS === 'ios' && (
+                <View style={roomStyles.duckingCard}>
+                  <View style={roomStyles.duckingRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={roomStyles.duckingTitle}>Lower other audio</Text>
+                      <Text style={roomStyles.duckingWarning}>Some apps may pause instead</Text>
+                    </View>
+                    <Switch
+                      value={duckingEnabled}
+                      onValueChange={setDuckingEnabled}
+                      trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
+                      thumbColor={colors.text}
+                    />
+                  </View>
+                </View>
+              )}
+              <MediaPlayer minimized={mediaMinimized} onToggleMinimized={() => setMediaMinimized(!mediaMinimized)} />
+              <NavigationWidget />
+            </View>
+          </View>
+          <View style={{ height: insets.bottom }} />
+        </View>
+      </ImageBackground>
+    );
+  }
+
+  // Single-column phone layout
+  return (
+    <ImageBackground
+      source={require('./assets/duet-room-bg.png')}
+      style={roomStyles.roomBg}
+      resizeMode="cover"
+    >
+      <View style={roomStyles.roomOverlay}>
+        <StatusBar style="light" />
+        <ScrollView
+          contentContainerStyle={[roomStyles.roomScroll, { paddingBottom: insets.bottom + 16 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {roomContent}
+        </ScrollView>
       </View>
-    </View>
+    </ImageBackground>
   );
 }
 
-// Main App with SafeAreaProvider
+// =====================
+// Main App
+// =====================
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -547,6 +670,300 @@ export default function App() {
   );
 }
 
+// =====================
+// Room View Styles
+// =====================
+const roomStyles = StyleSheet.create({
+  roomBg: {
+    flex: 1,
+  },
+  roomOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 20, 40, 0.55)',
+  },
+  roomScroll: {
+    flexGrow: 1,
+    gap: 16,
+  },
+  // Top bar
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  roomIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  roomIdText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 2,
+  },
+  connectionText: {
+    fontSize: 12,
+  },
+  leaveBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  leaveBtnText: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Avatars
+  avatarsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 40,
+    paddingVertical: 20,
+  },
+  avatarWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 140,
+    height: 170,
+  },
+  avatarCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCircleActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(232, 115, 74, 0.2)',
+  },
+  avatarInitials: {
+    color: colors.text,
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  avatarLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 8,
+  },
+  avatarStatus: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  // Mute / Deafen action buttons
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    paddingHorizontal: 20,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.glass,
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    gap: 8,
+  },
+  actionBtnActive: {
+    backgroundColor: 'rgba(232, 115, 74, 0.25)',
+    borderColor: colors.primary,
+  },
+  actionIcon: {
+    fontSize: 18,
+  },
+  actionLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Sensitivity
+  sensitivityCard: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    marginHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  sensitivityTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  sensitivityTrack: {
+    flexDirection: 'row',
+    height: 8,
+    gap: 3,
+  },
+  sensitivitySegment: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  sensitivitySegmentActive: {
+    backgroundColor: colors.primary,
+  },
+  sensitivityLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  sensitivityLabelText: {
+    color: colors.textMuted,
+    fontSize: 11,
+  },
+  // Ducking toggle
+  duckingCard: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    marginHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  duckingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  duckingTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  duckingWarning: {
+    color: colors.warning,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  // Media player
+  mediaCard: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    marginHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  mediaMinimizeBar: {
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  mediaCollapseIcon: {
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+  mediaTrackTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  mediaPlayerControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 24,
+  },
+  mediaSmallBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaSmallBtnText: {
+    fontSize: 18,
+  },
+  mediaPlayBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaPlayBtnText: {
+    fontSize: 22,
+  },
+  // Media minimized
+  mediaMinimized: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    marginHorizontal: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  mediaMinimizedText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  mediaExpandIcon: {
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+  // Two-column layout
+  twoColContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  twoColLeft: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  twoColRight: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 12,
+  },
+});
+
+// =====================
+// Lobby + Shared Styles
+// =====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -557,325 +974,129 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  // Compact header for two-column layout
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-  },
-  roomCodeInline: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-  },
-  // Two-column layout
-  twoColumnContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 16,
-  },
-  leftColumn: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rightColumn: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 10,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  connectionStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 14,
-  },
-  lobbyContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 12,
-    minWidth: 200,
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    backgroundColor: colors.secondary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  orText: {
-    color: colors.textMuted,
-    fontSize: 16,
-    marginVertical: 24,
-  },
-  joinSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  codeInput: {
-    backgroundColor: colors.surface,
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: 'bold',
-    letterSpacing: 4,
-    textAlign: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    width: 180,
-  },
   loadingText: {
     color: colors.textMuted,
     marginTop: 16,
   },
-  roomCodeSection: {
-    alignItems: 'center',
-    paddingVertical: 20,
+  // Lobby screen
+  lobbyContainer: {
+    flex: 1,
+    position: 'relative',
   },
-  roomCodeLabel: {
-    color: colors.textMuted,
-    fontSize: 14,
+  lobbyTopBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    backgroundColor: '#1a293d',
   },
-  roomCode: {
-    color: colors.text,
-    fontSize: 36,
-    fontWeight: 'bold',
-    letterSpacing: 8,
-    marginVertical: 8,
+  lobbyBottomBg: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    backgroundColor: '#f4dbc8',
   },
-  tapToShare: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  voiceSection: {
-    flexDirection: 'row',
+  lobbyImageContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 32,
   },
-  voiceIndicator: {
-    backgroundColor: colors.surface,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: colors.surface,
+  lobbyImage: {
+    width: '100%',
+    height: '100%',
   },
-  voiceIndicatorActive: {
-    borderColor: colors.success,
-    backgroundColor: colors.secondary,
-  },
-  voiceEmoji: {
-    fontSize: 36,
-  },
-  voiceLabel: {
-    color: colors.text,
-    fontSize: 14,
-    marginTop: 8,
-  },
-  mutedLabel: {
-    color: colors.danger,
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  controls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    paddingVertical: 24,
-  },
-  controlButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    minWidth: 80,
-  },
-  controlButtonActive: {
-    backgroundColor: colors.secondary,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  leaveButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  controlEmoji: {
-    fontSize: 24,
-  },
-  controlLabel: {
-    color: colors.text,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  footer: {
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-  },
-  footerText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  // Media Controls
-  mediaControls: {
-    backgroundColor: colors.surface,
-    marginHorizontal: 20,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  mediaTitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  mediaButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 24,
-  },
-  mediaButton: {
-    padding: 8,
-  },
-  mediaButtonMain: {
-    backgroundColor: colors.secondary,
-    borderRadius: 30,
-    width: 50,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 0,
-  },
-  mediaButtonText: {
-    fontSize: 24,
-  },
-  mediaButtonTextMain: {
-    fontSize: 20,
-  },
-  // Sensitivity Control
-  sensitivityContainer: {
-    backgroundColor: colors.surface,
-    marginHorizontal: 20,
-    marginTop: 12,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  sensitivityTitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  sensitivityLevels: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  sensitivityDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  sensitivityDotActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.text,
-  },
-  sensitivityLabel: {
-    color: colors.textMuted,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  sensitivityLabelActive: {
-    color: colors.text,
-  },
-  sensitivityHint: {
-    color: colors.textMuted,
-    fontSize: 11,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  // Ducking Toggle
-  duckingContainer: {
-    backgroundColor: colors.surface,
-    marginHorizontal: 20,
-    marginTop: 12,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  duckingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  lobbyOverlay: {
+    flex: 1,
     justifyContent: 'space-between',
   },
-  duckingTextContainer: {
+  lobbyHeader: {
+    alignItems: 'center',
+    paddingTop: 16,
+  },
+  lobbyLogo: {
+    width: 60,
+    height: 56,
+    tintColor: '#e8734a',
+  },
+  lobbyTitle: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginTop: 4,
+  },
+  lobbyTagline: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.85)',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 22,
+  },
+  lobbyButtons: {
+    paddingHorizontal: 32,
+    paddingBottom: 40,
+    gap: 12,
+  },
+  startRoomButton: {
+    backgroundColor: '#e8734a',
+    paddingVertical: 16,
+    borderRadius: 28,
+    alignItems: 'center',
+  },
+  startRoomText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  joinRoomButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 16,
+    borderRadius: 28,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3d3d50',
+  },
+  joinRoomText: {
+    color: '#3d3d50',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  joinInputRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  joinInput: {
     flex: 1,
-    marginRight: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    color: '#1a293d',
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 4,
+    textAlign: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 28,
   },
-  duckingTitle: {
-    color: colors.textMuted,
-    fontSize: 12,
+  joinGoButton: {
+    backgroundColor: '#e8734a',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 28,
+    justifyContent: 'center',
   },
-  duckingWarning: {
-    color: colors.warning,
-    fontSize: 10,
-    marginTop: 2,
+  joinGoText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });
