@@ -624,22 +624,40 @@ class DuetAudioManager: RCTEventEmitter {
 
   @objc
   func setDuckingEnabled(_ enabled: Bool) {
-    let changed = duckingEnabled != enabled
     duckingEnabled = enabled
     print("[DuetAudio] Ducking \\(enabled ? "enabled" : "disabled")")
 
-    // If the engine is running, reconfigure the audio session live
-    if changed, audioEngine?.isRunning == true {
+    // Apply immediately only if the engine is running.
+    // We deactivate briefly then reactivate to avoid the interruption-on-setCategory issue.
+    // The brief deactivation with .notifyOthersOnDeactivation tells other apps to resume,
+    // then the new setCategory + engine.start() reactivates cleanly.
+    if audioEngine?.isRunning == true {
       do {
         let session = AVAudioSession.sharedInstance()
+
+        // Stop engine temporarily
+        audioEngine?.pause()
+
+        // Deactivate and notify others to resume
+        try session.setActive(false, options: [.notifyOthersOnDeactivation])
+
+        // Reconfigure with new options
         try session.setCategory(
           .playAndRecord,
           mode: .default,
           options: audioSessionOptions()
         )
+
+        // Restart engine (implicitly reactivates session)
+        try audioEngine?.start()
+        playerNode?.play()
+
         print("[DuetAudio] Audio session reconfigured with ducking=\\(enabled)")
       } catch {
         print("[DuetAudio] Failed to reconfigure ducking: \\(error)")
+        // Try to recover
+        try? audioEngine?.start()
+        playerNode?.play()
       }
     }
   }
