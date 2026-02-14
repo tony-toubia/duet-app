@@ -572,57 +572,33 @@ class DuetAudioManager: RCTEventEmitter {
   @objc
   func setupAudioSession(_ resolve: @escaping RCTPromiseResolveBlock,
                          reject: @escaping RCTPromiseRejectBlock) {
-    do {
-      let session = AVAudioSession.sharedInstance()
+    // Don't configure audio session category here - setting .playAndRecord
+    // immediately would interrupt other apps. We defer ALL audio session
+    // configuration to startAudioEngine when the user actually joins a room.
+    isSessionActive = true
 
-      // CRITICAL: Use .ambient mode initially to not interrupt other apps
-      // We'll switch to .playAndRecord only when actually needed
-      // This prevents music from stopping when the app opens
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,  // Use default mode instead of voiceChat to avoid audio route changes
-        options: [
-          .allowBluetooth,       // Support Bluetooth headsets
-          .allowBluetoothA2DP,   // Support high-quality Bluetooth audio
-          .defaultToSpeaker,     // Use speaker when no headphones
-          .mixWithOthers         // Allow mixing with other apps (CRITICAL)
-        ]
-      )
+    // Listen for interruptions (phone calls, etc.)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleInterruption),
+      name: AVAudioSession.interruptionNotification,
+      object: nil
+    )
 
-      // Optimize for voice
-      try session.setPreferredSampleRate(outputSampleRate)
-      try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
+    // Listen for route changes (headphones plugged/unplugged, Bluetooth connect/disconnect)
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleRouteChange),
+      name: AVAudioSession.routeChangeNotification,
+      object: nil
+    )
 
-      // DON'T activate the session yet - this can interrupt other audio
-      // The audio engine will activate it implicitly when started
-      // This allows music to keep playing until the user actually joins a room
-      isSessionActive = true
+    // Log current audio route for debugging
+    let currentRoute = AVAudioSession.sharedInstance().currentRoute
+    let outputs = currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")
+    print("[DuetAudio] Audio session ready (deferred), current outputs: \\(outputs)")
 
-      // Listen for interruptions (phone calls, etc.)
-      NotificationCenter.default.addObserver(
-        self,
-        selector: #selector(handleInterruption),
-        name: AVAudioSession.interruptionNotification,
-        object: nil
-      )
-
-      // Listen for route changes (headphones plugged/unplugged, Bluetooth connect/disconnect)
-      NotificationCenter.default.addObserver(
-        self,
-        selector: #selector(handleRouteChange),
-        name: AVAudioSession.routeChangeNotification,
-        object: nil
-      )
-
-      // Log current audio route for debugging
-      let currentRoute = session.currentRoute
-      let outputs = currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")
-      print("[DuetAudio] Audio session configured, current outputs: \\(outputs)")
-
-      resolve(["success": true, "sampleRate": outputSampleRate])
-    } catch {
-      reject("AUDIO_SESSION_ERROR", "Failed to setup audio session: \\(error.localizedDescription)", error)
-    }
+    resolve(["success": true, "sampleRate": outputSampleRate])
   }
 
   // MARK: - Audio Mixing
@@ -656,11 +632,24 @@ class DuetAudioManager: RCTEventEmitter {
         self?.endBackgroundTask()
       }
 
-      // NOW activate the audio session - this is when we actually need it
-      // Doing it here instead of setupAudioSession prevents interrupting music on app open
-      // Audio session uses .mixWithOthers so partner voice plays on top of media
+      // Configure audio session for voice + mixing.
+      // IMPORTANT: Do NOT call setActive(true) explicitly here.
+      // Let AVAudioEngine.start() activate it implicitly - this avoids sending
+      // interruption notifications to other apps (Spotify, etc.) which cause them to pause.
       let session = AVAudioSession.sharedInstance()
-      try session.setActive(true, options: [])
+      try session.setCategory(
+        .playAndRecord,
+        mode: .default,
+        options: [
+          .mixWithOthers,        // Mix with other apps (CRITICAL - prevents pause)
+          .allowBluetooth,
+          .allowBluetoothA2DP,
+          .defaultToSpeaker
+        ]
+      )
+      try session.setPreferredSampleRate(outputSampleRate)
+      try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
+      // Session will be activated implicitly by engine.start() below
 
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
@@ -888,36 +877,46 @@ class DuetAudioManager: RCTEventEmitter {
   }
 
   // MARK: - Media Controls
-  // Use MPMusicPlayerController to send commands to the system music player
+  // Must dispatch to main thread - MPMusicPlayerController requires it
 
   @objc
   func mediaPlayPause() {
-    let player = MPMusicPlayerController.systemMusicPlayer
-    if player.playbackState == .playing {
-      player.pause()
-    } else {
-      player.play()
+    DispatchQueue.main.async {
+      let player = MPMusicPlayerController.systemMusicPlayer
+      if player.playbackState == .playing {
+        player.pause()
+      } else {
+        player.play()
+      }
     }
   }
 
   @objc
   func mediaPlay() {
-    MPMusicPlayerController.systemMusicPlayer.play()
+    DispatchQueue.main.async {
+      MPMusicPlayerController.systemMusicPlayer.play()
+    }
   }
 
   @objc
   func mediaPause() {
-    MPMusicPlayerController.systemMusicPlayer.pause()
+    DispatchQueue.main.async {
+      MPMusicPlayerController.systemMusicPlayer.pause()
+    }
   }
 
   @objc
   func mediaNext() {
-    MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
+    DispatchQueue.main.async {
+      MPMusicPlayerController.systemMusicPlayer.skipToNextItem()
+    }
   }
 
   @objc
   func mediaPrevious() {
-    MPMusicPlayerController.systemMusicPlayer.skipToPreviousItem()
+    DispatchQueue.main.async {
+      MPMusicPlayerController.systemMusicPlayer.skipToPreviousItem()
+    }
   }
 
   // MARK: - Utility Functions
