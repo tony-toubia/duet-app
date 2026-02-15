@@ -154,3 +154,131 @@ export const onRoomEmpty = functions.database
 
     return null;
   });
+
+/**
+ * Send push notification when a friend request is created
+ */
+export const onFriendRequestCreated = functions.database
+  .ref('/friends/{userId}/{friendId}')
+  .onCreate(async (snapshot, context) => {
+    const { userId, friendId } = context.params;
+    const friendData = snapshot.val();
+
+    // Only notify the recipient (the user who didn't initiate)
+    if (friendData.initiatedBy === userId) {
+      // The friend entry was written TO userId's list BY friendId (the initiator)
+      // So userId is the recipient
+      try {
+        const userSnapshot = await db.ref(`/users/${userId}`).once('value');
+        const userData = userSnapshot.val();
+
+        if (!userData?.pushToken) {
+          console.log(`No push token for user ${userId}`);
+          return null;
+        }
+
+        const message: admin.messaging.Message = {
+          token: userData.pushToken,
+          notification: {
+            title: 'Friend Request',
+            body: `${friendData.displayName} wants to be your friend!`,
+          },
+          data: {
+            type: 'friend_request',
+            fromUid: friendId,
+            fromDisplayName: friendData.displayName || 'Someone',
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'duet_notifications',
+              priority: 'high',
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                alert: {
+                  title: 'Friend Request',
+                  body: `${friendData.displayName} wants to be your friend!`,
+                },
+                sound: 'default',
+              },
+            },
+          },
+        };
+
+        await messaging.send(message);
+        console.log(`Friend request notification sent to ${userId}`);
+      } catch (error) {
+        console.error('Error sending friend request notification:', error);
+      }
+    }
+
+    return null;
+  });
+
+/**
+ * Send push notification when a room invitation is created
+ */
+export const onInvitationCreated = functions.database
+  .ref('/invitations/{invitationId}')
+  .onCreate(async (snapshot, context) => {
+    const invitation = snapshot.val();
+
+    if (!invitation?.toUid) {
+      return null;
+    }
+
+    try {
+      const userSnapshot = await db.ref(`/users/${invitation.toUid}`).once('value');
+      const userData = userSnapshot.val();
+
+      if (!userData?.pushToken) {
+        console.log(`No push token for user ${invitation.toUid}`);
+        return null;
+      }
+
+      const message: admin.messaging.Message = {
+        token: userData.pushToken,
+        notification: {
+          title: 'Room Invitation',
+          body: `${invitation.fromDisplayName} invited you to join their room!`,
+        },
+        data: {
+          type: 'room_invite',
+          roomCode: invitation.roomCode,
+          fromUid: invitation.fromUid,
+          fromDisplayName: invitation.fromDisplayName || 'Someone',
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'duet_notifications',
+            priority: 'high',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: 'Room Invitation',
+                body: `${invitation.fromDisplayName} invited you to join their room!`,
+              },
+              sound: 'default',
+            },
+          },
+        },
+      };
+
+      await messaging.send(message);
+      console.log(`Room invitation notification sent to ${invitation.toUid}`);
+
+      // Clean up invitation after sending
+      await snapshot.ref.remove();
+    } catch (error) {
+      console.error('Error sending room invitation notification:', error);
+    }
+
+    return null;
+  });

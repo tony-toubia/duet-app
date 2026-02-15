@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "Duet",
     slug: "duet",
-    version: "0.1.0",
+    version: "0.2.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -15,7 +15,11 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
+      buildNumber: "2",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
+      associatedDomains: [
+        "applinks:duet-33cf5.firebaseapp.com"
+      ],
       entitlements: {
         "aps-environment": "development"
       },
@@ -39,7 +43,22 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
+      versionCode: 2,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "duet-33cf5.firebaseapp.com",
+              pathPrefix: "/__/auth/links"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       permissions: [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -55,12 +74,33 @@ module.exports = {
     plugins: [
       "@react-native-firebase/app",
       "@react-native-firebase/crashlytics",
+      "@react-native-google-signin/google-signin",
       [
         "expo-build-properties",
         {
+          android: {
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
+            enableProguardInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+          },
           ios: {
             useFrameworks: "static"
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          photosPermission: "Duet needs access to your photos to set your profile picture.",
+          cameraPermission: "Duet needs access to your camera to take a profile picture."
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          androidAppId: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
+          iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy"
         }
       ],
       "./plugins/withDuetAudio"
@@ -69,6 +109,11 @@ module.exports = {
       eas: {
         projectId: "201e2c63-094a-45f4-b8f5-2a08c00fca37"
       },
+      googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID || "",
+      admobBannerIdAndroid: process.env.ADMOB_BANNER_ID_ANDROID || "",
+      admobBannerIdIos: process.env.ADMOB_BANNER_ID_IOS || "",
+      admobInterstitialIdAndroid: process.env.ADMOB_INTERSTITIAL_ID_ANDROID || "",
+      admobInterstitialIdIos: process.env.ADMOB_INTERSTITIAL_ID_IOS || "",
       turnServerIp: process.env.TURN_SERVER_IP || "",
       turnUsername: process.env.TURN_USERNAME || "",
       turnPassword: process.env.TURN_PASSWORD || "",

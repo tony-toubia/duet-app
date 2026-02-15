@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Duet - Always-On Voice Connection</title>
+  <meta name="description" content="Duet is an always-on voice connection app. Together, even when apart.">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a293d;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 24px;
+      background: linear-gradient(180deg, #1a293d 0%, #24384f 50%, #f4dbc8 100%);
+      min-height: 100vh;
+      position: relative;
+    }
+    .logo-container {
+      margin-bottom: 24px;
+    }
+    .logo-icon {
+      width: 80px;
+      height: 80px;
+      background: #e8734a;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      box-shadow: 0 8px 32px rgba(232, 115, 74, 0.3);
+    }
+    .logo-icon svg {
+      width: 44px;
+      height: 44px;
+      fill: #fff;
+    }
+    h1 {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+    }
+    .tagline {
+      font-size: 20px;
+      color: rgba(255, 255, 255, 0.85);
+      line-height: 1.5;
+      max-width: 400px;
+      margin-bottom: 40px;
+    }
+    .badges {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 48px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 12px 20px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      backdrop-filter: blur(8px);
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    .badge:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+      max-width: 640px;
+      width: 100%;
+      margin-bottom: 60px;
+    }
+    .feature {
+      text-align: center;
+      padding: 24px 16px;
+    }
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+    .feature h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .feature p {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.6);
+      line-height: 1.5;
+    }
+    .footer {
+      padding: 24px;
+      text-align: center;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+    }
+    .footer a {
+      color: rgba(255, 255, 255, 0.5);
+      text-decoration: none;
+      font-size: 13px;
+      margin: 0 12px;
+      transition: color 0.2s;
+    }
+    .footer a:hover { color: #e8734a; }
+
+    @media (max-width: 480px) {
+      h1 { font-size: 36px; }
+      .tagline { font-size: 17px; }
+      .features { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="logo-container">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2H3v2a9 9 0 0 0 8 8.94V23h2v-2.06A9 9 0 0 0 21 12v-2h-2z"/>
+        </svg>
+      </div>
+    </div>
+    <h1>Duet</h1>
+    <p class="tagline">Always-on voice connection.<br>Together, even when apart.</p>
+
+    <div class="badges">
+      <span class="badge">Available on iOS</span>
+      <span class="badge">Available on Android</span>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">🎙</div>
+        <h3>Always On</h3>
+        <p>One-tap voice rooms that stay connected in the background.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <h3>Private</h3>
+        <p>Peer-to-peer encrypted audio. We never hear your conversations.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">👥</div>
+        <h3>Friends</h3>
+        <p>Add friends, see who's online, and invite them to your room.</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/delete">Delete Account</a>
+      <a href="mailto:privacy@duetapp.com">Contact</a>
+    </div>
+  </div>
+</body>
+</html>

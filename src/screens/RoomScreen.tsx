@@ -15,6 +15,9 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from '@/hooks/useDuetStore';
+import { useFriendsStore } from '@/hooks/useFriendsStore';
+import { invitationService } from '@/services/InvitationService';
+import { adService } from '@/services/AdService';
 import { AvatarCircle } from '@/components/AvatarCircle';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { VoiceSensitivity } from '@/components/VoiceSensitivity';
@@ -71,6 +74,26 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     }
   };
 
+  const handleInviteFriend = () => {
+    const friends = useFriendsStore.getState().acceptedFriends();
+    if (friends.length === 0) {
+      Alert.alert('No Friends', 'Add friends from the lobby to invite them to rooms.');
+      return;
+    }
+
+    const buttons: Array<{ text: string; onPress?: () => void; style?: string }> = friends.slice(0, 5).map((friend) => ({
+      text: friend.displayName,
+      onPress: () => {
+        invitationService.sendInvitation(friend.uid, roomCode!)
+          .then(() => Alert.alert('Invited', `Invitation sent to ${friend.displayName}!`))
+          .catch((error: any) => Alert.alert('Error', error?.message || 'Failed to send invitation.'));
+      },
+    }));
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Invite Friend', 'Choose a friend to invite:', buttons as any);
+  };
+
   const handleLeave = () => {
     Alert.alert(
       'Leave Room',
@@ -82,6 +105,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           style: 'destructive',
           onPress: async () => {
             await leaveRoom();
+            adService.onRoomLeave();
             navigation.replace('Lobby');
           },
         },
@@ -146,6 +170,13 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       >
         <Text style={styles.actionIcon}>{isDeafened ? '\ud83d\udd15' : '\ud83d\udd0a'}</Text>
         <Text style={styles.actionLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.actionBtn}
+        onPress={handleInviteFriend}
+      >
+        <Text style={styles.actionIcon}>{'\ud83d\udc65'}</Text>
+        <Text style={styles.actionLabel}>Invite</Text>
       </TouchableOpacity>
     </View>
   );

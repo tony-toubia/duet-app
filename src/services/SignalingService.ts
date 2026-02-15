@@ -39,18 +39,18 @@ export class SignalingService {
   }
   
   /**
-   * Initialize with anonymous auth
+   * Initialize with the current authenticated user
    */
   async initialize(): Promise<string> {
-    try {
-      const userCredential = await auth().signInAnonymously();
-      this.userId = userCredential.user.uid;
-      console.log('[Signaling] Authenticated as:', this.userId);
-      return this.userId;
-    } catch (error) {
-      this.callbacks.onError(error as Error);
+    const currentUser = auth().currentUser;
+    if (!currentUser) {
+      const error = new Error('Not authenticated. User must sign in before initializing signaling.');
+      this.callbacks.onError(error);
       throw error;
     }
+    this.userId = currentUser.uid;
+    console.log('[Signaling] Authenticated as:', this.userId);
+    return this.userId;
   }
   
   /**

@@ -105,12 +105,30 @@
       }
     },
 
-    // Push notification tokens (for partner disconnect notifications)
+    // User profiles and push tokens
     "users": {
+      // Allow reading profiles for friend search and display
+      ".read": "auth != null",
+
       "$userId": {
-        // Users can only read/write their own data
-        ".read": "$userId == auth.uid",
+        // Users can write their own data
         ".write": "$userId == auth.uid",
+
+        "profile": {
+          ".validate": "newData.hasChildren(['displayName'])",
+          "displayName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 100"
+          },
+          "email": {
+            ".validate": "newData.isString() || newData.val() == null"
+          },
+          "avatarUrl": {
+            ".validate": "newData.isString() || newData.val() == null"
+          },
+          "authProvider": {
+            ".validate": "newData.isString() && (newData.val() == 'google' || newData.val() == 'email' || newData.val() == 'anonymous')"
+          }
+        },
 
         "pushToken": {
           ".validate": "newData.isString() && newData.val().length < 500"
@@ -119,6 +137,76 @@
         "platform": {
           ".validate": "newData.isString() && (newData.val() == 'ios' || newData.val() == 'android')"
         }
+      }
+    },
+
+    // Friends list
+    "friends": {
+      "$userId": {
+        // Users can read their own friends list
+        ".read": "$userId == auth.uid",
+
+        "$friendId": {
+          // Either user can write (for sending/accepting requests)
+          ".write": "auth.uid == $userId || auth.uid == $friendId",
+          ".validate": "newData.hasChildren(['status', 'displayName', 'initiatedBy'])",
+
+          "status": {
+            ".validate": "newData.isString() && (newData.val() == 'pending' || newData.val() == 'accepted')"
+          },
+          "displayName": {
+            ".validate": "newData.isString()"
+          },
+          "avatarUrl": {
+            ".validate": "newData.isString() || newData.val() == null"
+          },
+          "addedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "initiatedBy": {
+            ".validate": "newData.isString()"
+          }
+        }
+      }
+    },
+
+    // Recent connections
+    "recentConnections": {
+      "$userId": {
+        ".read": "$userId == auth.uid",
+        ".write": "$userId == auth.uid",
+
+        "$partnerId": {
+          ".validate": "newData.hasChildren(['displayName', 'lastConnectedAt', 'roomCode'])"
+        }
+      }
+    },
+
+    // Presence/online status
+    "status": {
+      "$userId": {
+        // Anyone authenticated can read status (for friend list online indicators)
+        ".read": "auth != null",
+        // Only the user can write their own status
+        ".write": "$userId == auth.uid",
+
+        "state": {
+          ".validate": "newData.isString() && (newData.val() == 'online' || newData.val() == 'offline')"
+        },
+        "lastSeen": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+
+    // Room invitations
+    "invitations": {
+      "$invitationId": {
+        // Anyone authenticated can read invitations addressed to them
+        ".read": "auth != null && data.child('toUid').val() == auth.uid",
+        // Anyone authenticated can create invitations
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['fromUid', 'fromDisplayName', 'toUid', 'roomCode', 'createdAt'])"
       }
     },
 

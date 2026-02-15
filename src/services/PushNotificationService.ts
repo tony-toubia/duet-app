@@ -13,6 +13,8 @@ import auth from '@react-native-firebase/auth';
 
 export interface PushNotificationCallbacks {
   onPartnerLeft?: (roomCode: string) => void;
+  onFriendRequest?: (fromUid: string, fromDisplayName: string) => void;
+  onRoomInvite?: (roomCode: string, fromUid: string, fromDisplayName: string) => void;
   onTokenRefresh?: (token: string) => void;
 }
 
@@ -81,21 +83,18 @@ class PushNotificationService {
    * Save push token to Firebase Realtime Database
    */
   private async saveTokenToDatabase(token: string): Promise<void> {
-    // Get or create anonymous user
-    let user = auth().currentUser;
+    const user = auth().currentUser;
     if (!user) {
-      const result = await auth().signInAnonymously();
-      user = result.user;
+      console.warn('[Push] No authenticated user, skipping token save');
+      return;
     }
 
-    if (user) {
-      await database().ref(`/users/${user.uid}`).update({
-        pushToken: token,
-        platform: Platform.OS,
-        updatedAt: database.ServerValue.TIMESTAMP,
-      });
-      console.log('[Push] Token saved to database');
-    }
+    await database().ref(`/users/${user.uid}`).update({
+      pushToken: token,
+      platform: Platform.OS,
+      updatedAt: database.ServerValue.TIMESTAMP,
+    });
+    console.log('[Push] Token saved to database');
   }
 
   /**
@@ -153,7 +152,6 @@ class PushNotificationService {
     switch (data?.type) {
       case 'partner_left':
         if (isForeground) {
-          // Show alert when in foreground
           Alert.alert(
             'Partner Disconnected',
             'Your duet partner has left the room.',
@@ -161,6 +159,49 @@ class PushNotificationService {
           );
         }
         this.callbacks.onPartnerLeft?.(data.roomCode as string);
+        break;
+
+      case 'friend_request':
+        if (isForeground) {
+          Alert.alert(
+            'Friend Request',
+            `${data.fromDisplayName || 'Someone'} wants to be your friend!`,
+            [{ text: 'OK' }]
+          );
+        }
+        this.callbacks.onFriendRequest?.(
+          data.fromUid as string,
+          data.fromDisplayName as string
+        );
+        break;
+
+      case 'room_invite':
+        if (isForeground) {
+          Alert.alert(
+            'Room Invitation',
+            `${data.fromDisplayName || 'Someone'} invited you to join their room!`,
+            [
+              { text: 'Decline', style: 'cancel' },
+              {
+                text: 'Join',
+                onPress: () => {
+                  this.callbacks.onRoomInvite?.(
+                    data.roomCode as string,
+                    data.fromUid as string,
+                    data.fromDisplayName as string
+                  );
+                },
+              },
+            ]
+          );
+        } else {
+          // Tapped notification — auto-join
+          this.callbacks.onRoomInvite?.(
+            data.roomCode as string,
+            data.fromUid as string,
+            data.fromDisplayName as string
+          );
+        }
         break;
 
       default:

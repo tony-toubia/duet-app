@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { View, Text, Animated, StyleSheet, Image } from 'react-native';
 import { PulseRings } from './PulseRings';
 import { colors } from '@/theme';
 
@@ -22,6 +22,7 @@ export const AvatarCircle = ({
   isSpeaking,
   isMuted,
   isDeafened,
+  avatarUrl,
 }: AvatarCircleProps) => {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -44,7 +45,11 @@ export const AvatarCircle = ({
             { transform: [{ scale }] },
           ]}
         >
-          <Text style={styles.initials}>{initials}</Text>
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.initials}>{initials}</Text>
+          )}
         </Animated.View>
       </View>
       <View style={styles.labelContainer}>
@@ -80,6 +85,11 @@ const styles = StyleSheet.create({
   circleActive: {
     borderColor: colors.primary,
     backgroundColor: 'rgba(232, 115, 74, 0.2)',
+  },
+  avatarImage: {
+    width: CIRCLE_SIZE - 6, // Account for border
+    height: CIRCLE_SIZE - 6,
+    borderRadius: (CIRCLE_SIZE - 6) / 2,
   },
   initials: {
     color: colors.text,

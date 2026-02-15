@@ -13,6 +13,9 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from '@/hooks/useDuetStore';
+import { useAuthStore } from '@/hooks/useAuthStore';
+import { adService } from '@/services/AdService';
+import { LobbyBannerAd } from '@/components/LobbyBannerAd';
 import { colors } from '@/theme';
 import type { LobbyScreenProps } from '@/navigation/types';
 
@@ -29,6 +32,8 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     createRoom,
     joinRoom,
   } = useDuetStore();
+
+  const userProfile = useAuthStore((s) => s.userProfile);
 
   // Navigate to room when connected
   useEffect(() => {
@@ -49,6 +54,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     const init = async () => {
       try {
         await initialize();
+        adService.initialize();
         setIsInitialized(true);
       } catch (error: any) {
         console.error('[Lobby] Init failed:', error);
@@ -132,16 +138,29 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         />
       </View>
       <View style={[styles.lobbyOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.lobbyTopBar}>
+          <TouchableOpacity
+            style={styles.friendsBtn}
+            onPress={() => navigation.navigate('Friends')}
+          >
+            <Text style={styles.friendsBtnText}>Friends</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={styles.profileBtnText}>
+              {userProfile?.displayName?.charAt(0)?.toUpperCase() || 'P'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.lobbyHeader}>
           <Image
             source={require('../../assets/duet-logo.png')}
             style={styles.lobbyLogo}
             resizeMode="contain"
           />
-          <Text style={styles.lobbyTitle}>Duet</Text>
-          <Text style={styles.lobbyTagline}>
-            Always-on voice connection.{'\n'}Together, even when apart.
-          </Text>
         </View>
         <View style={{ flex: 1 }} />
         <View style={styles.lobbyButtons}>
@@ -186,6 +205,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             </View>
           )}
         </View>
+        <LobbyBannerAd />
       </View>
     </View>
   );
@@ -242,9 +262,42 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
+  lobbyTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  friendsBtn: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  friendsBtnText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  profileBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileBtnText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   lobbyHeader: {
     alignItems: 'center',
-    paddingTop: 16,
+    paddingTop: 8,
   },
   lobbyLogo: {
     width: 60,

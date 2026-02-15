@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Avatar images
+    match /avatars/{fileName} {
+      // Anyone can read avatars
+      allow read: if true;
+      // Only the owner can upload their avatar
+      allow write: if request.auth != null
+        && fileName.matches(request.auth.uid + '.*')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
