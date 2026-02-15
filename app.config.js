@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "3",
+      buildNumber: "4",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com"
@@ -43,7 +43,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 3,
+      versionCode: 4,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       intentFilters: [
         {
@@ -69,6 +69,10 @@ module.exports = {
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.WAKE_LOCK"
+      ],
+      blockedPermissions: [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
       ]
     },
     plugins: [
@@ -93,9 +97,7 @@ module.exports = {
         "expo-image-picker",
         {
           photosPermission: "Duet needs access to your photos to set your profile picture.",
-          cameraPermission: "Duet needs access to your camera to take a profile picture.",
-          "android.requestMediaLibraryPermissionsForImages": false,
-          "android.requestMediaLibraryPermissionsForVideos": false
+          cameraPermission: "Duet needs access to your camera to take a profile picture."
         }
       ],
       [
