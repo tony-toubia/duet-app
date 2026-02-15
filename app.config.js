@@ -2,7 +2,7 @@ module.exports = {
   expo: {
     name: "Duet",
     slug: "duet",
-    version: "0.2.0",
+    version: "0.2.1",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "automatic",
@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "2",
+      buildNumber: "3",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com"
@@ -43,7 +43,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 2,
+      versionCode: 3,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       intentFilters: [
         {
@@ -93,7 +93,9 @@ module.exports = {
         "expo-image-picker",
         {
           photosPermission: "Duet needs access to your photos to set your profile picture.",
-          cameraPermission: "Duet needs access to your camera to take a profile picture."
+          cameraPermission: "Duet needs access to your camera to take a profile picture.",
+          "android.requestMediaLibraryPermissionsForImages": false,
+          "android.requestMediaLibraryPermissionsForVideos": false
         }
       ],
       [
