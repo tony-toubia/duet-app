@@ -69,10 +69,6 @@ module.exports = {
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.WAKE_LOCK"
-      ],
-      blockedPermissions: [
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO"
       ]
     },
     plugins: [
