@@ -29,11 +29,17 @@
       height: 50%;
       background: #f4dbc8;
     }
-    .bg-blend {
+    .bg-image {
       position: fixed;
-      top: 35%; left: 0; right: 0;
-      height: 30%;
-      background: linear-gradient(180deg, #1a293d 0%, #3a4f65 30%, #c4a48a 70%, #f4dbc8 100%);
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .bg-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
 
     .screen {
@@ -199,8 +205,8 @@
 </head>
 <body>
   <div class="bg-top"></div>
-  <div class="bg-blend"></div>
   <div class="bg-bottom"></div>
+  <div class="bg-image"><img src="/duet-home-bg.png" alt=""></div>
 
   <div class="screen">
     <div class="top-bar">
