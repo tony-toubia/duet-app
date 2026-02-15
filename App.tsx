@@ -20,6 +20,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from './src/hooks/useDuetStore';
+import { DuetAudio } from './src/native/DuetAudio';
 import { NavigationWidget } from './src/components/NavigationWidget';
 
 // Brand color palette
@@ -170,7 +171,6 @@ const AvatarCircle = ({
 // Media Player Component (minimizable, with playback state detection)
 // =====================
 const MediaPlayer = ({ minimized, onToggleMinimized }: { minimized: boolean; onToggleMinimized: () => void }) => {
-  const { DuetAudio } = require('./src/native/DuetAudio');
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Poll for media playback state
@@ -313,8 +313,9 @@ function AppContent() {
       try {
         await initialize();
         setIsInitialized(true);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to initialize audio. Please restart the app.');
+      } catch (error: any) {
+        console.error('[App] Init failed:', error);
+        Alert.alert('Error', error?.message || 'Failed to initialize audio. Please restart the app.');
       }
     };
     init();
@@ -336,8 +337,9 @@ function AppContent() {
           { text: 'OK' },
         ]
       );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create room');
+    } catch (error: any) {
+      console.error('[App] Create room failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to create room. Please restart the app and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -351,8 +353,10 @@ function AppContent() {
     setIsLoading(true);
     try {
       await joinRoom(joinCode.toUpperCase());
+      setShowJoinInput(false);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to join room');
+      console.error('[App] Join room failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to join room');
     } finally {
       setIsLoading(false);
     }
@@ -455,26 +459,7 @@ function AppContent() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.joinRoomButton}
-              onPress={() => {
-                Alert.prompt
-                  ? Alert.prompt('Join Room', 'Enter the room code:', [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Join',
-                        onPress: (code?: string) => {
-                          if (code && code.length === 6) {
-                            setJoinCode(code.toUpperCase());
-                            joinRoom(code.toUpperCase()).catch((err: any) =>
-                              Alert.alert('Error', err.message || 'Failed to join room')
-                            );
-                          } else {
-                            Alert.alert('Invalid Code', 'Please enter a 6-character room code');
-                          }
-                        },
-                      },
-                    ], 'plain-text', '', 'default')
-                  : setShowJoinInput(true)
-              }}
+              onPress={() => setShowJoinInput(true)}
               disabled={isLoading}
             >
               <Text style={styles.joinRoomText}>Join Room</Text>
