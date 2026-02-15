@@ -62,3 +62,4 @@ server/certs/
 *.pem
 *.crt
 *.key
+.vercel
