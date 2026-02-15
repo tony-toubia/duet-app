@@ -1,15 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Linking, Platform, TouchableOpacity, AppState, AppStateStatus } from 'react-native';
-
-// Colors (matching main app)
-const colors = {
-  text: '#ffffff',
-  textMuted: '#b0b8c8',
-  primary: '#e8734a',
-  success: '#4ade80',
-  glass: 'rgba(255, 255, 255, 0.12)',
-  glassBorder: 'rgba(255, 255, 255, 0.18)',
-};
+import { colors } from '@/theme';
 
 // All supported quick-launch apps
 type AppId =
