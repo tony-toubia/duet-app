@@ -10,7 +10,6 @@ import {
   TestIds,
 } from 'react-native-google-mobile-ads';
 import Constants from 'expo-constants';
-import { colors } from '@/theme';
 
 const getNativeAdUnitId = () => {
   if (__DEV__) return TestIds.NATIVE;
@@ -38,7 +37,7 @@ export const RoomNativeAd = () => {
     let ad: NativeAd | null = null;
 
     NativeAd.createForAdRequest(NATIVE_AD_UNIT_ID, {
-      aspectRatio: NativeMediaAspectRatio.LANDSCAPE,
+      aspectRatio: NativeMediaAspectRatio.SQUARE,
     })
       .then((loadedAd) => {
         if (!destroyed) {
@@ -64,19 +63,18 @@ export const RoomNativeAd = () => {
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
       <View style={styles.card}>
-        {nativeAd.mediaContent && (
-          <NativeMediaView style={styles.media} resizeMode="cover" />
-        )}
-        <View style={styles.infoRow}>
-          {nativeAd.icon && (
+        <View style={styles.row}>
+          {/* Left: media or icon thumbnail */}
+          {nativeAd.mediaContent ? (
+            <NativeMediaView style={styles.mediaThumbnail} resizeMode="cover" />
+          ) : nativeAd.icon ? (
             <NativeAsset assetType={NativeAssetType.ICON}>
-              <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
+              <Image source={{ uri: nativeAd.icon.url }} style={styles.mediaThumbnail} />
             </NativeAsset>
-          )}
-          <View style={styles.textCol}>
-            <NativeAsset assetType={NativeAssetType.HEADLINE}>
-              <Text style={styles.headline} numberOfLines={1}>{nativeAd.headline}</Text>
-            </NativeAsset>
+          ) : null}
+
+          {/* Right: text + CTA */}
+          <View style={styles.rightCol}>
             <View style={styles.metaRow}>
               <Text style={styles.adBadge}>Ad</Text>
               {nativeAd.starRating != null && nativeAd.starRating > 0 && (
@@ -88,13 +86,33 @@ export const RoomNativeAd = () => {
                 </NativeAsset>
               )}
             </View>
+            {nativeAd.icon && nativeAd.mediaContent && (
+              <View style={styles.iconRow}>
+                <NativeAsset assetType={NativeAssetType.ICON}>
+                  <Image source={{ uri: nativeAd.icon.url }} style={styles.iconSmall} />
+                </NativeAsset>
+                <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                  <Text style={styles.headline} numberOfLines={1}>{nativeAd.headline}</Text>
+                </NativeAsset>
+              </View>
+            )}
+            {(!nativeAd.icon || !nativeAd.mediaContent) && (
+              <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                <Text style={styles.headline} numberOfLines={2}>{nativeAd.headline}</Text>
+              </NativeAsset>
+            )}
+            {nativeAd.body && (
+              <NativeAsset assetType={NativeAssetType.BODY}>
+                <Text style={styles.body} numberOfLines={1}>{nativeAd.body}</Text>
+              </NativeAsset>
+            )}
+            {nativeAd.callToAction && (
+              <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+                <Text style={styles.cta}>{nativeAd.callToAction}</Text>
+              </NativeAsset>
+            )}
           </View>
         </View>
-        {nativeAd.callToAction && (
-          <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-            <Text style={styles.cta}>{nativeAd.callToAction}</Text>
-          </NativeAsset>
-        )}
       </View>
     </NativeAdView>
   );
@@ -108,36 +126,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 16,
     padding: 12,
-    gap: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  media: {
-    height: 140,
+  row: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  mediaThumbnail: {
+    width: 90,
+    height: 90,
     borderRadius: 10,
     overflow: 'hidden',
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-  },
-  textCol: {
+  rightCol: {
     flex: 1,
-    gap: 2,
-  },
-  headline: {
-    color: '#1a1a2e',
-    fontSize: 14,
-    fontWeight: '600',
+    justifyContent: 'center',
+    gap: 4,
   },
   metaRow: {
     flexDirection: 'row',
@@ -163,14 +171,35 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 11,
   },
+  iconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+  },
+  headline: {
+    color: '#1a1a2e',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  body: {
+    color: '#666',
+    fontSize: 11,
+  },
   cta: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
     backgroundColor: '#e8734a',
-    borderRadius: 12,
-    paddingVertical: 10,
+    borderRadius: 10,
+    paddingVertical: 7,
     overflow: 'hidden',
+    marginTop: 2,
   },
 });

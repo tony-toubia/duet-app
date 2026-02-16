@@ -16,25 +16,46 @@ const levels = [
 ];
 
 export const VoiceSensitivity = ({ value, onChange }: VoiceSensitivityProps) => {
+  const currentIndex = levels.findIndex((l) => value < l.value + 8);
+  const effectiveIndex = currentIndex === -1 ? levels.length - 1 : currentIndex;
+
+  const handleDecrease = () => {
+    const newIndex = Math.max(0, effectiveIndex - 1);
+    onChange(levels[newIndex].value);
+  };
+
+  const handleIncrease = () => {
+    const newIndex = Math.min(levels.length - 1, effectiveIndex + 1);
+    onChange(levels[newIndex].value);
+  };
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Voice Sensitivity</Text>
-      <View style={styles.track}>
-        {levels.map((level, i) => {
-          const isActive = value >= level.value - 7;
-          return (
-            <TouchableOpacity
-              key={level.value}
-              style={[
-                styles.segment,
-                isActive && styles.segmentActive,
-                i === 0 && { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 },
-                i === levels.length - 1 && { borderTopRightRadius: 6, borderBottomRightRadius: 6 },
-              ]}
-              onPress={() => onChange(level.value)}
-            />
-          );
-        })}
+      <View style={styles.sliderRow}>
+        <TouchableOpacity style={styles.stepBtn} onPress={handleDecrease}>
+          <Text style={styles.stepBtnText}>{'\u2212'}</Text>
+        </TouchableOpacity>
+        <View style={styles.track}>
+          {levels.map((level, i) => {
+            const isActive = value >= level.value - 7;
+            return (
+              <TouchableOpacity
+                key={level.value}
+                style={[
+                  styles.segment,
+                  isActive && styles.segmentActive,
+                  i === 0 && { borderTopLeftRadius: 6, borderBottomLeftRadius: 6 },
+                  i === levels.length - 1 && { borderTopRightRadius: 6, borderBottomRightRadius: 6 },
+                ]}
+                onPress={() => onChange(level.value)}
+              />
+            );
+          })}
+        </View>
+        <TouchableOpacity style={styles.stepBtn} onPress={handleIncrease}>
+          <Text style={styles.stepBtnText}>+</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.labels}>
         <Text style={styles.labelText}>Low</Text>
@@ -62,7 +83,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
+  sliderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBtnText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
   track: {
+    flex: 1,
     flexDirection: 'row',
     height: 8,
     gap: 3,
@@ -78,6 +119,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 6,
+    paddingHorizontal: 42,
   },
   labelText: {
     color: colors.textMuted,

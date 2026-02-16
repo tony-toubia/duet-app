@@ -3,6 +3,7 @@ import { View, Text, Alert, StyleSheet } from 'react-native';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { adService } from '@/services/AdService';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 
 const GUEST_SESSION_SECONDS = 20 * 60; // 20 minutes
@@ -14,117 +15,77 @@ interface GuestRoomTimerProps {
 export const GuestRoomTimer = ({ onTimeExpired }: GuestRoomTimerProps) => {
   const isGuest = useAuthStore((s) => s.isGuest);
   const signOut = useAuthStore((s) => s.signOut);
-  const connectionState = useDuetStore((s) => s.connectionState);
   const setMuted = useDuetStore((s) => s.setMuted);
   const setDeafened = useDuetStore((s) => s.setDeafened);
 
   const [secondsLeft, setSecondsLeft] = useState(GUEST_SESSION_SECONDS);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isShowingAlert = useRef(false);
+  const prevAudioState = useRef<{ muted: boolean; deafened: boolean }>({ muted: false, deafened: false });
 
-  useEffect(() => {
-    if (!isGuest) return;
-
+  const startCountdown = () => {
     intervalRef.current = setInterval(() => {
-      // Only count down when connected to a partner
       const currentState = useDuetStore.getState().connectionState;
       if (currentState !== 'connected') return;
 
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           if (intervalRef.current) clearInterval(intervalRef.current);
-          if (!isShowingAlert.current) {
-            handleTimeExpired();
-          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
+  };
 
+  useEffect(() => {
+    if (!isGuest) return;
+    startCountdown();
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isGuest]);
 
-  const handleTimeExpired = async () => {
-    isShowingAlert.current = true;
+  // Show modal when timer reaches 0
+  useEffect(() => {
+    if (secondsLeft === 0 && isGuest && !showExpiredModal) {
+      prevAudioState.current = {
+        muted: useDuetStore.getState().isMuted,
+        deafened: useDuetStore.getState().isDeafened,
+      };
+      setMuted(true);
+      setDeafened(true);
+      setShowExpiredModal(true);
+    }
+  }, [secondsLeft, isGuest]);
 
-    // Save current audio state
-    const prevMuted = useDuetStore.getState().isMuted;
-    const prevDeafened = useDuetStore.getState().isDeafened;
+  const handleWatchAd = async () => {
+    const earned = await adService.showRewarded();
+    if (earned) {
+      setMuted(prevAudioState.current.muted);
+      setDeafened(prevAudioState.current.deafened);
+      setSecondsLeft(GUEST_SESSION_SECONDS);
+      setShowExpiredModal(false);
 
-    // Force mute + deafen during ad
-    setMuted(true);
-    setDeafened(true);
+      Alert.alert(
+        'Session Extended!',
+        'You\'ve earned 20 more minutes. Enjoy your call!',
+        [{ text: 'OK' }],
+      );
 
-    showExpiryAlert(prevMuted, prevDeafened);
+      startCountdown();
+    }
+    // If ad failed/dismissed, modal stays open
   };
 
-  const showExpiryAlert = (prevMuted: boolean, prevDeafened: boolean) => {
-    const buttons: any[] = [
-      {
-        text: 'Watch Ad',
-        onPress: async () => {
-          const earned = await adService.showRewarded();
-          if (earned) {
-            // Restore audio state and reset timer
-            setMuted(prevMuted);
-            setDeafened(prevDeafened);
-            setSecondsLeft(GUEST_SESSION_SECONDS);
-            isShowingAlert.current = false;
+  const handleSignIn = () => {
+    setShowExpiredModal(false);
+    signOut();
+  };
 
-            Alert.alert(
-              'Session Extended!',
-              'You\'ve earned 20 more minutes. Enjoy your call!',
-              [{ text: 'OK' }],
-            );
-
-            // Restart the countdown
-            intervalRef.current = setInterval(() => {
-              const currentState = useDuetStore.getState().connectionState;
-              if (currentState !== 'connected') return;
-
-              setSecondsLeft((prev) => {
-                if (prev <= 1) {
-                  if (intervalRef.current) clearInterval(intervalRef.current);
-                  if (!isShowingAlert.current) {
-                    handleTimeExpired();
-                  }
-                  return 0;
-                }
-                return prev - 1;
-              });
-            }, 1000);
-          } else {
-            // Ad dismissed early or failed — re-show alert
-            showExpiryAlert(prevMuted, prevDeafened);
-          }
-        },
-      },
-      {
-        text: 'Sign In',
-        onPress: () => {
-          isShowingAlert.current = false;
-          signOut();
-        },
-      },
-      {
-        text: 'Leave Room',
-        style: 'destructive',
-        onPress: () => {
-          isShowingAlert.current = false;
-          onTimeExpired();
-        },
-      },
-    ];
-
-    Alert.alert(
-      'Session Expired',
-      'Guest sessions are limited to 20 minutes. Watch a short ad to continue, or sign in for unlimited time.',
-      buttons,
-      { cancelable: false },
-    );
+  const handleLeaveRoom = () => {
+    setShowExpiredModal(false);
+    onTimeExpired();
   };
 
   if (!isGuest) return null;
@@ -141,9 +102,22 @@ export const GuestRoomTimer = ({ onTimeExpired }: GuestRoomTimerProps) => {
         : colors.textMuted;
 
   return (
-    <View style={[styles.timerPill, { borderColor: timerColor }]}>
-      <Text style={[styles.timerText, { color: timerColor }]}>{timeText}</Text>
-    </View>
+    <>
+      <View style={[styles.timerPill, { borderColor: timerColor }]}>
+        <Text style={[styles.timerText, { color: timerColor }]}>{timeText}</Text>
+      </View>
+      <ConfirmModal
+        visible={showExpiredModal}
+        title="Session Expired"
+        message="Guest sessions are limited to 20 minutes. Watch a short ad to continue, or sign in for unlimited time."
+        buttons={[
+          { text: 'Watch Ad', style: 'default', onPress: handleWatchAd },
+          { text: 'Sign In', style: 'default', onPress: handleSignIn },
+          { text: 'Leave Room', style: 'destructive', onPress: handleLeaveRoom },
+        ]}
+        onClose={() => {}}
+      />
+    </>
   );
 };
 

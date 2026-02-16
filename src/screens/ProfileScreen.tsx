@@ -13,73 +13,64 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { storageService } from '@/services/StorageService';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { ProfileScreenProps } from '@/navigation/types';
 
 export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [isUploading, setIsUploading] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const insets = useSafeAreaInsets();
   const { user, userProfile, isGuest, signOut, refreshProfile } = useAuthStore();
 
   const handleChangePhoto = () => {
-    Alert.alert('Change Photo', 'Choose a source', [
-      {
-        text: 'Camera',
-        onPress: async () => {
-          try {
-            const uri = await storageService.takePhoto();
-            if (uri) {
-              setIsUploading(true);
-              await storageService.uploadAvatar(uri);
-              await refreshProfile();
-              setIsUploading(false);
-            }
-          } catch (error: any) {
-            setIsUploading(false);
-            Alert.alert('Error', error?.message || 'Failed to upload photo.');
-          }
-        },
-      },
-      {
-        text: 'Photo Library',
-        onPress: async () => {
-          try {
-            const uri = await storageService.pickImage();
-            if (uri) {
-              setIsUploading(true);
-              await storageService.uploadAvatar(uri);
-              await refreshProfile();
-              setIsUploading(false);
-            }
-          } catch (error: any) {
-            setIsUploading(false);
-            Alert.alert('Error', error?.message || 'Failed to upload photo.');
-          }
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setShowPhotoModal(true);
+  };
+
+  const handleCamera = async () => {
+    setShowPhotoModal(false);
+    try {
+      const uri = await storageService.takePhoto();
+      if (uri) {
+        setIsUploading(true);
+        await storageService.uploadAvatar(uri);
+        await refreshProfile();
+        setIsUploading(false);
+      }
+    } catch (error: any) {
+      setIsUploading(false);
+      Alert.alert('Error', error?.message || 'Failed to upload photo.');
+    }
+  };
+
+  const handlePhotoLibrary = async () => {
+    setShowPhotoModal(false);
+    try {
+      const uri = await storageService.pickImage();
+      if (uri) {
+        setIsUploading(true);
+        await storageService.uploadAvatar(uri);
+        await refreshProfile();
+        setIsUploading(false);
+      }
+    } catch (error: any) {
+      setIsUploading(false);
+      Alert.alert('Error', error?.message || 'Failed to upload photo.');
+    }
   };
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    setShowSignOutModal(true);
+  };
+
+  const handleConfirmSignOut = async () => {
+    setShowSignOutModal(false);
+    try {
+      await signOut();
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+    }
   };
 
   const displayName = userProfile?.displayName || user?.displayName || 'Duet User';
@@ -169,6 +160,27 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+      <ConfirmModal
+        visible={showSignOutModal}
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        buttons={[
+          { text: 'Sign Out', style: 'destructive', onPress: handleConfirmSignOut },
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowSignOutModal(false) },
+        ]}
+        onClose={() => setShowSignOutModal(false)}
+      />
+      <ConfirmModal
+        visible={showPhotoModal}
+        title="Change Photo"
+        message="Choose a source for your profile photo"
+        buttons={[
+          { text: 'Camera', style: 'default', onPress: handleCamera },
+          { text: 'Photo Library', style: 'default', onPress: handlePhotoLibrary },
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowPhotoModal(false) },
+        ]}
+        onClose={() => setShowPhotoModal(false)}
+      />
     </View>
   );
 };

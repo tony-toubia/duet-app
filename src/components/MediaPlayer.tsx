@@ -52,13 +52,13 @@ export const MediaPlayer = ({ minimized, onToggleMinimized }: MediaPlayerProps) 
       <Text style={styles.trackTitle}>Media Controls</Text>
       <View style={styles.controls}>
         <TouchableOpacity style={styles.smallBtn} onPress={() => DuetAudio.mediaPrevious()}>
-          <Text style={styles.smallBtnText}>{'\u23ee'}</Text>
+          <Text style={styles.controlText}>{'\u23ee'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.playBtn} onPress={handlePlayPause}>
-          <Text style={styles.playBtnText}>{isPlaying ? '\u23f8' : '\u25b6'}</Text>
+          <Text style={styles.playText}>{isPlaying ? '\u23f8' : '\u25b6'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.smallBtn} onPress={() => DuetAudio.mediaNext()}>
-          <Text style={styles.smallBtnText}>{'\u23ed'}</Text>
+          <Text style={styles.controlText}>{'\u23ed'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -104,7 +104,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  smallBtnText: {
+  controlText: {
+    color: colors.text,
     fontSize: 18,
   },
   playBtn: {
@@ -115,7 +116,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playBtnText: {
+  playText: {
+    color: '#ffffff',
     fontSize: 22,
   },
   minimized: {

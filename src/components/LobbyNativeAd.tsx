@@ -49,7 +49,13 @@ export const LobbyNativeAd = () => {
     };
   }, []);
 
-  if (!nativeAd) return null;
+  if (!nativeAd) {
+    return (
+      <View style={styles.placeholder}>
+        <Text style={styles.placeholderText}>Ad</Text>
+      </View>
+    );
+  }
 
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
@@ -132,5 +138,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 1,
     overflow: 'hidden',
+  },
+  placeholder: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 20,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    color: 'rgba(255, 255, 255, 0.2)',
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

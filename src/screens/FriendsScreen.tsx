@@ -13,11 +13,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { FriendsScreenProps } from '@/navigation/types';
 
 export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<{ uid: string; name: string } | null>(null);
   const insets = useSafeAreaInsets();
 
   const {
@@ -67,18 +69,14 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
   };
 
   const handleRemove = (uid: string, name: string) => {
-    Alert.alert(
-      'Remove Friend',
-      `Remove ${name} from your friends?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeFriend(uid),
-        },
-      ]
-    );
+    setRemoveTarget({ uid, name });
+  };
+
+  const handleConfirmRemove = () => {
+    if (removeTarget) {
+      removeFriend(removeTarget.uid);
+      setRemoveTarget(null);
+    }
   };
 
   const pending = pendingRequests();
@@ -249,6 +247,16 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
           </View>
         )}
       </ScrollView>
+      <ConfirmModal
+        visible={!!removeTarget}
+        title="Remove Friend"
+        message={removeTarget ? `Remove ${removeTarget.name} from your friends?` : ''}
+        buttons={[
+          { text: 'Remove', style: 'destructive', onPress: handleConfirmRemove },
+          { text: 'Cancel', style: 'cancel', onPress: () => setRemoveTarget(null) },
+        ]}
+        onClose={() => setRemoveTarget(null)}
+      />
     </View>
   );
 };

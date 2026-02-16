@@ -25,6 +25,8 @@ import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
 import { ShareModal } from '@/components/ShareModal';
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { InviteModal } from '@/components/InviteModal';
 import { colors } from '@/theme';
 import type { RoomScreenProps } from '@/navigation/types';
 
@@ -34,6 +36,9 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const [mediaMinimized, setMediaMinimized] = useState(false);
   const [showAdTransition, setShowAdTransition] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const hasShownInitialShare = useRef(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isTablet = width >= TABLET_MIN_WIDTH;
@@ -43,6 +48,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const {
     connectionState,
     roomCode,
+    isHost,
     partnerId,
     isMuted,
     isDeafened,
@@ -58,6 +64,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   } = useDuetStore();
 
   const hasBeenConnected = useRef(false);
+
+  // Auto-show share modal when entering as host (room creator)
+  useEffect(() => {
+    if (isHost && roomCode && !hasShownInitialShare.current) {
+      hasShownInitialShare.current = true;
+      setShowShareModal(true);
+    }
+  }, [isHost, roomCode]);
 
   useEffect(() => {
     if (connectionState === 'connected') {
@@ -88,42 +102,30 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       Alert.alert('No Friends', 'Add friends from the lobby to invite them to rooms.');
       return;
     }
+    setShowInviteModal(true);
+  };
 
-    const buttons: Array<{ text: string; onPress?: () => void; style?: string }> = friends.slice(0, 5).map((friend) => ({
-      text: friend.displayName,
-      onPress: () => {
-        invitationService.sendInvitation(friend.uid, roomCode!)
-          .then(() => Alert.alert('Invited', `Invitation sent to ${friend.displayName}!`))
-          .catch((error: any) => Alert.alert('Error', error?.message || 'Failed to send invitation.'));
-      },
-    }));
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert('Invite Friend', 'Choose a friend to invite:', buttons as any);
+  const handleSendInvite = (friendUid: string, friendName: string) => {
+    setShowInviteModal(false);
+    invitationService.sendInvitation(friendUid, roomCode!)
+      .then(() => Alert.alert('Invited', `Invitation sent to ${friendName}!`))
+      .catch((error: any) => Alert.alert('Error', error?.message || 'Failed to send invitation.'));
   };
 
   const handleLeave = () => {
-    Alert.alert(
-      'Leave Room',
-      'Are you sure you want to disconnect?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            const willShowAd = adService.willShowInterstitial();
-            await leaveRoom();
-            if (willShowAd) {
-              setShowAdTransition(true);
-              await new Promise((r) => setTimeout(r, 1500));
-            }
-            await adService.onRoomLeave();
-            navigation.replace('Lobby');
-          },
-        },
-      ]
-    );
+    setShowLeaveModal(true);
+  };
+
+  const handleConfirmLeave = async () => {
+    setShowLeaveModal(false);
+    const willShowAd = adService.willShowInterstitial();
+    await leaveRoom();
+    if (willShowAd) {
+      setShowAdTransition(true);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await adService.onRoomLeave();
+    navigation.replace('Lobby');
   };
 
   const getConnectionColor = () => {
@@ -245,8 +247,8 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
               {actionButtons}
             </View>
             <View style={styles.twoColRight}>
-              <RoomNativeAd />
               <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
+              <RoomNativeAd />
               {duckingToggle}
               {mediaPlayer}
               <NavigationWidget />
@@ -258,6 +260,22 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
             visible={showShareModal}
             roomCode={roomCode}
             onClose={() => setShowShareModal(false)}
+          />
+          <ConfirmModal
+            visible={showLeaveModal}
+            title="Leave Room"
+            message="Are you sure you want to disconnect?"
+            buttons={[
+              { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
+              { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
+            ]}
+            onClose={() => setShowLeaveModal(false)}
+          />
+          <InviteModal
+            visible={showInviteModal}
+            friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
+            onInvite={handleSendInvite}
+            onClose={() => setShowInviteModal(false)}
           />
         </View>
       </ImageBackground>
@@ -280,8 +298,8 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           {topBar}
           {avatars}
           {actionButtons}
-          <RoomNativeAd />
           <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
+          <RoomNativeAd />
           {duckingToggle}
           {mediaPlayer}
           <NavigationWidget />
@@ -291,6 +309,22 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           visible={showShareModal}
           roomCode={roomCode}
           onClose={() => setShowShareModal(false)}
+        />
+        <ConfirmModal
+          visible={showLeaveModal}
+          title="Leave Room"
+          message="Are you sure you want to disconnect?"
+          buttons={[
+            { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
+            { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
+          ]}
+          onClose={() => setShowLeaveModal(false)}
+        />
+        <InviteModal
+          visible={showInviteModal}
+          friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
+          onInvite={handleSendInvite}
+          onClose={() => setShowInviteModal(false)}
         />
       </View>
     </ImageBackground>
