@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Linking, Platform, TouchableOpacity, AppState, AppStateStatus } from 'react-native';
+import { View, Text, Image, ImageSourcePropType, StyleSheet, Linking, Platform, TouchableOpacity, AppState, AppStateStatus } from 'react-native';
 import { colors } from '@/theme';
 
 // All supported quick-launch apps
@@ -15,7 +15,7 @@ type AppId =
 interface AppInfo {
   id: AppId;
   label: string;
-  icon: string;
+  icon: ImageSourcePropType;
   urlScheme: string;
   iosUrlScheme?: string; // override for iOS if different
   androidUrlScheme?: string; // override for Android if different
@@ -27,14 +27,14 @@ const ALL_APPS: AppInfo[] = [
   {
     id: 'spotify',
     label: 'Spotify',
-    icon: '🎵',
+    icon: require('../../assets/icons/spotify.png'),
     urlScheme: 'spotify://',
     fallbackUrl: 'https://open.spotify.com',
   },
   {
     id: 'apple_music',
     label: 'Music',
-    icon: '🎶',
+    icon: require('../../assets/icons/apple_music.png'),
     urlScheme: 'music://',
     iosOnly: true,
     fallbackUrl: 'https://music.apple.com',
@@ -42,21 +42,21 @@ const ALL_APPS: AppInfo[] = [
   {
     id: 'youtube',
     label: 'YouTube',
-    icon: '▶️',
+    icon: require('../../assets/icons/youtube.png'),
     urlScheme: 'youtube://',
     fallbackUrl: 'https://youtube.com',
   },
   {
     id: 'youtube_music',
     label: 'YT Music',
-    icon: '🎧',
+    icon: require('../../assets/icons/youtube_music.png'),
     urlScheme: 'youtubemusic://',
     fallbackUrl: 'https://music.youtube.com',
   },
   {
     id: 'google_maps',
     label: 'Maps',
-    icon: '📍',
+    icon: require('../../assets/icons/google_maps.png'),
     urlScheme: 'comgooglemaps://',
     androidUrlScheme: 'google.navigation:',
     fallbackUrl: 'https://maps.google.com',
@@ -64,7 +64,7 @@ const ALL_APPS: AppInfo[] = [
   {
     id: 'apple_maps',
     label: 'Maps',
-    icon: '🗺️',
+    icon: require('../../assets/icons/apple_maps.png'),
     urlScheme: 'maps://',
     iosOnly: true,
     fallbackUrl: 'https://maps.apple.com',
@@ -72,7 +72,7 @@ const ALL_APPS: AppInfo[] = [
   {
     id: 'waze',
     label: 'Waze',
-    icon: '🚗',
+    icon: require('../../assets/icons/waze.png'),
     urlScheme: 'waze://',
     fallbackUrl: 'https://waze.com',
   },
@@ -181,7 +181,7 @@ export const NavigationWidget: React.FC = () => {
           style={styles.returnButton}
           onPress={() => openApp(lastUsedApp)}
         >
-          <Text style={styles.returnIcon}>{getAppInfo(lastUsedApp).icon}</Text>
+          <Image source={getAppInfo(lastUsedApp).icon} style={styles.returnIcon} />
           <View style={{ flex: 1 }}>
             <Text style={styles.returnTitle}>Return to {getAppInfo(lastUsedApp).label}</Text>
           </View>
@@ -202,7 +202,7 @@ export const NavigationWidget: React.FC = () => {
               ]}
               onPress={() => openApp(id)}
             >
-              <Text style={styles.appIcon}>{app.icon}</Text>
+              <Image source={app.icon} style={styles.appIcon} />
               <Text style={styles.appLabel}>{app.label}</Text>
             </TouchableOpacity>
           );
@@ -240,7 +240,9 @@ const styles = StyleSheet.create({
     borderColor: colors.success,
   },
   returnIcon: {
-    fontSize: 22,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     marginRight: 10,
   },
   returnTitle: {
@@ -272,7 +274,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   appIcon: {
-    fontSize: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
     marginBottom: 3,
   },
   appLabel: {

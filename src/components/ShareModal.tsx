@@ -1,14 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Modal,
   Share,
+  Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import {
+  NativeAd,
+  NativeAdView,
+  NativeAsset,
+  NativeAssetType,
+  NativeMediaAspectRatio,
+  TestIds,
+} from 'react-native-google-mobile-ads';
+import Constants from 'expo-constants';
 import { colors } from '@/theme';
+
+const getShareAdUnitId = () => {
+  if (__DEV__) return TestIds.NATIVE;
+  const extras = Constants.expoConfig?.extra;
+  const id = Platform.OS === 'ios' ? extras?.admobLobbyNativeIdIos : extras?.admobLobbyNativeIdAndroid;
+  return id || TestIds.NATIVE;
+};
+
+const SHARE_AD_UNIT_ID = getShareAdUnitId();
 
 interface ShareModalProps {
   visible: boolean;
@@ -18,6 +38,38 @@ interface ShareModalProps {
 
 export const ShareModal = ({ visible, roomCode, onClose }: ShareModalProps) => {
   const [copied, setCopied] = useState(false);
+  const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
+  const adRef = useRef<NativeAd | null>(null);
+
+  // Load ad when modal becomes visible
+  useEffect(() => {
+    if (!visible) return;
+
+    let destroyed = false;
+
+    NativeAd.createForAdRequest(SHARE_AD_UNIT_ID, {
+      aspectRatio: NativeMediaAspectRatio.ANY,
+    })
+      .then((loadedAd) => {
+        if (!destroyed) {
+          adRef.current = loadedAd;
+          setNativeAd(loadedAd);
+          console.log('[Ad] Share modal native ad loaded');
+        } else {
+          loadedAd.destroy();
+        }
+      })
+      .catch((err) => {
+        console.log('[Ad] Share modal native ad failed:', err.message);
+      });
+
+    return () => {
+      destroyed = true;
+      adRef.current?.destroy();
+      adRef.current = null;
+      setNativeAd(null);
+    };
+  }, [visible]);
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(roomCode);
@@ -64,6 +116,35 @@ export const ShareModal = ({ visible, roomCode, onClose }: ShareModalProps) => {
               {copied ? 'Copied!' : 'Tap to copy'}
             </Text>
           </TouchableOpacity>
+
+          {/* Native ad */}
+          {nativeAd && (
+            <NativeAdView nativeAd={nativeAd} style={styles.adContainer}>
+              <View style={styles.adRow}>
+                <Text style={styles.adBadge}>Ad</Text>
+                {nativeAd.icon && (
+                  <NativeAsset assetType={NativeAssetType.ICON}>
+                    <Image source={{ uri: nativeAd.icon.url }} style={styles.adIcon} />
+                  </NativeAsset>
+                )}
+                <View style={styles.adContent}>
+                  <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                    <Text style={styles.adHeadline} numberOfLines={1}>{nativeAd.headline}</Text>
+                  </NativeAsset>
+                  {nativeAd.body && (
+                    <NativeAsset assetType={NativeAssetType.BODY}>
+                      <Text style={styles.adBody} numberOfLines={1}>{nativeAd.body}</Text>
+                    </NativeAsset>
+                  )}
+                </View>
+                {nativeAd.callToAction && (
+                  <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+                    <Text style={styles.adCta}>{nativeAd.callToAction}</Text>
+                  </NativeAsset>
+                )}
+              </View>
+            </NativeAdView>
+          )}
 
           <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
             <Text style={styles.shareBtnText}>Share Code</Text>
@@ -156,5 +237,57 @@ const styles = StyleSheet.create({
     color: '#9a9aaa',
     fontSize: 15,
     fontWeight: '600',
+  },
+  adContainer: {
+    width: '100%',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  adRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  adBadge: {
+    color: '#9a9aaa',
+    fontSize: 9,
+    fontWeight: '600',
+    borderWidth: 1,
+    borderColor: '#c0c0cc',
+    borderRadius: 3,
+    paddingHorizontal: 3,
+    paddingVertical: 0.5,
+    overflow: 'hidden',
+  },
+  adIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  adContent: {
+    flex: 1,
+  },
+  adHeadline: {
+    color: '#1a1a2e',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  adBody: {
+    color: '#6b6b80',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  adCta: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+    backgroundColor: '#e8734a',
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
   },
 });
