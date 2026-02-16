@@ -69,6 +69,8 @@ class AdService {
     this.interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
       console.log('[Ad] Interstitial error:', error);
       this.isLoaded = false;
+      // Retry after a delay
+      setTimeout(() => this.loadInterstitial(), 30000);
     });
 
     this.interstitial.load();
@@ -131,6 +133,8 @@ class AdService {
     this.rewarded.addAdEventListener(AdEventType.ERROR, (error) => {
       console.log('[Ad] Rewarded error:', error);
       this.rewardedLoaded = false;
+      // Retry after a delay
+      setTimeout(() => this.loadRewarded(), 30000);
     });
 
     this.rewarded.load();

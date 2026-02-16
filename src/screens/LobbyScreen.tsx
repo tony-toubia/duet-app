@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Share,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -18,6 +17,7 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { adService } from '@/services/AdService';
 import { LobbyNativeAd } from '@/components/LobbyNativeAd';
+import { ShareModal } from '@/components/ShareModal';
 import { colors } from '@/theme';
 import type { LobbyScreenProps } from '@/navigation/types';
 
@@ -26,6 +26,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showJoinInput, setShowJoinInput] = useState(false);
+  const [shareCode, setShareCode] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   const {
@@ -68,28 +69,11 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     init();
   }, []);
 
-  const shareCode = async (code: string) => {
-    try {
-      await Share.share({
-        message: `Join me on Duet! Enter code: ${code}`,
-      });
-    } catch (error) {
-      console.log('Share cancelled');
-    }
-  };
-
   const handleCreateRoom = async () => {
     setIsLoading(true);
     try {
       const code = await createRoom();
-      Alert.alert(
-        'Room Created',
-        `Share this code: ${code}`,
-        [
-          { text: 'Copy & Share', onPress: () => shareCode(code) },
-          { text: 'OK' },
-        ]
-      );
+      setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
       Alert.alert('Error', error?.message || 'Failed to create room. Please restart the app and try again.');
@@ -209,6 +193,9 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
                 maxLength={6}
                 autoCapitalize="characters"
                 autoCorrect={false}
+                autoComplete="off"
+                spellCheck={false}
+                textContentType="none"
                 autoFocus
               />
               <TouchableOpacity
@@ -223,6 +210,11 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         </View>
         {!showJoinInput && <LobbyNativeAd />}
       </KeyboardAvoidingView>
+      <ShareModal
+        visible={!!shareCode}
+        roomCode={shareCode || ''}
+        onClose={() => setShareCode(null)}
+      />
     </View>
   );
 };

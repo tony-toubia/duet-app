@@ -22,6 +22,14 @@ const getNativeAdUnitId = () => {
 
 const NATIVE_AD_UNIT_ID = getNativeAdUnitId();
 
+const renderStars = (rating: number) => {
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+  let stars = '\u2605'.repeat(full);
+  if (half) stars += '\u00BD';
+  return stars;
+};
+
 export const RoomNativeAd = () => {
   const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
 
@@ -55,21 +63,25 @@ export const RoomNativeAd = () => {
 
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
-      <View style={styles.row}>
+      <View style={styles.card}>
         {nativeAd.mediaContent && (
           <NativeMediaView style={styles.media} resizeMode="cover" />
         )}
-        <View style={styles.info}>
-          <View style={styles.header}>
-            {nativeAd.icon && (
-              <NativeAsset assetType={NativeAssetType.ICON}>
-                <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
-              </NativeAsset>
-            )}
-            <View style={styles.headerText}>
-              <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                <Text style={styles.headline} numberOfLines={2}>{nativeAd.headline}</Text>
-              </NativeAsset>
+        <View style={styles.infoRow}>
+          {nativeAd.icon && (
+            <NativeAsset assetType={NativeAssetType.ICON}>
+              <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
+            </NativeAsset>
+          )}
+          <View style={styles.textCol}>
+            <NativeAsset assetType={NativeAssetType.HEADLINE}>
+              <Text style={styles.headline} numberOfLines={1}>{nativeAd.headline}</Text>
+            </NativeAsset>
+            <View style={styles.metaRow}>
+              <Text style={styles.adBadge}>Ad</Text>
+              {nativeAd.starRating != null && nativeAd.starRating > 0 && (
+                <Text style={styles.stars}>{renderStars(nativeAd.starRating)}</Text>
+              )}
               {nativeAd.advertiser && (
                 <NativeAsset assetType={NativeAssetType.ADVERTISER}>
                   <Text style={styles.advertiser} numberOfLines={1}>{nativeAd.advertiser}</Text>
@@ -77,92 +89,88 @@ export const RoomNativeAd = () => {
               )}
             </View>
           </View>
-          {nativeAd.body && (
-            <NativeAsset assetType={NativeAssetType.BODY}>
-              <Text style={styles.body} numberOfLines={2}>{nativeAd.body}</Text>
-            </NativeAsset>
-          )}
-          {nativeAd.callToAction && (
-            <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-              <Text style={styles.cta}>{nativeAd.callToAction}</Text>
-            </NativeAsset>
-          )}
         </View>
+        {nativeAd.callToAction && (
+          <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+            <Text style={styles.cta}>{nativeAd.callToAction}</Text>
+          </NativeAsset>
+        )}
       </View>
-      <Text style={styles.adBadge}>Ad</Text>
     </NativeAdView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.glass,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
     marginHorizontal: 20,
-    padding: 12,
-    overflow: 'hidden',
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
+  card: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   media: {
-    width: 120,
-    height: 120,
+    height: 140,
     borderRadius: 10,
     overflow: 'hidden',
   },
-  info: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 6,
-  },
-  header: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   icon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
   },
-  headerText: {
+  textCol: {
     flex: 1,
+    gap: 2,
   },
   headline: {
-    color: colors.text,
-    fontSize: 13,
+    color: '#1a1a2e',
+    fontSize: 14,
     fontWeight: '600',
   },
-  advertiser: {
-    color: colors.textMuted,
-    fontSize: 10,
-    marginTop: 1,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   adBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 6,
-    color: colors.textMuted,
+    color: '#888',
     fontSize: 9,
     fontWeight: '600',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: 'hidden',
   },
-  body: {
-    color: colors.textMuted,
+  stars: {
+    color: '#f5a623',
     fontSize: 11,
-    lineHeight: 15,
+  },
+  advertiser: {
+    color: '#666',
+    fontSize: 11,
   },
   cta: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '600',
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
     textAlign: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: 16,
-    paddingVertical: 7,
+    backgroundColor: '#e8734a',
+    borderRadius: 12,
+    paddingVertical: 10,
     overflow: 'hidden',
   },
 });

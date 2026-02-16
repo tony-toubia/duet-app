@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Share,
   Switch,
   Platform,
   ImageBackground,
@@ -25,6 +24,7 @@ import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
+import { ShareModal } from '@/components/ShareModal';
 import { colors } from '@/theme';
 import type { RoomScreenProps } from '@/navigation/types';
 
@@ -33,6 +33,7 @@ const TABLET_MIN_WIDTH = 600;
 export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const [mediaMinimized, setMediaMinimized] = useState(false);
   const [showAdTransition, setShowAdTransition] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isTablet = width >= TABLET_MIN_WIDTH;
@@ -77,14 +78,8 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     return null;
   }
 
-  const shareCode = async (code: string) => {
-    try {
-      await Share.share({
-        message: `Join me on Duet! Enter code: ${code}`,
-      });
-    } catch (error) {
-      console.log('Share cancelled');
-    }
+  const handleShareCode = () => {
+    setShowShareModal(true);
   };
 
   const handleInviteFriend = () => {
@@ -117,11 +112,11 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           text: 'Leave',
           style: 'destructive',
           onPress: async () => {
+            const willShowAd = adService.willShowInterstitial();
             await leaveRoom();
-            if (adService.willShowInterstitial()) {
+            if (willShowAd) {
               setShowAdTransition(true);
               await new Promise((r) => setTimeout(r, 1500));
-              setShowAdTransition(false);
             }
             await adService.onRoomLeave();
             navigation.replace('Lobby');
@@ -157,7 +152,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
 
   const topBar = (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-      <TouchableOpacity onPress={() => shareCode(roomCode)} style={styles.roomIdContainer}>
+      <TouchableOpacity onPress={handleShareCode} style={styles.roomIdContainer}>
         <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
         <Text style={styles.roomIdText}>{roomCode}</Text>
       </TouchableOpacity>
@@ -259,6 +254,11 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           </View>
           <View style={{ height: insets.bottom }} />
           {adTransitionOverlay}
+          <ShareModal
+            visible={showShareModal}
+            roomCode={roomCode}
+            onClose={() => setShowShareModal(false)}
+          />
         </View>
       </ImageBackground>
     );
@@ -287,6 +287,11 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           <NavigationWidget />
         </ScrollView>
         {adTransitionOverlay}
+        <ShareModal
+          visible={showShareModal}
+          roomCode={roomCode}
+          onClose={() => setShowShareModal(false)}
+        />
       </View>
     </ImageBackground>
   );
