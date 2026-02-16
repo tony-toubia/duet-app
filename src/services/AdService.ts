@@ -101,7 +101,7 @@ class AdService {
     this.rewarded = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
     this.rewardedEarned = false;
 
-    this.rewarded.addAdEventListener(AdEventType.LOADED, () => {
+    this.rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
       console.log('[Ad] Rewarded loaded');
       this.rewardedLoaded = true;
     });

@@ -56,7 +56,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     const init = async () => {
       try {
         await initialize();
-        adService.initialize();
+        try { adService.initialize(); } catch (e) { console.warn('[Ad] Ad init failed:', e); }
         setIsInitialized(true);
       } catch (error: any) {
         console.error('[Lobby] Init failed:', error);
