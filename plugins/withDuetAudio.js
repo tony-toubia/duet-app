@@ -267,11 +267,11 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     fun stopAudioEngine(promise: Promise) {
         isRecording = false
 
-        audioRecord?.stop()
+        try { audioRecord?.stop() } catch (_: Exception) {}
         audioRecord?.release()
         audioRecord = null
 
-        audioTrack?.stop()
+        try { audioTrack?.stop() } catch (_: Exception) {}
         audioTrack?.release()
         audioTrack = null
 
