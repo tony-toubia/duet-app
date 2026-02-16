@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "7",
+      buildNumber: "8",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com"
@@ -43,7 +43,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 7,
+      versionCode: 8,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       intentFilters: [
         {
@@ -82,8 +82,8 @@ module.exports = {
           android: {
             compileSdkVersion: 35,
             targetSdkVersion: 35,
-            enableProguardInReleaseBuilds: true,
-            enableShrinkResourcesInReleaseBuilds: true,
+            enableProguardInReleaseBuilds: false,
+            enableShrinkResourcesInReleaseBuilds: false,
           },
           ios: {
             useFrameworks: "static"
@@ -101,7 +101,8 @@ module.exports = {
         "react-native-google-mobile-ads",
         {
           androidAppId: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
-          iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy"
+          iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
+          delayAppMeasurementInit: true
         }
       ],
       "./plugins/withDuetAudio"
