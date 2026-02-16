@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { adService } from '@/services/AdService';
-import { LobbyBannerAd } from '@/components/LobbyBannerAd';
+import { LobbyNativeAd } from '@/components/LobbyNativeAd';
 import { colors } from '@/theme';
 import type { LobbyScreenProps } from '@/navigation/types';
 
@@ -216,7 +216,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             </View>
           )}
         </View>
-        <LobbyBannerAd />
+        <LobbyNativeAd />
       </View>
     </View>
   );

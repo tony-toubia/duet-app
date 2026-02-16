@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
-import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
+import {
+  InterstitialAd,
+  RewardedAd,
+  AdEventType,
+  RewardedAdEventType,
+  TestIds,
+} from 'react-native-google-mobile-ads';
 import Constants from 'expo-constants';
 
 const getInterstitialAdUnitId = () => {
@@ -10,7 +16,16 @@ const getInterstitialAdUnitId = () => {
   return id || TestIds.INTERSTITIAL;
 };
 
+const getRewardedAdUnitId = () => {
+  if (__DEV__) return TestIds.REWARDED;
+  const extras = Constants.expoConfig?.extra;
+  const id = Platform.OS === 'ios' ? extras?.admobRewardedIdIos : extras?.admobRewardedIdAndroid;
+  console.log('[Ad] Rewarded unit ID:', id ? '(set)' : '(missing)', 'Platform:', Platform.OS);
+  return id || TestIds.REWARDED;
+};
+
 const INTERSTITIAL_AD_UNIT_ID = getInterstitialAdUnitId();
+const REWARDED_AD_UNIT_ID = getRewardedAdUnitId();
 
 class AdService {
   private interstitial: InterstitialAd | null = null;
@@ -18,12 +33,20 @@ class AdService {
   private isLoaded = false;
   private onClosedResolve: (() => void) | null = null;
 
+  private rewarded: RewardedAd | null = null;
+  private rewardedLoaded = false;
+  private rewardedEarned = false;
+  private onRewardedClosedResolve: ((earned: boolean) => void) | null = null;
+
   /**
-   * Initialize and preload the interstitial ad
+   * Initialize and preload all ads
    */
   initialize(): void {
     this.loadInterstitial();
+    this.loadRewarded();
   }
+
+  // ── Interstitial ──
 
   private loadInterstitial(): void {
     this.interstitial = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID);
@@ -36,12 +59,10 @@ class AdService {
     this.interstitial.addAdEventListener(AdEventType.CLOSED, () => {
       console.log('[Ad] Interstitial closed');
       this.isLoaded = false;
-      // Resolve the pending promise so navigation can proceed
       if (this.onClosedResolve) {
         this.onClosedResolve();
         this.onClosedResolve = null;
       }
-      // Preload the next one
       this.loadInterstitial();
     });
 
@@ -62,7 +83,6 @@ class AdService {
 
     if (this.roomLeaveCount % 3 === 0 && this.isLoaded && this.interstitial) {
       try {
-        // Wait for the ad to be closed before resolving
         const closedPromise = new Promise<void>((resolve) => {
           this.onClosedResolve = resolve;
         });
@@ -73,6 +93,68 @@ class AdService {
         this.onClosedResolve = null;
       }
     }
+  }
+
+  // ── Rewarded ──
+
+  private loadRewarded(): void {
+    this.rewarded = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
+    this.rewardedEarned = false;
+
+    this.rewarded.addAdEventListener(AdEventType.LOADED, () => {
+      console.log('[Ad] Rewarded loaded');
+      this.rewardedLoaded = true;
+    });
+
+    this.rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
+      console.log('[Ad] Reward earned');
+      this.rewardedEarned = true;
+    });
+
+    this.rewarded.addAdEventListener(AdEventType.CLOSED, () => {
+      console.log('[Ad] Rewarded closed, earned:', this.rewardedEarned);
+      this.rewardedLoaded = false;
+      if (this.onRewardedClosedResolve) {
+        this.onRewardedClosedResolve(this.rewardedEarned);
+        this.onRewardedClosedResolve = null;
+      }
+      this.loadRewarded();
+    });
+
+    this.rewarded.addAdEventListener(AdEventType.ERROR, (error) => {
+      console.log('[Ad] Rewarded error:', error);
+      this.rewardedLoaded = false;
+    });
+
+    this.rewarded.load();
+  }
+
+  /**
+   * Show a rewarded ad. Returns true if the user earned the reward
+   * (watched to completion), false if dismissed early or failed.
+   */
+  async showRewarded(): Promise<boolean> {
+    if (!this.rewardedLoaded || !this.rewarded) {
+      console.log('[Ad] Rewarded not ready');
+      return false;
+    }
+
+    try {
+      this.rewardedEarned = false;
+      const closedPromise = new Promise<boolean>((resolve) => {
+        this.onRewardedClosedResolve = resolve;
+      });
+      await this.rewarded.show();
+      return await closedPromise;
+    } catch (error) {
+      console.log('[Ad] Failed to show rewarded:', error);
+      this.onRewardedClosedResolve = null;
+      return false;
+    }
+  }
+
+  get isRewardedReady(): boolean {
+    return this.rewardedLoaded;
   }
 }
 

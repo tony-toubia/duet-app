@@ -23,6 +23,7 @@ import { MediaPlayer } from '@/components/MediaPlayer';
 import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
+import { GuestRoomTimer } from '@/components/GuestRoomTimer';
 import { colors } from '@/theme';
 import type { RoomScreenProps } from '@/navigation/types';
 
@@ -156,6 +157,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       <Text style={[styles.connectionText, { color: getConnectionColor() }]}>
         {getConnectionText()}
       </Text>
+      <GuestRoomTimer onTimeExpired={handleLeave} />
       <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn}>
         <Text style={styles.leaveBtnText}>Leave</Text>
       </TouchableOpacity>
