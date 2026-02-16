@@ -118,6 +118,8 @@ module.exports = {
       admobBannerIdIos: process.env.ADMOB_BANNER_ID_IOS || "",
       admobInterstitialIdAndroid: process.env.ADMOB_INTERSTITIAL_ID_ANDROID || "",
       admobInterstitialIdIos: process.env.ADMOB_INTERSTITIAL_ID_IOS || "",
+      admobNativeIdAndroid: process.env.ADMOB_NATIVE_ID_ANDROID || "",
+      admobNativeIdIos: process.env.ADMOB_NATIVE_ID_IOS || "",
       turnServerIp: process.env.TURN_SERVER_IP || "",
       turnUsername: process.env.TURN_USERNAME || "",
       turnPassword: process.env.TURN_PASSWORD || "",

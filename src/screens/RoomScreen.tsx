@@ -22,6 +22,7 @@ import { AvatarCircle } from '@/components/AvatarCircle';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
+import { RoomNativeAd } from '@/components/RoomNativeAd';
 import { colors } from '@/theme';
 import type { RoomScreenProps } from '@/navigation/types';
 
@@ -232,6 +233,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
               {actionButtons}
             </View>
             <View style={styles.twoColRight}>
+              <RoomNativeAd />
               <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
               {duckingToggle}
               {mediaPlayer}
@@ -260,6 +262,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           {topBar}
           {avatars}
           {actionButtons}
+          <RoomNativeAd />
           <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
           {duckingToggle}
           {mediaPlayer}
