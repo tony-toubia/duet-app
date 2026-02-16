@@ -38,7 +38,7 @@ export class WebRTCService {
 
   async initializeLocalStream(): Promise<MediaStream> {
     const stream = await mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } as any,
       video: false,
     });
     this.localStream = stream;

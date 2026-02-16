@@ -80,12 +80,14 @@ module.exports = {
         "expo-build-properties",
         {
           android: {
+            minSdkVersion: 24,
             compileSdkVersion: 35,
             targetSdkVersion: 35,
             enableProguardInReleaseBuilds: false,
             enableShrinkResourcesInReleaseBuilds: false,
           },
           ios: {
+            deploymentTarget: "15.1",
             useFrameworks: "static"
           }
         }
