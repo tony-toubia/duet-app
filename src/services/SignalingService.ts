@@ -33,6 +33,7 @@ export class SignalingService {
   private isOfferer: boolean = false;
   private callbacks: SignalingCallbacks;
   private unsubscribers: (() => void)[] = [];
+  private partnerEverJoined: boolean = false;
   
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
@@ -117,7 +118,13 @@ export class SignalingService {
     if (!roomSnapshot.exists()) {
       throw new Error('Room not found');
     }
-    
+
+    // Check if this user is already in the room (same account on another device)
+    const roomData = roomSnapshot.val();
+    if (roomData?.members && roomData.members[this.userId]) {
+      throw new Error('You are already in this room on another device. Please use a different account or leave the room on the other device first.');
+    }
+
     // Add yourself as a member
     await this.roomRef.child('members').child(this.userId).set({
       role: 'answerer',
@@ -247,18 +254,21 @@ export class SignalingService {
 
     const unsubscribe = membersRef.on('value', (snapshot: any) => {
       const members = snapshot.val();
-      console.log('[Signaling] Members update:', members ? Object.keys(members).length : 0, 'members');
-      if (members) {
-        const memberCount = Object.keys(members).length;
+      const memberCount = members ? Object.keys(members).length : 0;
+      console.log('[Signaling] Members update:', memberCount, 'members');
 
-        if (memberCount === 2) {
-          console.log('[Signaling] Partner joined! Triggering onPartnerJoined callback');
-          this.callbacks.onPartnerJoined();
-        } else if (memberCount === 1) {
-          // Only you left in the room
-          console.log('[Signaling] Partner left (only 1 member remaining)');
-          this.callbacks.onPartnerLeft();
-        }
+      if (memberCount >= 2) {
+        this.partnerEverJoined = true;
+        console.log('[Signaling] Partner joined! Triggering onPartnerJoined callback');
+        this.callbacks.onPartnerJoined();
+      } else if (memberCount <= 1 && this.partnerEverJoined) {
+        // Only fire partnerLeft if they actually joined at some point
+        console.log('[Signaling] Partner left (only', memberCount, 'member remaining)');
+        this.callbacks.onPartnerLeft();
+      } else if (memberCount === 0) {
+        // Room was deleted entirely
+        console.log('[Signaling] Room empty / deleted');
+        this.callbacks.onPartnerLeft();
       }
     });
 
