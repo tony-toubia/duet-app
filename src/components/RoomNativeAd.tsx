@@ -66,9 +66,11 @@ export const RoomNativeAd = () => {
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
       <View style={styles.card}>
-        {/* Top: media banner — gives the ad visual weight */}
+        {/* Top: media banner on black bg — centers content with letterbox bars */}
         {hasMedia && (
-          <NativeMediaView style={styles.mediaBanner} resizeMode="cover" />
+          <View style={styles.mediaBannerWrap}>
+            <NativeMediaView style={styles.mediaBanner} resizeMode="contain" />
+          </View>
         )}
 
         {/* Bottom: info row */}
@@ -128,6 +130,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.10,
     shadowRadius: 8,
     elevation: 3,
+  },
+  mediaBannerWrap: {
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mediaBanner: {
     width: '100%',

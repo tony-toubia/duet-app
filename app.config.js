@@ -107,7 +107,8 @@ module.exports = {
           delayAppMeasurementInit: true
         }
       ],
-      "./plugins/withDuetAudio"
+      "./plugins/withDuetAudio",
+      "./plugins/withAndroidQueries"
     ],
     extra: {
       eas: {
