@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const {
     connectionState,
     roomCode,
+    partnerId,
     isMuted,
     isDeafened,
     isSpeaking,
@@ -50,6 +51,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     setVadSensitivity,
     setDuckingEnabled,
   } = useDuetStore();
+
+  const hasBeenConnected = useRef(false);
+
+  useEffect(() => {
+    if (connectionState === 'connected') {
+      hasBeenConnected.current = true;
+    }
+  }, [connectionState]);
 
   // Clean up on unmount (e.g., app termination)
   useEffect(() => {
@@ -105,7 +114,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           style: 'destructive',
           onPress: async () => {
             await leaveRoom();
-            adService.onRoomLeave();
+            await adService.onRoomLeave();
             navigation.replace('Lobby');
           },
         },
@@ -119,7 +128,9 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       case 'connecting':
       case 'reconnecting': return colors.warning;
       case 'failed': return colors.danger;
-      default: return colors.textMuted;
+      default:
+        if (hasBeenConnected.current && !partnerId) return colors.danger;
+        return colors.warning;
     }
   };
 
@@ -129,7 +140,9 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       case 'connecting': return 'Connecting...';
       case 'reconnecting': return 'Reconnecting...';
       case 'failed': return 'Connection Failed';
-      default: return 'Disconnected';
+      default:
+        if (hasBeenConnected.current && !partnerId) return 'Partner left';
+        return 'Waiting for partner...';
     }
   };
 

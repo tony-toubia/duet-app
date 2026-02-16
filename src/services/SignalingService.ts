@@ -79,8 +79,12 @@ export class SignalingService {
       },
     });
     
-    // Clean up room when you disconnect
-    this.roomRef.onDisconnect().remove();
+    // Remove yourself from members when you disconnect (not the whole room)
+    // The Cloud Function onRoomEmpty will clean up the room when all members leave.
+    // Using onDisconnect().remove() on the entire room would delete it immediately
+    // when the creator minimizes the app (e.g., to share the code), which causes
+    // "Room not found" for anyone trying to join.
+    this.roomRef.child('members').child(this.userId).onDisconnect().remove();
     
     // Listen for partner joining
     this.listenForPartner();
@@ -290,8 +294,10 @@ export class SignalingService {
     
     // Remove yourself from the room
     if (this.roomRef && this.userId) {
+      // Cancel onDisconnect since we're doing explicit cleanup
+      await this.roomRef.child('members').child(this.userId).onDisconnect().cancel();
       await this.roomRef.child('members').child(this.userId).remove();
-      
+
       // If you're the offerer, delete the whole room
       if (this.isOfferer) {
         await this.roomRef.remove();

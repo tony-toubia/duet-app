@@ -20,15 +20,51 @@ import type { AuthScreenProps } from '@/navigation/types';
 
 type AuthMode = 'landing' | 'login' | 'register' | 'emailLink' | 'emailLinkSent';
 
+const PasswordRequirements = ({ password, confirmPassword }: { password: string; confirmPassword: string }) => {
+  const rules = [
+    { label: 'At least 8 characters', met: password.length >= 8 },
+    { label: 'Uppercase letter', met: /[A-Z]/.test(password) },
+    { label: 'Lowercase letter', met: /[a-z]/.test(password) },
+    { label: 'Number', met: /\d/.test(password) },
+    { label: 'Special character (!@#$...)', met: /[^A-Za-z0-9]/.test(password) },
+    { label: 'Passwords match', met: confirmPassword.length > 0 && password === confirmPassword },
+  ];
+
+  return (
+    <View style={styles.reqContainer}>
+      {rules.map((rule) => (
+        <View key={rule.label} style={styles.reqRow}>
+          <Text style={[styles.reqCheck, rule.met && styles.reqCheckMet]}>
+            {rule.met ? '\u2713' : '\u2022'}
+          </Text>
+          <Text style={[styles.reqLabel, rule.met && styles.reqLabelMet]}>
+            {rule.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+};
+
 export const AuthScreen = ({ navigation }: AuthScreenProps) => {
   const [mode, setMode] = useState<AuthMode>('landing');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const insets = useSafeAreaInsets();
 
   const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendSignInLink, continueAsGuest } = useAuthStore();
+
+  const isPasswordValid = (pw: string) =>
+    pw.length >= 8 &&
+    /[A-Z]/.test(pw) &&
+    /[a-z]/.test(pw) &&
+    /\d/.test(pw) &&
+    /[^A-Za-z0-9]/.test(pw);
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -64,12 +100,16 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
   };
 
   const handleEmailRegister = async () => {
-    if (!email || !password || !displayName) {
+    if (!email || !password || !displayName || !confirmPassword) {
       Alert.alert('Missing Fields', 'Please fill in all fields.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+    if (!isPasswordValid(password)) {
+      Alert.alert('Weak Password', 'Please meet all password requirements.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Password Mismatch', 'Passwords do not match.');
       return;
     }
     setIsLoading(true);
@@ -112,12 +152,18 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     }
   };
 
+  const canRegister =
+    email.length > 0 &&
+    displayName.length > 0 &&
+    isPasswordValid(password) &&
+    password === confirmPassword;
+
   if (mode === 'emailLinkSent') {
     return (
       <View style={[styles.formContainer, { paddingTop: insets.top }]}>
         <StatusBar style="light" />
         <View style={styles.emailLinkSentContent}>
-          <Text style={styles.emailLinkIcon}>{'✉️'}</Text>
+          <Text style={styles.emailLinkIcon}>{'\u2709\uFE0F'}</Text>
           <Text style={styles.formTitle}>Check your email</Text>
           <Text style={styles.emailLinkDesc}>
             We sent a sign-in link to{'\n'}
@@ -298,6 +344,28 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
           </Text>
 
           {mode === 'register' && (
+            <>
+              <TouchableOpacity
+                style={styles.googleRegisterBtn}
+                onPress={handleGoogleSignIn}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color={colors.text} />
+                ) : (
+                  <Text style={styles.googleRegisterBtnText}>Register with Google</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or register with email</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            </>
+          )}
+
+          {mode === 'register' && (
             <TextInput
               style={styles.input}
               placeholder="Display Name"
@@ -320,19 +388,55 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
             autoCorrect={false}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor={colors.textMuted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+          <View style={styles.passwordInputRow}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Password"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Text style={styles.eyeText}>{showPassword ? 'Hide' : 'Show'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {mode === 'register' && (
+            <>
+              <View style={styles.passwordInputRow}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Confirm Password"
+                  placeholderTextColor={colors.textMuted}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.eyeBtn}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Text style={styles.eyeText}>{showConfirmPassword ? 'Hide' : 'Show'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <PasswordRequirements password={password} confirmPassword={confirmPassword} />
+            </>
+          )}
 
           <TouchableOpacity
-            style={styles.submitBtn}
+            style={[
+              styles.submitBtn,
+              mode === 'register' && !canRegister && styles.submitBtnDisabled,
+            ]}
             onPress={mode === 'login' ? handleEmailLogin : handleEmailRegister}
-            disabled={isLoading}
+            disabled={isLoading || (mode === 'register' && !canRegister)}
           >
             {isLoading ? (
               <ActivityIndicator color={colors.text} />
@@ -345,7 +449,12 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
 
           <TouchableOpacity
             style={styles.switchMode}
-            onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
+            onPress={() => {
+              setMode(mode === 'login' ? 'register' : 'login');
+              setConfirmPassword('');
+              setShowPassword(false);
+              setShowConfirmPassword(false);
+            }}
           >
             <Text style={styles.switchModeText}>
               {mode === 'login'
@@ -421,7 +530,7 @@ const styles = StyleSheet.create({
   },
   buttons: {
     paddingHorizontal: 32,
-    paddingBottom: 40,
+    paddingBottom: 16,
     gap: 12,
   },
   googleBtn: {
@@ -436,7 +545,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emailBtn: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#f4dbc8',
     paddingVertical: 16,
     borderRadius: 28,
     alignItems: 'center',
@@ -515,6 +624,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassBorder,
   },
+  passwordInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: colors.text,
+  },
+  eyeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  eyeText: {
+    color: colors.primaryLight,
+    fontSize: 14,
+    fontWeight: '500',
+  },
   submitBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
@@ -522,10 +655,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  submitBtnDisabled: {
+    opacity: 0.5,
+  },
   submitBtnText: {
     color: colors.text,
     fontSize: 18,
     fontWeight: '600',
+  },
+  googleRegisterBtn: {
+    backgroundColor: '#e8734a',
+    paddingVertical: 16,
+    borderRadius: 28,
+    alignItems: 'center',
+  },
+  googleRegisterBtnText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.glassBorder,
+  },
+  dividerText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  reqContainer: {
+    gap: 6,
+  },
+  reqRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reqCheck: {
+    fontSize: 14,
+    color: colors.textMuted,
+    width: 16,
+    textAlign: 'center',
+  },
+  reqCheckMet: {
+    color: colors.success,
+  },
+  reqLabel: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  reqLabelMet: {
+    color: colors.success,
   },
   switchMode: {
     alignItems: 'center',

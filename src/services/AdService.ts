@@ -16,6 +16,7 @@ class AdService {
   private interstitial: InterstitialAd | null = null;
   private roomLeaveCount = 0;
   private isLoaded = false;
+  private onClosedResolve: (() => void) | null = null;
 
   /**
    * Initialize and preload the interstitial ad
@@ -35,6 +36,11 @@ class AdService {
     this.interstitial.addAdEventListener(AdEventType.CLOSED, () => {
       console.log('[Ad] Interstitial closed');
       this.isLoaded = false;
+      // Resolve the pending promise so navigation can proceed
+      if (this.onClosedResolve) {
+        this.onClosedResolve();
+        this.onClosedResolve = null;
+      }
       // Preload the next one
       this.loadInterstitial();
     });
@@ -48,16 +54,23 @@ class AdService {
   }
 
   /**
-   * Show an interstitial ad every 3rd room leave
+   * Show an interstitial ad every 3rd room leave.
+   * Returns a promise that resolves when the ad is closed (or immediately if no ad shown).
    */
   async onRoomLeave(): Promise<void> {
     this.roomLeaveCount++;
 
     if (this.roomLeaveCount % 3 === 0 && this.isLoaded && this.interstitial) {
       try {
+        // Wait for the ad to be closed before resolving
+        const closedPromise = new Promise<void>((resolve) => {
+          this.onClosedResolve = resolve;
+        });
         await this.interstitial.show();
+        await closedPromise;
       } catch (error) {
         console.log('[Ad] Failed to show interstitial:', error);
+        this.onClosedResolve = null;
       }
     }
   }

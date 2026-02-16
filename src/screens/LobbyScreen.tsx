@@ -34,6 +34,8 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   } = useDuetStore();
 
   const userProfile = useAuthStore((s) => s.userProfile);
+  const isGuest = useAuthStore((s) => s.isGuest);
+  const signOut = useAuthStore((s) => s.signOut);
 
   // Navigate to room when connected
   useEffect(() => {
@@ -146,14 +148,23 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             <Text style={styles.friendsBtnText}>Friends</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
-          <TouchableOpacity
-            style={styles.profileBtn}
-            onPress={() => navigation.navigate('Profile')}
-          >
-            <Text style={styles.profileBtnText}>
-              {userProfile?.displayName?.charAt(0)?.toUpperCase() || 'P'}
-            </Text>
-          </TouchableOpacity>
+          {isGuest ? (
+            <TouchableOpacity
+              style={styles.signInBtn}
+              onPress={() => signOut()}
+            >
+              <Text style={styles.signInBtnText}>Sign In</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.profileBtn}
+              onPress={() => navigation.navigate('Profile')}
+            >
+              <Text style={styles.profileBtnText}>
+                {userProfile?.displayName?.charAt(0)?.toUpperCase() || 'P'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
         <View style={styles.lobbyHeader}>
           <Image
@@ -281,6 +292,19 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '500',
+  },
+  signInBtn: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  signInBtnText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   profileBtn: {
     width: 36,
