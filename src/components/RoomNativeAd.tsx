@@ -55,40 +55,41 @@ export const RoomNativeAd = () => {
 
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
-      <View style={styles.header}>
-        {nativeAd.icon && (
-          <NativeAsset assetType={NativeAssetType.ICON}>
-            <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
-          </NativeAsset>
+      <View style={styles.row}>
+        {nativeAd.mediaContent && (
+          <NativeMediaView style={styles.media} resizeMode="cover" />
         )}
-        <View style={styles.headerText}>
-          <NativeAsset assetType={NativeAssetType.HEADLINE}>
-            <Text style={styles.headline} numberOfLines={1}>{nativeAd.headline}</Text>
-          </NativeAsset>
-          {nativeAd.advertiser && (
-            <NativeAsset assetType={NativeAssetType.ADVERTISER}>
-              <Text style={styles.advertiser} numberOfLines={1}>{nativeAd.advertiser}</Text>
+        <View style={styles.info}>
+          <View style={styles.header}>
+            {nativeAd.icon && (
+              <NativeAsset assetType={NativeAssetType.ICON}>
+                <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
+              </NativeAsset>
+            )}
+            <View style={styles.headerText}>
+              <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                <Text style={styles.headline} numberOfLines={2}>{nativeAd.headline}</Text>
+              </NativeAsset>
+              {nativeAd.advertiser && (
+                <NativeAsset assetType={NativeAssetType.ADVERTISER}>
+                  <Text style={styles.advertiser} numberOfLines={1}>{nativeAd.advertiser}</Text>
+                </NativeAsset>
+              )}
+            </View>
+          </View>
+          {nativeAd.body && (
+            <NativeAsset assetType={NativeAssetType.BODY}>
+              <Text style={styles.body} numberOfLines={2}>{nativeAd.body}</Text>
+            </NativeAsset>
+          )}
+          {nativeAd.callToAction && (
+            <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+              <Text style={styles.cta}>{nativeAd.callToAction}</Text>
             </NativeAsset>
           )}
         </View>
-        <Text style={styles.adBadge}>Ad</Text>
       </View>
-
-      {nativeAd.body && (
-        <NativeAsset assetType={NativeAssetType.BODY}>
-          <Text style={styles.body} numberOfLines={2}>{nativeAd.body}</Text>
-        </NativeAsset>
-      )}
-
-      {nativeAd.mediaContent && (
-        <NativeMediaView style={styles.media} resizeMode="cover" />
-      )}
-
-      {nativeAd.callToAction && (
-        <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-          <Text style={styles.cta}>{nativeAd.callToAction}</Text>
-        </NativeAsset>
-      )}
+      <Text style={styles.adBadge}>Ad</Text>
     </NativeAdView>
   );
 };
@@ -103,61 +104,65 @@ const styles = StyleSheet.create({
     padding: 12,
     overflow: 'hidden',
   },
+  row: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  media: {
+    width: 120,
+    height: 120,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  info: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 6,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   icon: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
   },
   headerText: {
     flex: 1,
   },
   headline: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   advertiser: {
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 1,
   },
   adBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 6,
     color: colors.textMuted,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '600',
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    overflow: 'hidden',
   },
   body: {
     color: colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 8,
-  },
-  media: {
-    height: 150,
-    borderRadius: 10,
-    marginTop: 10,
-    overflow: 'hidden',
+    fontSize: 11,
+    lineHeight: 15,
   },
   cta: {
     color: colors.text,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
     backgroundColor: colors.primary,
-    borderRadius: 20,
-    paddingVertical: 10,
-    marginTop: 10,
+    borderRadius: 16,
+    paddingVertical: 7,
     overflow: 'hidden',
   },
 });

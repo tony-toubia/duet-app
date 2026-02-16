@@ -11,6 +11,7 @@ import {
   ImageBackground,
   ScrollView,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +32,7 @@ const TABLET_MIN_WIDTH = 600;
 
 export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const [mediaMinimized, setMediaMinimized] = useState(false);
+  const [showAdTransition, setShowAdTransition] = useState(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isTablet = width >= TABLET_MIN_WIDTH;
@@ -116,6 +118,11 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           style: 'destructive',
           onPress: async () => {
             await leaveRoom();
+            if (adService.willShowInterstitial()) {
+              setShowAdTransition(true);
+              await new Promise((r) => setTimeout(r, 1500));
+              setShowAdTransition(false);
+            }
             await adService.onRoomLeave();
             navigation.replace('Lobby');
           },
@@ -218,6 +225,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     <MediaPlayer minimized={mediaMinimized} onToggleMinimized={() => setMediaMinimized(!mediaMinimized)} />
   );
 
+  const adTransitionOverlay = showAdTransition ? (
+    <View style={styles.adTransition}>
+      <ActivityIndicator size="large" color={colors.text} />
+      <Text style={styles.adTransitionText}>A short ad will play next</Text>
+      <Text style={styles.adTransitionSub}>Thanks for using Duet!</Text>
+    </View>
+  ) : null;
+
   // Tablet two-column layout
   if (useTwoColumn) {
     return (
@@ -243,6 +258,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
             </View>
           </View>
           <View style={{ height: insets.bottom }} />
+          {adTransitionOverlay}
         </View>
       </ImageBackground>
     );
@@ -270,6 +286,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           {mediaPlayer}
           <NavigationWidget />
         </ScrollView>
+        {adTransitionOverlay}
       </View>
     </ImageBackground>
   );
@@ -405,5 +422,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     gap: 12,
+  },
+  adTransition: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(20, 20, 40, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  adTransitionText: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  adTransitionSub: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
 });

@@ -74,6 +74,12 @@ export const GuestRoomTimer = ({ onTimeExpired }: GuestRoomTimerProps) => {
             setSecondsLeft(GUEST_SESSION_SECONDS);
             isShowingAlert.current = false;
 
+            Alert.alert(
+              'Session Extended!',
+              'You\'ve earned 20 more minutes. Enjoy your call!',
+              [{ text: 'OK' }],
+            );
+
             // Restart the countdown
             intervalRef.current = setInterval(() => {
               const currentState = useDuetStore.getState().connectionState;

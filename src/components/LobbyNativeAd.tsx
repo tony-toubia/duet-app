@@ -54,6 +54,7 @@ export const LobbyNativeAd = () => {
   return (
     <NativeAdView nativeAd={nativeAd} style={styles.container}>
       <View style={styles.row}>
+        <Text style={styles.adBadge}>Ad</Text>
         {nativeAd.icon && (
           <NativeAsset assetType={NativeAssetType.ICON}>
             <Image source={{ uri: nativeAd.icon.url }} style={styles.icon} />
@@ -75,7 +76,6 @@ export const LobbyNativeAd = () => {
           </NativeAsset>
         )}
       </View>
-      <Text style={styles.adBadge}>Ad</Text>
     </NativeAdView>
   );
 };
@@ -123,11 +123,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   adBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 8,
     color: '#9a9aaa',
     fontSize: 9,
     fontWeight: '600',
+    borderWidth: 1,
+    borderColor: '#c0c0cc',
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: 'hidden',
   },
 });

@@ -75,6 +75,13 @@ class AdService {
   }
 
   /**
+   * Check if the next room leave will trigger an interstitial.
+   */
+  willShowInterstitial(): boolean {
+    return (this.roomLeaveCount + 1) % 3 === 0 && this.isLoaded && !!this.interstitial;
+  }
+
+  /**
    * Show an interstitial ad every 3rd room leave.
    * Returns a promise that resolves when the ad is closed (or immediately if no ad shown).
    */

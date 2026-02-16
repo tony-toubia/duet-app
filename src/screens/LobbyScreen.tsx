@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Share,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -139,7 +141,10 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
           resizeMode="contain"
         />
       </View>
-      <View style={[styles.lobbyOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <KeyboardAvoidingView
+        style={[styles.lobbyOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.lobbyTopBar}>
           <TouchableOpacity
             style={styles.friendsBtn}
@@ -216,8 +221,8 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             </View>
           )}
         </View>
-        <LobbyNativeAd />
-      </View>
+        {!showJoinInput && <LobbyNativeAd />}
+      </KeyboardAvoidingView>
     </View>
   );
 };
