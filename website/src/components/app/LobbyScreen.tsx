@@ -81,17 +81,12 @@ export function LobbyScreen() {
 
   return (
     <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
-      {/* Centered frame: fills height, caps at 600px wide, centered both ways */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative w-full max-w-[600px] h-full overflow-hidden">
-          {/* Split background fills the frame */}
-          <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
-          <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-          <img src="/duet-home-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
-        </div>
+      {/* Background image: scales to viewport height, width follows aspect ratio, max 600px */}
+      <div className="absolute inset-0 flex justify-center overflow-hidden">
+        <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[600px] object-top" />
       </div>
 
-      <div className="absolute inset-0 z-10 flex items-center justify-center">
+      <div className="absolute inset-0 z-10 flex justify-center">
         <div className="relative w-full max-w-[600px] h-full flex flex-col">
         {/* Top bar */}
         <div className="flex items-center justify-between px-5 pt-4">
