@@ -73,13 +73,13 @@ export default function LandingPage() {
 
         {/* Footer */}
         <div className="text-center">
-          <Link href="/privacy" className="text-white/50 text-sm mx-3 hover:text-primary transition-colors">
+          <Link href="/privacy" className="text-lobby-dark/60 text-sm mx-3 hover:text-primary transition-colors">
             Privacy Policy
           </Link>
-          <Link href="/delete" className="text-white/50 text-sm mx-3 hover:text-primary transition-colors">
+          <Link href="/delete" className="text-lobby-dark/60 text-sm mx-3 hover:text-primary transition-colors">
             Delete Account
           </Link>
-          <a href="mailto:hello@getduet.app" className="text-white/50 text-sm mx-3 hover:text-primary transition-colors">
+          <a href="mailto:hello@getduet.app" className="text-lobby-dark/60 text-sm mx-3 hover:text-primary transition-colors">
             Contact
           </a>
         </div>
