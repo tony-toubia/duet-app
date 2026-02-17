@@ -211,11 +211,17 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
   const displayCode = roomCode || initialRoomCode || '';
 
   return (
-    <div
-      className="h-screen-safe relative bg-cover bg-center overflow-hidden"
-      style={{ backgroundImage: 'url(/duet-room-bg.png)' }}
-    >
-      <div className="absolute inset-0 bg-[rgba(20,20,40,0.55)] flex flex-col overflow-auto">
+    <div className="h-screen-safe relative overflow-hidden bg-[#141428]">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div
+          className="relative w-full max-w-[600px] h-full bg-cover bg-center"
+          style={{ backgroundImage: 'url(/duet-room-bg.png)' }}
+        >
+          <div className="absolute inset-0 bg-[rgba(20,20,40,0.55)]" />
+        </div>
+      </div>
+      <div className="absolute inset-0 z-10 flex items-center justify-center">
+        <div className="relative w-full max-w-[600px] h-full flex flex-col overflow-auto">
         {/* Tab warning banner */}
         <div className="bg-warning/20 border-b border-warning/30 px-4 py-2 text-center">
           <p className="text-warning text-xs font-medium">
@@ -316,6 +322,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           roomCode={displayCode}
           onClose={() => setShowShareModal(false)}
         />
+        </div>
       </div>
     </div>
   );

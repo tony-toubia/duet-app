@@ -208,61 +208,67 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   // Landing
   if (mode === 'landing') {
     return (
-      <div className="h-screen-safe relative overflow-hidden">
-        <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
-        <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-        <div className="absolute inset-0 flex justify-center">
-          <img src="/duet-home-bg.png" alt="" className="h-full max-w-[600px] w-full object-cover object-top" />
-        </div>
-        <div className="absolute inset-0 z-10 flex flex-col">
-          <div className="text-center pt-12">
-            <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
-            <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>
-            <p className="text-white/85 mt-2 leading-relaxed">
-              Always-on voice connection.<br />Together, even when apart.
-            </p>
+      <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
+        {/* Centered frame: fills height, caps at 600px wide, centered both ways */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="relative w-full max-w-[600px] h-full overflow-hidden">
+            <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
+            <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
+            <img src="/duet-home-bg.png" alt="" className="absolute inset-0 w-full h-full object-cover object-top" />
           </div>
-          <div className="flex-1" />
-          <div className="px-8 pb-8 flex flex-col gap-3 max-w-sm mx-auto w-full">
-            {errorBanner}
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
-            >
-              {isLoading ? 'Signing in...' : 'Sign in with Google'}
-            </button>
-            <button
-              onClick={() => { setMode('emailLink'); clearError(); }}
-              disabled={isLoading}
-              className="bg-[#f4dbc8] text-[#3d3d50] py-4 rounded-full text-lg font-semibold border-2 border-[#3d3d50] hover:bg-[#efd0b8] transition-colors"
-            >
-              Sign in with Email Link
-            </button>
-            <div className="flex justify-center items-center gap-3 py-2">
+        </div>
+
+        <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <div className="relative w-full max-w-[600px] h-full flex flex-col">
+            <div className="text-center pt-12">
+              <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
+              <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>
+              <p className="text-white/85 mt-2 leading-relaxed">
+                Always-on voice connection.<br />Together, even when apart.
+              </p>
+            </div>
+            <div className="flex-1" />
+            <div className="px-8 pb-8 flex flex-col gap-3 max-w-sm mx-auto w-full">
+              {errorBanner}
               <button
-                onClick={() => { setMode('login'); clearError(); }}
+                onClick={handleGoogleSignIn}
                 disabled={isLoading}
-                className="text-[#1a293d] text-sm font-semibold hover:underline"
+                className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
               >
-                Sign in with Password
+                {isLoading ? 'Signing in...' : 'Sign in with Google'}
               </button>
-              <span className="text-[#1a293d] opacity-40">|</span>
               <button
-                onClick={() => { setMode('register'); clearError(); }}
+                onClick={() => { setMode('emailLink'); clearError(); }}
                 disabled={isLoading}
-                className="text-[#1a293d] text-sm font-semibold hover:underline"
+                className="bg-[#f4dbc8] text-[#3d3d50] py-4 rounded-full text-lg font-semibold border-2 border-[#3d3d50] hover:bg-[#efd0b8] transition-colors"
               >
-                Create Account
+                Sign in with Email Link
+              </button>
+              <div className="flex justify-center items-center gap-3 py-2">
+                <button
+                  onClick={() => { setMode('login'); clearError(); }}
+                  disabled={isLoading}
+                  className="text-[#1a293d] text-sm font-semibold hover:underline"
+                >
+                  Sign in with Password
+                </button>
+                <span className="text-[#1a293d] opacity-40">|</span>
+                <button
+                  onClick={() => { setMode('register'); clearError(); }}
+                  disabled={isLoading}
+                  className="text-[#1a293d] text-sm font-semibold hover:underline"
+                >
+                  Create Account
+                </button>
+              </div>
+              <button
+                onClick={handleGuest}
+                disabled={isLoading}
+                className="text-[#1a293d] text-sm font-medium py-2 hover:underline"
+              >
+                Continue as Guest
               </button>
             </div>
-            <button
-              onClick={handleGuest}
-              disabled={isLoading}
-              className="text-[#1a293d] text-sm font-medium py-2 hover:underline"
-            >
-              Continue as Guest
-            </button>
           </div>
         </div>
       </div>
