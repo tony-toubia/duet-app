@@ -211,17 +211,11 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
   const displayCode = roomCode || initialRoomCode || '';
 
   return (
-    <div className="h-screen-safe relative overflow-hidden bg-[#141428]">
-      <div className="absolute inset-0 flex justify-center">
-        <div
-          className="relative w-full sm:max-w-[400px] h-full bg-cover bg-center"
-          style={{ backgroundImage: 'url(/duet-room-bg.png)' }}
-        >
-          <div className="absolute inset-0 bg-[rgba(20,20,40,0.55)]" />
-        </div>
-      </div>
-      <div className="absolute inset-0 z-10 flex justify-center">
-        <div className="relative w-full sm:max-w-[400px] h-full flex flex-col overflow-auto">
+    <div
+      className="h-screen-safe bg-cover bg-center"
+      style={{ backgroundImage: 'url(/duet-room-bg.png)' }}
+    >
+      <div className="h-full bg-[rgba(20,20,40,0.55)] flex flex-col">
         {/* Tab warning banner */}
         <div className="bg-warning/20 border-b border-warning/30 px-4 py-2 text-center">
           <p className="text-warning text-xs font-medium">
@@ -230,7 +224,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
         </div>
 
         {/* Top bar */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between px-5 sm:px-8 pt-4 pb-2 w-full max-w-3xl mx-auto">
           <button
             onClick={() => setShowShareModal(true)}
             className="flex items-center bg-glass border border-glass-border rounded-2xl py-1.5 px-3"
@@ -249,13 +243,13 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
         </div>
 
         {/* Avatars */}
-        <div className="flex justify-center items-center gap-10 py-8">
+        <div className="flex justify-center items-center gap-10 sm:gap-16 py-8 sm:py-12">
           <AvatarCircle label="You" initials="Y" isSpeaking={isSpeaking} isMuted={isMuted} />
           <AvatarCircle label="Partner" initials="P" isSpeaking={isPartnerSpeaking} isDeafened={isDeafened} />
         </div>
 
         {/* Action buttons */}
-        <div className="flex justify-center gap-4 px-5">
+        <div className="flex justify-center gap-4 sm:gap-6 px-5">
           <button
             onClick={() => setMuted(!isMuted)}
             className={`flex items-center gap-2 rounded-3xl py-3 px-5 border transition-colors ${
@@ -281,7 +275,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
         </div>
 
         {/* Voice sensitivity */}
-        <div className="mt-4">
+        <div className="mt-4 max-w-md mx-auto w-full px-5">
           <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
         </div>
 
@@ -289,7 +283,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
 
         {/* Ad */}
         {process.env.NEXT_PUBLIC_AD_SLOT_ROOM && (
-          <div className="px-5 mb-4">
+          <div className="px-5 mb-4 max-w-lg mx-auto w-full">
             <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_ROOM} format="horizontal" />
           </div>
         )}
@@ -322,7 +316,6 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           roomCode={displayCode}
           onClose={() => setShowShareModal(false)}
         />
-        </div>
       </div>
     </div>
   );
