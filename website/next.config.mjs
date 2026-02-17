@@ -15,12 +15,14 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    return [
-      {
-        source: '/__/auth/:path*',
-        destination: 'https://duet-33cf5.firebaseapp.com/__/auth/:path*',
-      },
-    ];
+    return {
+      beforeFiles: [
+        {
+          source: '/__/auth/:path*',
+          destination: 'https://duet-33cf5.firebaseapp.com/__/auth/:path*',
+        },
+      ],
+    };
   },
 };
 
