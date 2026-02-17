@@ -212,10 +212,10 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
 
   return (
     <div
-      className="h-screen-safe bg-cover bg-center"
+      className="h-screen-safe relative bg-cover bg-center overflow-hidden"
       style={{ backgroundImage: 'url(/duet-room-bg.png)' }}
     >
-      <div className="h-screen-safe bg-[rgba(20,20,40,0.55)] flex flex-col">
+      <div className="absolute inset-0 bg-[rgba(20,20,40,0.55)] flex flex-col overflow-auto">
         {/* Tab warning banner */}
         <div className="bg-warning/20 border-b border-warning/30 px-4 py-2 text-center">
           <p className="text-warning text-xs font-medium">

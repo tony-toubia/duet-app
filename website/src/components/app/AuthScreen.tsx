@@ -214,7 +214,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
         <div className="absolute inset-0 flex justify-center">
           <img src="/duet-home-bg.png" alt="" className="h-full max-w-[600px] w-full object-cover object-top" />
         </div>
-        <div className="relative z-10 h-screen-safe flex flex-col">
+        <div className="absolute inset-0 z-10 flex flex-col">
           <div className="text-center pt-12">
             <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
             <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>

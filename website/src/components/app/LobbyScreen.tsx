@@ -87,7 +87,7 @@ export function LobbyScreen() {
         <img src="/duet-home-bg.png" alt="" className="h-full max-w-[600px] w-full object-cover object-top" />
       </div>
 
-      <div className="relative z-10 h-screen-safe flex flex-col">
+      <div className="absolute inset-0 z-10 flex flex-col">
         {/* Top bar */}
         <div className="flex items-center justify-between px-5 pt-4">
           <button
