@@ -40,30 +40,34 @@ export default function LandingPage() {
           </Link>
         </div>
 
-        {/* Features — white card strip */}
-        <div className="bg-white rounded-3xl p-8 max-w-2xl w-full mb-16 shadow-xl">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="text-center p-4">
-              <Image src="/on-air.gif" alt="Always On" width={64} height={64} className="mx-auto mb-3" unoptimized />
-              <h3 className="text-base font-semibold mb-1 text-[#1a293d]">Always On</h3>
-              <p className="text-sm text-[#6b7b8d] leading-relaxed">
-                One-tap voice rooms that stay connected in the background.
-              </p>
+        {/* Features */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 max-w-2xl w-full mb-16">
+          <div className="text-center p-5">
+            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <Image src="/on-air.gif" alt="Always On" width={52} height={52} unoptimized />
             </div>
-            <div className="text-center p-4">
-              <Image src="/password.gif" alt="Private" width={64} height={64} className="mx-auto mb-3" unoptimized />
-              <h3 className="text-base font-semibold mb-1 text-[#1a293d]">Private</h3>
-              <p className="text-sm text-[#6b7b8d] leading-relaxed">
-                Peer-to-peer encrypted audio. We never hear your conversations.
-              </p>
+            <h3 className="text-base font-semibold mb-1">Always On</h3>
+            <p className="text-sm text-white/60 leading-relaxed">
+              One-tap voice rooms that stay connected in the background.
+            </p>
+          </div>
+          <div className="text-center p-5">
+            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <Image src="/password.gif" alt="Private" width={52} height={52} unoptimized />
             </div>
-            <div className="text-center p-4">
-              <Image src="/fist-bump.gif" alt="Stay Connected" width={64} height={64} className="mx-auto mb-3" unoptimized />
-              <h3 className="text-base font-semibold mb-1 text-[#1a293d]">Stay Connected</h3>
-              <p className="text-sm text-[#6b7b8d] leading-relaxed">
-                Add friends, see who&apos;s online, and jump into a room together.
-              </p>
+            <h3 className="text-base font-semibold mb-1">Private</h3>
+            <p className="text-sm text-white/60 leading-relaxed">
+              Peer-to-peer encrypted audio. We never hear your conversations.
+            </p>
+          </div>
+          <div className="text-center p-5">
+            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <Image src="/fist-bump.gif" alt="Stay Connected" width={52} height={52} unoptimized />
             </div>
+            <h3 className="text-base font-semibold mb-1">Stay Connected</h3>
+            <p className="text-sm text-white/60 leading-relaxed">
+              Add friends, see who&apos;s online, and jump into a room together.
+            </p>
           </div>
         </div>
 
