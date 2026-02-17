@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { ShareModal } from './ShareModal';
 import { GuestRoomTimer } from './GuestRoomTimer';
+import { AdSlot } from './AdSlot';
 
 function AvatarCircle({
   label,
@@ -279,6 +280,13 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
         </div>
 
         <div className="flex-1" />
+
+        {/* Ad */}
+        {process.env.NEXT_PUBLIC_AD_SLOT_ROOM && (
+          <div className="px-5 mb-4">
+            <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_ROOM} format="horizontal" />
+          </div>
+        )}
 
         {/* Leave confirmation */}
         {showLeaveConfirm && (

@@ -6,19 +6,22 @@ interface FriendsState {
   friends: Record<string, FriendEntry>;
   recentConnections: Record<string, RecentConnection>;
   statuses: Record<string, { state: 'online' | 'offline'; lastSeen: number }>;
-  searchResults: Array<{ uid: string; displayName: string; avatarUrl: string | null }>;
+  searchResult: { uid: string; displayName: string; avatarUrl: string | null } | null;
   isSearching: boolean;
+  friendCode: string | null;
+  isFriendCodeLoading: boolean;
 
-  // Computed
   pendingRequests: () => Array<{ uid: string } & FriendEntry>;
   acceptedFriends: () => Array<{ uid: string } & FriendEntry>;
 
-  // Actions
   subscribe: () => () => void;
   sendFriendRequest: (targetUid: string) => Promise<void>;
   acceptFriendRequest: (friendUid: string) => Promise<void>;
   removeFriend: (friendUid: string) => Promise<void>;
-  searchUsers: (query: string) => Promise<void>;
+  searchByEmail: (email: string) => Promise<void>;
+  lookupFriendCode: (code: string) => Promise<void>;
+  loadFriendCode: () => Promise<void>;
+  getOrCreateFriendCode: () => Promise<string>;
   clearSearch: () => void;
 }
 
@@ -26,8 +29,10 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
   friends: {},
   recentConnections: {},
   statuses: {},
-  searchResults: [],
+  searchResult: null,
   isSearching: false,
+  friendCode: null,
+  isFriendCodeLoading: false,
 
   pendingRequests: () => {
     const { friends } = get();
@@ -47,11 +52,9 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
   subscribe: () => {
     const unsubs: (() => void)[] = [];
 
-    // Subscribe to friends list
     const unsubFriends = friendsService.subscribeFriends((friends) => {
       set({ friends });
 
-      // Subscribe to presence for all accepted friends
       const acceptedUids = Object.entries(friends)
         .filter(([, f]) => f.status === 'accepted')
         .map(([uid]) => uid);
@@ -65,7 +68,6 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
     });
     unsubs.push(unsubFriends);
 
-    // Subscribe to recent connections
     const unsubRecent = friendsService.subscribeRecentConnections((connections) => {
       set({ recentConnections: connections });
     });
@@ -86,17 +88,49 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
     await friendsService.removeFriend(friendUid);
   },
 
-  searchUsers: async (query: string) => {
-    set({ isSearching: true });
+  searchByEmail: async (email: string) => {
+    set({ isSearching: true, searchResult: null });
     try {
-      const results = await friendsService.searchUsers(query);
-      set({ searchResults: results, isSearching: false });
+      const result = await friendsService.searchByEmail(email);
+      set({ searchResult: result, isSearching: false });
     } catch {
       set({ isSearching: false });
     }
   },
 
+  lookupFriendCode: async (code: string) => {
+    set({ isSearching: true, searchResult: null });
+    try {
+      const result = await friendsService.lookupFriendCode(code);
+      set({ searchResult: result, isSearching: false });
+    } catch {
+      set({ isSearching: false });
+    }
+  },
+
+  loadFriendCode: async () => {
+    set({ isFriendCodeLoading: true });
+    try {
+      const code = await friendsService.getFriendCode();
+      set({ friendCode: code, isFriendCodeLoading: false });
+    } catch {
+      set({ isFriendCodeLoading: false });
+    }
+  },
+
+  getOrCreateFriendCode: async () => {
+    set({ isFriendCodeLoading: true });
+    try {
+      const code = await friendsService.getOrCreateFriendCode();
+      set({ friendCode: code, isFriendCodeLoading: false });
+      return code;
+    } catch (e) {
+      set({ isFriendCodeLoading: false });
+      throw e;
+    }
+  },
+
   clearSearch: () => {
-    set({ searchResults: [], isSearching: false });
+    set({ searchResult: null, isSearching: false });
   },
 }));

@@ -109,6 +109,8 @@
     "users": {
       // Allow reading profiles for friend search and display
       ".read": "auth != null",
+      // Index for email search
+      ".indexOn": ["profile/email"],
 
       "$userId": {
         // Users can write their own data
@@ -127,6 +129,9 @@
           },
           "authProvider": {
             ".validate": "newData.isString() && (newData.val() == 'google' || newData.val() == 'email' || newData.val() == 'anonymous')"
+          },
+          "friendCode": {
+            ".validate": "newData.isString() && newData.val().length == 8"
           }
         },
 
@@ -207,6 +212,15 @@
         // Anyone authenticated can create invitations
         ".write": "auth != null",
         ".validate": "newData.hasChildren(['fromUid', 'fromDisplayName', 'toUid', 'roomCode', 'createdAt'])"
+      }
+    },
+
+    // Friend codes reverse lookup: /friendCodes/{code} -> uid
+    "friendCodes": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.isString() && newData.val().length > 0"
       }
     },
 

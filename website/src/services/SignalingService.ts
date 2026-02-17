@@ -222,6 +222,19 @@ export class SignalingService {
     return this.roomCode;
   }
 
+  getUserId(): string | null {
+    return this.userId;
+  }
+
+  async getPartnerUid(): Promise<string | null> {
+    if (!this.roomCode || !this.userId) return null;
+    const membersSnap = await get(ref(firebaseDb, `rooms/${this.roomCode}/members`));
+    const members = membersSnap.val();
+    if (!members) return null;
+    const uids = Object.keys(members);
+    return uids.find((uid) => uid !== this.userId) || null;
+  }
+
   async leave(): Promise<void> {
     this.unsubscribers.forEach((unsub) => unsub());
     this.unsubscribers = [];

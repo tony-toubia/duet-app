@@ -9,32 +9,47 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Share,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
+import { useAuthStore } from '@/hooks/useAuthStore';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { FriendsScreenProps } from '@/navigation/types';
 
+type SearchTab = 'email' | 'code';
+
 export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTab, setSearchTab] = useState<SearchTab>('email');
+  const [emailQuery, setEmailQuery] = useState('');
+  const [codeQuery, setCodeQuery] = useState('');
   const [removeTarget, setRemoveTarget] = useState<{ uid: string; name: string } | null>(null);
+  const [searchNotFound, setSearchNotFound] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const insets = useSafeAreaInsets();
+
+  const isGuest = useAuthStore.getState().isGuest;
 
   const {
     friends,
     recentConnections,
     statuses,
-    searchResults,
+    searchResult,
     isSearching,
+    friendCode,
+    isFriendCodeLoading,
     pendingRequests,
     acceptedFriends,
     subscribe,
     sendFriendRequest,
     acceptFriendRequest,
     removeFriend,
-    searchUsers,
+    searchByEmail,
+    lookupFriendCode,
+    getOrCreateFriendCode,
     clearSearch,
   } = useFriendsStore();
 
@@ -43,10 +58,30 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
     return unsub;
   }, []);
 
-  const handleSearch = () => {
-    if (searchQuery.length >= 2) {
-      searchUsers(searchQuery);
+  useEffect(() => {
+    if (!isGuest) {
+      getOrCreateFriendCode().catch(() => {});
     }
+  }, [isGuest]);
+
+  const handleSearchByEmail = async () => {
+    if (!emailQuery.trim()) return;
+    setSearchNotFound(false);
+    await searchByEmail(emailQuery);
+    setTimeout(() => {
+      const { searchResult } = useFriendsStore.getState();
+      if (!searchResult) setSearchNotFound(true);
+    }, 100);
+  };
+
+  const handleLookupCode = async () => {
+    if (codeQuery.length !== 8) return;
+    setSearchNotFound(false);
+    await lookupFriendCode(codeQuery);
+    setTimeout(() => {
+      const { searchResult } = useFriendsStore.getState();
+      if (!searchResult) setSearchNotFound(true);
+    }, 100);
   };
 
   const handleSendRequest = async (uid: string) => {
@@ -54,7 +89,9 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
       await sendFriendRequest(uid);
       Alert.alert('Request Sent', 'Friend request has been sent.');
       clearSearch();
-      setSearchQuery('');
+      setEmailQuery('');
+      setCodeQuery('');
+      setSearchNotFound(false);
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to send request.');
     }
@@ -79,10 +116,27 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
     }
   };
 
+  const handleCopyCode = async () => {
+    if (!friendCode) return;
+    await Clipboard.setStringAsync(friendCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
+
+  const handleShareInvite = async () => {
+    if (!friendCode) return;
+    try {
+      await Share.share({
+        message: `Add me as a friend on Duet! My friend code: ${friendCode}`,
+      });
+    } catch {}
+  };
+
   const pending = pendingRequests();
   const accepted = acceptedFriends();
   const recentList = Object.entries(recentConnections)
     .map(([uid, c]) => ({ uid, ...c }))
+    .filter((conn) => !friends[conn.uid])
     .sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
 
   const renderAvatar = (name: string, avatarUrl: string | null, isOnline?: boolean) => (
@@ -115,74 +169,148 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
           <View style={{ width: 50 }} />
         </View>
 
-        {/* Search */}
-        <View style={styles.searchSection}>
-          <View style={styles.searchRow}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by name..."
-              placeholderTextColor={colors.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={handleSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+        {/* Your Friend Code */}
+        {!isGuest && (
+          <View style={styles.friendCodeSection}>
+            <Text style={styles.sectionTitle}>YOUR FRIEND CODE</Text>
+            {isFriendCodeLoading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : friendCode ? (
+              <View style={styles.friendCodeCard}>
+                <View style={styles.friendCodeRow}>
+                  <Text style={styles.friendCodeText}>{friendCode}</Text>
+                  <TouchableOpacity onPress={handleCopyCode}>
+                    <Text style={styles.copyText}>{codeCopied ? 'Copied!' : 'Copy'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={styles.shareInviteBtn} onPress={handleShareInvite}>
+                  <Text style={styles.shareInviteText}>Share Invite Link</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {/* Add Friend */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ADD FRIEND</Text>
+
+          {/* Tabs */}
+          <View style={styles.tabRow}>
             <TouchableOpacity
-              style={styles.searchBtn}
-              onPress={handleSearch}
-              disabled={searchQuery.length < 2}
+              style={[styles.tab, searchTab === 'email' && styles.tabActive]}
+              onPress={() => { setSearchTab('email'); clearSearch(); setSearchNotFound(false); }}
             >
-              <Text style={styles.searchBtnText}>Search</Text>
+              <Text style={[styles.tabText, searchTab === 'email' && styles.tabTextActive]}>By Email</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, searchTab === 'code' && styles.tabActive]}
+              onPress={() => { setSearchTab('code'); clearSearch(); setSearchNotFound(false); }}
+            >
+              <Text style={[styles.tabText, searchTab === 'code' && styles.tabTextActive]}>By Friend Code</Text>
             </TouchableOpacity>
           </View>
 
-          {isSearching && <ActivityIndicator color={colors.primary} style={{ marginTop: 12 }} />}
+          {/* Search input */}
+          <View style={styles.searchRow}>
+            {searchTab === 'email' ? (
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Enter email address..."
+                placeholderTextColor={colors.textMuted}
+                value={emailQuery}
+                onChangeText={(t) => { setEmailQuery(t); setSearchNotFound(false); }}
+                onSubmitEditing={handleSearchByEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
+            ) : (
+              <TextInput
+                style={[styles.searchInput, styles.codeInput]}
+                placeholder="Enter 8-char code..."
+                placeholderTextColor={colors.textMuted}
+                value={codeQuery}
+                onChangeText={(t) => { setCodeQuery(t.toUpperCase()); setSearchNotFound(false); }}
+                onSubmitEditing={handleLookupCode}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={8}
+              />
+            )}
+            <TouchableOpacity
+              style={styles.searchBtn}
+              onPress={searchTab === 'email' ? handleSearchByEmail : handleLookupCode}
+              disabled={searchTab === 'email' ? !emailQuery.trim() : codeQuery.length !== 8}
+            >
+              {isSearching ? (
+                <ActivityIndicator color={colors.text} size="small" />
+              ) : (
+                <Text style={styles.searchBtnText}>{searchTab === 'email' ? 'Search' : 'Look Up'}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
 
-          {searchResults.length > 0 && (
+          {/* Search result */}
+          {searchResult && (
             <View style={styles.searchResults}>
-              {searchResults.map((result) => (
-                <View key={result.uid} style={styles.userRow}>
-                  {renderAvatar(result.displayName, result.avatarUrl)}
-                  <Text style={styles.userName}>{result.displayName}</Text>
-                  {friends[result.uid] ? (
-                    <Text style={styles.alreadyAdded}>
-                      {friends[result.uid].status === 'accepted' ? 'Friends' : 'Pending'}
-                    </Text>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.addBtn}
-                      onPress={() => handleSendRequest(result.uid)}
-                    >
-                      <Text style={styles.addBtnText}>Add</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
+              <View style={styles.userRow}>
+                {renderAvatar(searchResult.displayName, searchResult.avatarUrl)}
+                <Text style={styles.userName}>{searchResult.displayName}</Text>
+                {friends[searchResult.uid] ? (
+                  <Text style={styles.alreadyAdded}>
+                    {friends[searchResult.uid].status === 'accepted' ? 'Friends' : 'Pending'}
+                  </Text>
+                ) : (
+                  <TouchableOpacity style={styles.addBtn} onPress={() => handleSendRequest(searchResult.uid)}>
+                    <Text style={styles.addBtnText}>Add</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
+          )}
+
+          {searchNotFound && !isSearching && !searchResult && (
+            <Text style={styles.emptyText}>
+              {searchTab === 'email' ? 'No user found with that email.' : 'No user found with that code.'}
+            </Text>
           )}
         </View>
 
         {/* Pending Requests */}
         {pending.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pending Requests</Text>
+            <Text style={styles.sectionTitle}>PENDING REQUESTS</Text>
             <View style={styles.card}>
               {pending.map((req) => (
                 <View key={req.uid} style={styles.friendRow}>
                   {renderAvatar(req.displayName, req.avatarUrl)}
                   <Text style={[styles.userName, { flex: 1 }]}>{req.displayName}</Text>
-                  <TouchableOpacity
-                    style={styles.acceptBtn}
-                    onPress={() => handleAccept(req.uid)}
-                  >
+                  <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAccept(req.uid)}>
                     <Text style={styles.acceptBtnText}>Accept</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.declineBtn}
-                    onPress={() => handleRemove(req.uid, req.displayName)}
-                  >
+                  <TouchableOpacity style={styles.declineBtn} onPress={() => handleRemove(req.uid, req.displayName)}>
                     <Text style={styles.declineBtnText}>Decline</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Recent Connections */}
+        {recentList.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>RECENT CONNECTIONS</Text>
+            <View style={styles.card}>
+              {recentList.map((conn) => (
+                <View key={conn.uid} style={styles.friendRow}>
+                  {renderAvatar(conn.displayName, conn.avatarUrl)}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userName}>{conn.displayName}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.addBtn} onPress={() => handleSendRequest(conn.uid)}>
+                    <Text style={styles.addBtnText}>Add</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -193,10 +321,10 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
         {/* Friends */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            Friends {accepted.length > 0 ? `(${accepted.length})` : ''}
+            FRIENDS {accepted.length > 0 ? `(${accepted.length})` : ''}
           </Text>
           {accepted.length === 0 ? (
-            <Text style={styles.emptyText}>No friends yet. Search for users to add them.</Text>
+            <Text style={styles.emptyText}>No friends yet. Search by email or share your friend code.</Text>
           ) : (
             <View style={styles.card}>
               {accepted.map((friend) => {
@@ -220,32 +348,6 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
             </View>
           )}
         </View>
-
-        {/* Recent Connections */}
-        {recentList.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Connections</Text>
-            <View style={styles.card}>
-              {recentList.map((conn) => (
-                <View key={conn.uid} style={styles.friendRow}>
-                  {renderAvatar(conn.displayName, conn.avatarUrl)}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.userName}>{conn.displayName}</Text>
-                    <Text style={styles.statusText}>Room: {conn.roomCode}</Text>
-                  </View>
-                  {!friends[conn.uid] && (
-                    <TouchableOpacity
-                      style={styles.addBtn}
-                      onPress={() => handleSendRequest(conn.uid)}
-                    >
-                      <Text style={styles.addBtnText}>Add</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
       </ScrollView>
       <ConfirmModal
         visible={!!removeTarget}
@@ -292,8 +394,80 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  searchSection: {
+  friendCodeSection: {
     paddingHorizontal: 20,
+    gap: 8,
+  },
+  friendCodeCard: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    padding: 16,
+  },
+  friendCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  friendCodeText: {
+    color: colors.primary,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 4,
+  },
+  copyText: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  shareInviteBtn: {
+    backgroundColor: 'rgba(232, 115, 74, 0.2)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(232, 115, 74, 0.4)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  shareInviteText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  section: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  sectionTitle: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    padding: 3,
+    gap: 3,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  tabActive: {
+    backgroundColor: colors.primary,
+  },
+  tabText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  tabTextActive: {
+    color: colors.text,
   },
   searchRow: {
     flexDirection: 'row',
@@ -310,6 +484,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassBorder,
   },
+  codeInput: {
+    letterSpacing: 3,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   searchBtn: {
     backgroundColor: colors.primary,
     borderRadius: 12,
@@ -322,7 +501,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   searchResults: {
-    marginTop: 12,
+    marginTop: 4,
     backgroundColor: colors.glass,
     borderRadius: 12,
     borderWidth: 1,
@@ -334,20 +513,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.glassBorder,
     gap: 10,
-  },
-  section: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  sectionTitle: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   card: {
     backgroundColor: colors.glass,

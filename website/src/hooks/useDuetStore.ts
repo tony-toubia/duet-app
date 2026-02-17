@@ -1,7 +1,10 @@
 import { create } from 'zustand';
+import { ref, get as firebaseGet } from 'firebase/database';
+import { firebaseDb } from '@/services/firebase';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
+import { friendsService } from '@/services/FriendsService';
 
 interface DuetState {
   connectionState: ConnectionState;
@@ -101,7 +104,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
             console.error('[Store] Failed to create/send offer:', e);
           }
         }
-        set({ partnerId: 'partner' });
+        // Resolve real partner UID from room members
+        const partnerUid = await signaling?.getPartnerUid();
+        set({ partnerId: partnerUid || 'partner' });
       },
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
@@ -205,7 +210,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     };
 
     await signaling.joinRoom(code);
-    set({ partnerId: 'partner' });
+    // Resolve real partner UID from room members
+    const partnerUid = await signaling.getPartnerUid();
+    set({ partnerId: partnerUid || 'partner' });
 
     // Start audio engine (mic capture + playback)
     try {
@@ -217,7 +224,25 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   },
 
   leaveRoom: async () => {
-    const { webrtc, signaling, audioEngine } = get();
+    const { webrtc, signaling, audioEngine, partnerId, roomCode } = get();
+
+    // Record recent connection before cleanup
+    if (partnerId && partnerId !== 'partner' && roomCode) {
+      try {
+        const profileSnap = await firebaseGet(ref(firebaseDb, `/users/${partnerId}/profile`));
+        const profile = profileSnap.val();
+        if (profile) {
+          await friendsService.recordRecentConnection(
+            partnerId,
+            profile.displayName || 'Duet User',
+            profile.avatarUrl || null,
+            roomCode
+          );
+        }
+      } catch (e) {
+        console.warn('[Store] Failed to record recent connection:', e);
+      }
+    }
 
     audioEngine?.stop();
 

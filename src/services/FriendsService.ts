@@ -17,23 +17,17 @@ export interface RecentConnection {
 }
 
 class FriendsService {
-  /**
-   * Send a friend request to another user
-   */
   async sendFriendRequest(targetUid: string): Promise<void> {
     const user = auth().currentUser;
     if (!user) throw new Error('Must be signed in.');
 
-    // Get current user's profile
     const myProfile = await database().ref(`/users/${user.uid}/profile`).once('value');
     const myData = myProfile.val() || {};
 
-    // Get target user's profile
     const targetProfile = await database().ref(`/users/${targetUid}/profile`).once('value');
     const targetData = targetProfile.val();
     if (!targetData) throw new Error('User not found.');
 
-    // Write to both users' friend lists atomically
     const updates: Record<string, any> = {};
     updates[`/friends/${user.uid}/${targetUid}`] = {
       status: 'pending',
@@ -54,9 +48,6 @@ class FriendsService {
     console.log('[Friends] Request sent to:', targetUid);
   }
 
-  /**
-   * Accept a friend request
-   */
   async acceptFriendRequest(friendUid: string): Promise<void> {
     const user = auth().currentUser;
     if (!user) throw new Error('Must be signed in.');
@@ -69,9 +60,6 @@ class FriendsService {
     console.log('[Friends] Accepted request from:', friendUid);
   }
 
-  /**
-   * Decline/remove a friend
-   */
   async removeFriend(friendUid: string): Promise<void> {
     const user = auth().currentUser;
     if (!user) throw new Error('Must be signed in.');
@@ -84,24 +72,18 @@ class FriendsService {
     console.log('[Friends] Removed friend:', friendUid);
   }
 
-  /**
-   * Subscribe to friends list changes
-   */
   subscribeFriends(callback: (friends: Record<string, FriendEntry>) => void): () => void {
     const user = auth().currentUser;
     if (!user) return () => {};
 
-    const ref = database().ref(`/friends/${user.uid}`);
-    const handler = ref.on('value', (snapshot) => {
+    const dbRef = database().ref(`/friends/${user.uid}`);
+    const handler = dbRef.on('value', (snapshot) => {
       callback(snapshot.val() || {});
     });
 
-    return () => ref.off('value', handler);
+    return () => dbRef.off('value', handler);
   }
 
-  /**
-   * Record a recent connection (when you connect with someone in a room)
-   */
   async recordRecentConnection(
     partnerUid: string,
     partnerDisplayName: string,
@@ -119,57 +101,116 @@ class FriendsService {
     });
   }
 
-  /**
-   * Subscribe to recent connections
-   */
   subscribeRecentConnections(callback: (connections: Record<string, RecentConnection>) => void): () => void {
     const user = auth().currentUser;
     if (!user) return () => {};
 
-    const ref = database().ref(`/recentConnections/${user.uid}`).orderByChild('lastConnectedAt').limitToLast(20);
-    const handler = ref.on('value', (snapshot) => {
+    const dbRef = database().ref(`/recentConnections/${user.uid}`).orderByChild('lastConnectedAt').limitToLast(20);
+    const handler = dbRef.on('value', (snapshot) => {
       callback(snapshot.val() || {});
     });
 
-    return () => ref.off('value', handler);
+    return () => dbRef.off('value', handler);
   }
 
-  /**
-   * Search users by display name (uses Cloud Function in production)
-   * For now, this is a simple client-side query
-   */
-  async searchUsers(query: string): Promise<Array<{ uid: string; displayName: string; avatarUrl: string | null }>> {
-    if (query.length < 2) return [];
+  async searchByEmail(
+    email: string
+  ): Promise<{ uid: string; displayName: string; avatarUrl: string | null } | null> {
+    const trimmed = email.toLowerCase().trim();
+    if (!trimmed) return null;
 
     const user = auth().currentUser;
-    if (!user) return [];
+    if (!user) return null;
 
-    // Query users whose displayName starts with the search term
     const snapshot = await database()
       .ref('/users')
-      .orderByChild('profile/displayName')
-      .startAt(query)
-      .endAt(query + '\uf8ff')
-      .limitToFirst(10)
+      .orderByChild('profile/email')
+      .equalTo(trimmed)
+      .limitToFirst(1)
       .once('value');
 
-    const results: Array<{ uid: string; displayName: string; avatarUrl: string | null }> = [];
+    let result: { uid: string; displayName: string; avatarUrl: string | null } | null = null;
+
     snapshot.forEach((child) => {
       const uid = child.key;
       if (uid && uid !== user.uid) {
         const profile = child.val()?.profile;
         if (profile) {
-          results.push({
+          result = {
             uid,
             displayName: profile.displayName || 'Duet User',
             avatarUrl: profile.avatarUrl || null,
-          });
+          };
         }
       }
       return undefined;
     });
 
-    return results;
+    return result;
+  }
+
+  async getFriendCode(): Promise<string | null> {
+    const user = auth().currentUser;
+    if (!user) return null;
+
+    const snap = await database().ref(`/users/${user.uid}/profile/friendCode`).once('value');
+    return snap.val() || null;
+  }
+
+  async generateFriendCode(): Promise<string> {
+    const user = auth().currentUser;
+    if (!user) throw new Error('Must be signed in.');
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    let attempts = 0;
+
+    do {
+      code = '';
+      for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const existing = await database().ref(`/friendCodes/${code}`).once('value');
+      if (!existing.exists()) break;
+      attempts++;
+    } while (attempts < 10);
+
+    const updates: Record<string, any> = {};
+    updates[`/users/${user.uid}/profile/friendCode`] = code;
+    updates[`/friendCodes/${code}`] = user.uid;
+    await database().ref().update(updates);
+
+    return code;
+  }
+
+  async getOrCreateFriendCode(): Promise<string> {
+    const existing = await this.getFriendCode();
+    if (existing) return existing;
+    return this.generateFriendCode();
+  }
+
+  async lookupFriendCode(
+    code: string
+  ): Promise<{ uid: string; displayName: string; avatarUrl: string | null } | null> {
+    const trimmed = code.toUpperCase().trim();
+    if (trimmed.length !== 8) return null;
+
+    const user = auth().currentUser;
+    if (!user) return null;
+
+    const snap = await database().ref(`/friendCodes/${trimmed}`).once('value');
+    const uid = snap.val();
+    if (!uid || uid === user.uid) return null;
+
+    const profileSnap = await database().ref(`/users/${uid}/profile`).once('value');
+    const profile = profileSnap.val();
+    if (!profile) return null;
+
+    return {
+      uid,
+      displayName: profile.displayName || 'Duet User',
+      avatarUrl: profile.avatarUrl || null,
+    };
   }
 }
 

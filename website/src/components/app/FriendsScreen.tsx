@@ -1,28 +1,43 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
+import { useAuthStore } from '@/hooks/useAuthStore';
 import { Spinner } from '@/components/ui/Spinner';
+
+type SearchTab = 'email' | 'code';
 
 export function FriendsScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const searchParams = useSearchParams();
+  const [searchTab, setSearchTab] = useState<SearchTab>('email');
+  const [emailQuery, setEmailQuery] = useState('');
+  const [codeQuery, setCodeQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ uid: string; name: string } | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [searchNotFound, setSearchNotFound] = useState(false);
+
+  const isGuest = useAuthStore((s) => s.isGuest);
 
   const {
     friends,
+    recentConnections,
     statuses,
-    searchResults,
+    searchResult,
     isSearching,
+    friendCode,
+    isFriendCodeLoading,
     pendingRequests,
     acceptedFriends,
     subscribe,
     sendFriendRequest,
     acceptFriendRequest,
     removeFriend,
-    searchUsers,
+    searchByEmail,
+    lookupFriendCode,
+    getOrCreateFriendCode,
     clearSearch,
   } = useFriendsStore();
 
@@ -31,13 +46,51 @@ export function FriendsScreen() {
     return unsub;
   }, [subscribe]);
 
-  const handleSearch = async () => {
-    if (searchQuery.length < 2) return;
+  // Load friend code on mount
+  useEffect(() => {
+    if (!isGuest) {
+      getOrCreateFriendCode().catch(() => {});
+    }
+  }, [isGuest, getOrCreateFriendCode]);
+
+  // Auto-lookup friend code from URL param
+  useEffect(() => {
+    const codeParam = searchParams.get('code');
+    if (codeParam && codeParam.length === 8) {
+      setSearchTab('code');
+      setCodeQuery(codeParam.toUpperCase());
+      lookupFriendCode(codeParam);
+    }
+  }, [searchParams, lookupFriendCode]);
+
+  const handleSearchByEmail = async () => {
+    if (!emailQuery.trim()) return;
     setError(null);
+    setSearchNotFound(false);
     try {
-      await searchUsers(searchQuery);
+      await searchByEmail(emailQuery);
+      // Check if no result after search
+      setTimeout(() => {
+        const { searchResult } = useFriendsStore.getState();
+        if (!searchResult) setSearchNotFound(true);
+      }, 100);
     } catch (err: any) {
       setError(err?.message || 'Search failed.');
+    }
+  };
+
+  const handleLookupCode = async () => {
+    if (codeQuery.length !== 8) return;
+    setError(null);
+    setSearchNotFound(false);
+    try {
+      await lookupFriendCode(codeQuery);
+      setTimeout(() => {
+        const { searchResult } = useFriendsStore.getState();
+        if (!searchResult) setSearchNotFound(true);
+      }, 100);
+    } catch (err: any) {
+      setError(err?.message || 'Lookup failed.');
     }
   };
 
@@ -46,7 +99,9 @@ export function FriendsScreen() {
     try {
       await sendFriendRequest(uid);
       clearSearch();
-      setSearchQuery('');
+      setEmailQuery('');
+      setCodeQuery('');
+      setSearchNotFound(false);
     } catch (err: any) {
       setError(err?.message || 'Failed to send request.');
     }
@@ -70,8 +125,41 @@ export function FriendsScreen() {
     setRemoveTarget(null);
   };
 
+  const handleCopyCode = async () => {
+    if (!friendCode) return;
+    try {
+      await navigator.clipboard.writeText(friendCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {}
+  };
+
+  const handleShareInvite = async () => {
+    if (!friendCode) return;
+    const url = `${window.location.origin}/app/friends?code=${friendCode}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Add me on Duet!',
+          text: `Add me as a friend on Duet! My friend code: ${friendCode}`,
+          url,
+        });
+      } catch {}
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        setCodeCopied(true);
+        setTimeout(() => setCodeCopied(false), 2000);
+      } catch {}
+    }
+  };
+
   const pending = pendingRequests();
   const accepted = acceptedFriends();
+  const recentList = Object.entries(recentConnections)
+    .map(([uid, c]) => ({ uid, ...c }))
+    .filter((conn) => !friends[conn.uid])
+    .sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
 
   return (
     <div className="min-h-screen bg-background text-text-main">
@@ -86,64 +174,138 @@ export function FriendsScreen() {
         <h1 className="text-xl font-bold ml-4">Friends</h1>
       </div>
 
-      <div className="px-5 flex flex-col gap-4 max-w-lg mx-auto w-full pb-8">
+      <div className="px-5 flex flex-col gap-5 max-w-lg mx-auto w-full pb-8">
         {error && (
           <div className="bg-danger/15 border border-danger/30 rounded-xl px-4 py-3 text-sm text-danger">
             {error}
           </div>
         )}
 
-        {/* Search */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-            className="flex-1 bg-white/10 border border-glass-border rounded-xl py-3 px-4 text-text-main placeholder:text-text-muted outline-none focus:border-primary transition-colors"
-          />
-          <button
-            onClick={handleSearch}
-            disabled={searchQuery.length < 2 || isSearching}
-            className="bg-primary text-white rounded-xl py-3 px-5 font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
-          >
-            {isSearching ? <Spinner size="sm" /> : 'Search'}
-          </button>
-        </div>
-
-        {/* Search results */}
-        {searchResults.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-text-muted">Search Results</h2>
-            {searchResults.map((user) => {
-              const isFriend = !!friends[user.uid];
-              return (
-                <div key={user.uid} className="flex items-center bg-glass border border-glass-border rounded-xl p-3">
-                  <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-white font-bold mr-3">
-                    {user.displayName.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="flex-1 font-medium">{user.displayName}</span>
-                  {isFriend ? (
-                    <span className="text-text-muted text-sm">Added</span>
-                  ) : (
-                    <button
-                      onClick={() => handleSendRequest(user.uid)}
-                      className="bg-primary text-white rounded-lg py-1.5 px-3 text-sm font-semibold hover:bg-primary-light transition-colors"
-                    >
-                      Add
-                    </button>
-                  )}
+        {/* Your Friend Code */}
+        {!isGuest && (
+          <div className="bg-glass border border-glass-border rounded-2xl p-4">
+            <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Your Friend Code</div>
+            {isFriendCodeLoading ? (
+              <Spinner size="sm" />
+            ) : friendCode ? (
+              <>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-2xl font-extrabold tracking-[4px] text-primary">{friendCode}</span>
+                  <button
+                    onClick={handleCopyCode}
+                    className="text-xs text-text-muted hover:text-text-main transition-colors"
+                  >
+                    {codeCopied ? 'Copied!' : 'Copy'}
+                  </button>
                 </div>
-              );
-            })}
+                <button
+                  onClick={handleShareInvite}
+                  className="bg-primary/20 border border-primary/40 text-primary rounded-xl py-2 px-4 text-sm font-semibold hover:bg-primary/30 transition-colors"
+                >
+                  Share Invite Link
+                </button>
+              </>
+            ) : null}
           </div>
         )}
 
-        {/* Pending requests */}
+        {/* Add Friend */}
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Add Friend</h2>
+
+          {/* Tabs */}
+          <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+            <button
+              onClick={() => { setSearchTab('email'); clearSearch(); setSearchNotFound(false); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                searchTab === 'email' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'
+              }`}
+            >
+              By Email
+            </button>
+            <button
+              onClick={() => { setSearchTab('code'); clearSearch(); setSearchNotFound(false); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                searchTab === 'code' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'
+              }`}
+            >
+              By Friend Code
+            </button>
+          </div>
+
+          {/* Search input */}
+          {searchTab === 'email' ? (
+            <div className="flex gap-2">
+              <input
+                type="email"
+                placeholder="Enter email address..."
+                value={emailQuery}
+                onChange={(e) => { setEmailQuery(e.target.value); setSearchNotFound(false); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearchByEmail(); }}
+                className="flex-1 bg-white/10 border border-glass-border rounded-xl py-3 px-4 text-text-main placeholder:text-text-muted outline-none focus:border-primary transition-colors"
+              />
+              <button
+                onClick={handleSearchByEmail}
+                disabled={!emailQuery.trim() || isSearching}
+                className="bg-primary text-white rounded-xl py-3 px-5 font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
+              >
+                {isSearching ? <Spinner size="sm" /> : 'Search'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Enter 8-character code..."
+                value={codeQuery}
+                onChange={(e) => { setCodeQuery(e.target.value.toUpperCase()); setSearchNotFound(false); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLookupCode(); }}
+                maxLength={8}
+                className="flex-1 bg-white/10 border border-glass-border rounded-xl py-3 px-4 text-text-main placeholder:text-text-muted outline-none focus:border-primary transition-colors tracking-widest font-semibold uppercase"
+              />
+              <button
+                onClick={handleLookupCode}
+                disabled={codeQuery.length !== 8 || isSearching}
+                className="bg-primary text-white rounded-xl py-3 px-5 font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
+              >
+                {isSearching ? <Spinner size="sm" /> : 'Look Up'}
+              </button>
+            </div>
+          )}
+
+          {/* Search result */}
+          {searchResult && (
+            <div className="flex items-center bg-glass border border-glass-border rounded-xl p-3">
+              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-white font-bold mr-3">
+                {searchResult.displayName.charAt(0).toUpperCase()}
+              </div>
+              <span className="flex-1 font-medium">{searchResult.displayName}</span>
+              {friends[searchResult.uid] ? (
+                <span className="text-text-muted text-sm">
+                  {friends[searchResult.uid].status === 'accepted' ? 'Friends' : 'Pending'}
+                </span>
+              ) : (
+                <button
+                  onClick={() => handleSendRequest(searchResult.uid)}
+                  className="bg-primary text-white rounded-lg py-1.5 px-3 text-sm font-semibold hover:bg-primary-light transition-colors"
+                >
+                  Add
+                </button>
+              )}
+            </div>
+          )}
+
+          {searchNotFound && !isSearching && !searchResult && (
+            <p className="text-text-muted text-sm text-center py-2">
+              {searchTab === 'email' ? 'No user found with that email.' : 'No user found with that code.'}
+            </p>
+          )}
+        </div>
+
+        {/* Pending Requests */}
         {pending.length > 0 && (
           <div className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-text-muted">Pending Requests</h2>
+            <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Pending Requests</h2>
             {pending.map((req) => (
               <div key={req.uid} className="flex items-center bg-glass border border-glass-border rounded-xl p-3">
                 <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-white font-bold mr-3">
@@ -167,14 +329,37 @@ export function FriendsScreen() {
           </div>
         )}
 
+        {/* Recent Connections */}
+        {recentList.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Recent Connections</h2>
+            {recentList.map((conn) => (
+              <div key={conn.uid} className="flex items-center bg-glass border border-glass-border rounded-xl p-3">
+                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-white font-bold mr-3">
+                  {conn.displayName.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <span className="font-medium">{conn.displayName}</span>
+                </div>
+                <button
+                  onClick={() => handleSendRequest(conn.uid)}
+                  className="bg-primary text-white rounded-lg py-1.5 px-3 text-sm font-semibold hover:bg-primary-light transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Friends list */}
         <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold text-text-muted">
+          <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider">
             Friends {accepted.length > 0 && `(${accepted.length})`}
           </h2>
           {accepted.length === 0 ? (
             <p className="text-text-muted text-sm py-4 text-center">
-              No friends yet. Search for users above to add friends.
+              No friends yet. Search by email or share your friend code to connect.
             </p>
           ) : (
             accepted.map((friend) => {

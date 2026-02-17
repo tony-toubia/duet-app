@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { Platform, PermissionsAndroid } from 'react-native';
+import database from '@react-native-firebase/database';
 import { DuetAudio } from '@/native/DuetAudio';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
+import { friendsService } from '@/services/FriendsService';
 
 interface DuetState {
   // Connection
@@ -149,7 +151,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         } else {
           console.error('[Store] WebRTC or Signaling not available!', { webrtc: !!webrtc, signaling: !!signaling });
         }
-        set({ partnerId: 'partner' }); // Simplified
+        // Resolve real partner UID from room members
+        const partnerUid = await signaling?.getPartnerUid();
+        set({ partnerId: partnerUid || 'partner' });
       },
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
@@ -278,7 +282,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     // Join room
     await signaling.joinRoom(code);
-    set({ partnerId: 'partner' });
+    // Resolve real partner UID from room members
+    const partnerUid = await signaling.getPartnerUid();
+    set({ partnerId: partnerUid || 'partner' });
     crashlyticsService.logRoomJoined(code);
 
     // Request mic permission on Android (iOS handles via infoPlist)
@@ -297,9 +303,27 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   },
   
   leaveRoom: async () => {
-    const { webrtc, signaling } = get();
+    const { webrtc, signaling, partnerId, roomCode } = get();
 
     crashlyticsService.log('[Store] Leaving room...');
+
+    // Record recent connection before cleanup
+    if (partnerId && partnerId !== 'partner' && roomCode) {
+      try {
+        const profileSnap = await database().ref(`/users/${partnerId}/profile`).once('value');
+        const profile = profileSnap.val();
+        if (profile) {
+          await friendsService.recordRecentConnection(
+            partnerId,
+            profile.displayName || 'Duet User',
+            profile.avatarUrl || null,
+            roomCode
+          );
+        }
+      } catch (e) {
+        console.warn('[Store] Failed to record recent connection:', e);
+      }
+    }
 
     // Stop audio
     await DuetAudio.stopAudioEngine();

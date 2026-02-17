@@ -293,7 +293,20 @@ export class SignalingService {
   getRoomCode(): string | null {
     return this.roomCode;
   }
-  
+
+  getUserId(): string | null {
+    return this.userId;
+  }
+
+  async getPartnerUid(): Promise<string | null> {
+    if (!this.roomRef || !this.userId) return null;
+    const membersSnap = await this.roomRef.child('members').once('value');
+    const members = membersSnap.val();
+    if (!members) return null;
+    const uids = Object.keys(members);
+    return uids.find((uid: string) => uid !== this.userId) || null;
+  }
+
   /**
    * Leave room and cleanup
    */

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
+import { AdSlot } from './AdSlot';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function LobbyScreen() {
@@ -124,6 +125,13 @@ export function LobbyScreen() {
         </div>
 
         <div className="flex-1" />
+
+        {/* Ad */}
+        {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
+          <div className="px-8 mb-4 max-w-sm mx-auto w-full">
+            <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
+          </div>
+        )}
 
         {/* Buttons */}
         <div className="px-8 pb-8 flex flex-col gap-3 max-w-sm mx-auto w-full">
