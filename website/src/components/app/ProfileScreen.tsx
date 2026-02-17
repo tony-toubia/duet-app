@@ -39,7 +39,7 @@ export function ProfileScreen() {
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="h-screen-safe bg-background text-text-main">
+    <div className="min-h-screen-safe bg-background text-text-main">
       {/* Header */}
       <div className="flex items-center px-5 pt-6 pb-4">
         <button

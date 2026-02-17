@@ -8,8 +8,15 @@ html, body {
   min-height: 100dvh;
 }
 
-/* Utility for screens that should fill the real viewport */
+/* Fixed viewport height — for full-screen layouts (lobby, auth, room) */
 .h-screen-safe {
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+}
+
+/* Min viewport height — for scrollable pages (profile, friends) */
+.min-h-screen-safe {
   min-height: 100vh;
   min-height: 100dvh;
 }

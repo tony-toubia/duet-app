@@ -176,7 +176,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   // Email Link Sent
   if (mode === 'emailLinkSent') {
     return (
-      <div className="h-screen-safe bg-background flex items-center justify-center px-8">
+      <div className="min-h-screen-safe bg-background flex items-center justify-center px-8">
         <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
           <span className="text-5xl mb-2">{'\u2709\uFE0F'}</span>
           <h1 className="text-2xl font-bold text-text-main">Check your email</h1>
@@ -274,7 +274,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
 
   if (mode === 'emailLink') {
     return (
-      <div className="h-screen-safe bg-background px-8 flex flex-col">
+      <div className="min-h-screen-safe bg-background px-8 flex flex-col">
         <div className="max-w-sm mx-auto w-full flex-1 flex flex-col justify-center gap-4">
           <button
             onClick={() => { setMode('landing'); clearError(); }}
@@ -328,7 +328,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
 
   // Login or Register form
   return (
-    <div className="h-screen-safe bg-background px-8 flex flex-col">
+    <div className="min-h-screen-safe bg-background px-8 flex flex-col">
       <div className="max-w-sm mx-auto w-full flex-1 flex flex-col justify-center gap-4">
         <button
           onClick={() => { setMode('landing'); clearError(); }}
