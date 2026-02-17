@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.duet.app",
+      "sha256_cert_fingerprints": [
+        "62:32:EB:AB:1B:BD:DD:EC:AA:63:44:E2:3B:F7:7B:C2:53:56:BE:35:EE:31:75:EC:E7:11:9F:C1:A9:01:38:3C"
+      ]
+    }
+  }
+]
