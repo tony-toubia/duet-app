@@ -12,6 +12,20 @@ const nextConfig = {
           },
         ],
       },
+      {
+        // Allow Firebase Auth iframe and handler to load in frames/popups
+        source: '/__/auth/:path*',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' https://getduet.app https://www.getduet.app",
+          },
+        ],
+      },
     ];
   },
   async rewrites() {
