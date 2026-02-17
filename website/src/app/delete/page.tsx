@@ -86,7 +86,7 @@ export default function DeleteAccountPage() {
 
         <p className="text-xs text-[#8a99a8] text-center mt-4 leading-relaxed">
           We will process your request within 30 days. You will receive a confirmation email once your data has been deleted.
-          If you have questions, contact <a href="mailto:privacy@duetapp.com" className="text-primary">privacy@duetapp.com</a>.
+          If you have questions, contact <a href="mailto:hello@getduet.app" className="text-primary">hello@getduet.app</a>.
         </p>
       </div>
 

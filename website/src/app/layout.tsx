@@ -5,6 +5,10 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Duet - Always-On Voice Connection',
   description: 'Duet is an always-on voice connection app. Together, even when apart.',
+  icons: {
+    icon: '/duet-logo.png',
+    apple: '/duet-logo.png',
+  },
 };
 
 export default function RootLayout({

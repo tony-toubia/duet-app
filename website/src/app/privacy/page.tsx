@@ -127,7 +127,7 @@ export default function PrivacyPage() {
 
         <h2>10. Contact Us</h2>
         <p>If you have questions about this Privacy Policy or your data, please contact us at:</p>
-        <p><strong>Email:</strong> privacy@duetapp.com</p>
+        <p><strong>Email:</strong> hello@getduet.app</p>
         <p>To request account deletion, visit our <Link href="/delete">account deletion page</Link>.</p>
       </div>
 
