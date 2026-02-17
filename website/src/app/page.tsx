@@ -43,27 +43,30 @@ export default function LandingPage() {
         {/* Features */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 max-w-2xl w-full mb-16">
           <div className="text-center p-5">
-            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <Image src="/on-air.gif" alt="Always On" width={52} height={52} unoptimized />
-            </div>
+            <div
+              className="w-16 h-16 mx-auto mb-4"
+              style={{ backgroundColor: '#ec7657', WebkitMaskImage: 'url(/always-on.png)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url(/always-on.png)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }}
+            />
             <h3 className="text-base font-semibold mb-1">Always On</h3>
             <p className="text-sm text-white/60 leading-relaxed">
               One-tap voice rooms that stay connected in the background.
             </p>
           </div>
           <div className="text-center p-5">
-            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <Image src="/password.gif" alt="Private" width={52} height={52} unoptimized />
-            </div>
+            <div
+              className="w-16 h-16 mx-auto mb-4"
+              style={{ backgroundColor: '#ec7657', WebkitMaskImage: 'url(/private.png)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url(/private.png)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }}
+            />
             <h3 className="text-base font-semibold mb-1">Private</h3>
             <p className="text-sm text-white/60 leading-relaxed">
               Peer-to-peer encrypted audio. We never hear your conversations.
             </p>
           </div>
           <div className="text-center p-5">
-            <div className="bg-white rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <Image src="/fist-bump.gif" alt="Stay Connected" width={52} height={52} unoptimized />
-            </div>
+            <div
+              className="w-16 h-16 mx-auto mb-4"
+              style={{ backgroundColor: '#ec7657', WebkitMaskImage: 'url(/stay-connected.png)', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url(/stay-connected.png)', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }}
+            />
             <h3 className="text-base font-semibold mb-1">Stay Connected</h3>
             <p className="text-sm text-white/60 leading-relaxed">
               Add friends, see who&apos;s online, and jump into a room together.
