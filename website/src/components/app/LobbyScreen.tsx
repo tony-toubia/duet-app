@@ -72,7 +72,7 @@ export function LobbyScreen() {
 
   if (!isInitialized) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center">
+      <div className="h-screen-safe bg-background flex flex-col items-center justify-center">
         <Spinner size="lg" />
         <p className="text-text-muted mt-4">Initializing...</p>
       </div>
@@ -80,14 +80,14 @@ export function LobbyScreen() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="h-screen-safe relative overflow-hidden">
       <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
       <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-      <div className="absolute inset-0 flex items-end justify-center">
-        <img src="/duet-home-bg.png" alt="" className="w-full max-h-[85vh] object-contain" />
+      <div className="absolute inset-0">
+        <img src="/duet-home-bg.png" alt="" className="w-full h-full object-cover object-bottom" />
       </div>
 
-      <div className="relative z-10 min-h-screen flex flex-col">
+      <div className="relative z-10 h-screen-safe flex flex-col">
         {/* Top bar */}
         <div className="flex items-center justify-between px-5 pt-4">
           <button

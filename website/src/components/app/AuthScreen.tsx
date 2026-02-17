@@ -176,7 +176,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   // Email Link Sent
   if (mode === 'emailLinkSent') {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-8">
+      <div className="h-screen-safe bg-background flex items-center justify-center px-8">
         <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
           <span className="text-5xl mb-2">{'\u2709\uFE0F'}</span>
           <h1 className="text-2xl font-bold text-text-main">Check your email</h1>
@@ -208,13 +208,13 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   // Landing
   if (mode === 'landing') {
     return (
-      <div className="min-h-screen relative overflow-hidden">
+      <div className="h-screen-safe relative overflow-hidden">
         <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
         <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-        <div className="absolute inset-0 flex items-end justify-center">
-          <img src="/duet-home-bg.png" alt="" className="w-full max-h-[85vh] object-contain" />
+        <div className="absolute inset-0">
+          <img src="/duet-home-bg.png" alt="" className="w-full h-full object-cover object-bottom" />
         </div>
-        <div className="relative z-10 min-h-screen flex flex-col">
+        <div className="relative z-10 h-screen-safe flex flex-col">
           <div className="text-center pt-12">
             <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
             <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>
@@ -274,7 +274,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
 
   if (mode === 'emailLink') {
     return (
-      <div className="min-h-screen bg-background px-8 flex flex-col">
+      <div className="h-screen-safe bg-background px-8 flex flex-col">
         <div className="max-w-sm mx-auto w-full flex-1 flex flex-col justify-center gap-4">
           <button
             onClick={() => { setMode('landing'); clearError(); }}
@@ -328,7 +328,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
 
   // Login or Register form
   return (
-    <div className="min-h-screen bg-background px-8 flex flex-col">
+    <div className="h-screen-safe bg-background px-8 flex flex-col">
       <div className="max-w-sm mx-auto w-full flex-1 flex flex-col justify-center gap-4">
         <button
           onClick={() => { setMode('landing'); clearError(); }}

@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
+/* Use dynamic viewport height on mobile to account for browser chrome */
+html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100dvh;
+}
+
+/* Utility for screens that should fill the real viewport */
+.h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Prevent white space below content on mobile */
+#__next {
+  min-height: 100vh;
+  min-height: 100dvh;
 }

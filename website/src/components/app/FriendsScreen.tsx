@@ -162,7 +162,7 @@ export function FriendsScreen() {
     .sort((a, b) => b.lastConnectedAt - a.lastConnectedAt);
 
   return (
-    <div className="min-h-screen bg-background text-text-main">
+    <div className="h-screen-safe bg-background text-text-main">
       {/* Header */}
       <div className="flex items-center px-5 pt-6 pb-4">
         <button
