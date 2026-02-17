@@ -200,26 +200,37 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
     });
 
-    set({ signaling, webrtc, isHost: false, roomCode: code });
+    set({ signaling, webrtc, isHost: false });
 
-    await signaling.initialize();
-    await webrtc.initialize();
-
-    webrtc.onLocalIceCandidate = (candidate) => {
-      signaling.sendIceCandidate(candidate);
-    };
-
-    await signaling.joinRoom(code);
-    // Resolve real partner UID from room members
-    const partnerUid = await signaling.getPartnerUid();
-    set({ partnerId: partnerUid || 'partner' });
-
-    // Start audio engine (mic capture + playback)
     try {
-      const engine = await createAndStartAudioEngine(set, get);
-      set({ audioEngine: engine });
+      await signaling.initialize();
+      await webrtc.initialize();
+
+      webrtc.onLocalIceCandidate = (candidate) => {
+        signaling.sendIceCandidate(candidate);
+      };
+
+      await signaling.joinRoom(code);
+      // Only set roomCode after successful join
+      set({ roomCode: code });
+
+      // Resolve real partner UID from room members
+      const partnerUid = await signaling.getPartnerUid();
+      set({ partnerId: partnerUid || 'partner' });
+
+      // Start audio engine (mic capture + playback)
+      try {
+        const engine = await createAndStartAudioEngine(set, get);
+        set({ audioEngine: engine });
+      } catch (e) {
+        console.warn('[Store] Audio engine failed to start:', e);
+      }
     } catch (e) {
-      console.warn('[Store] Audio engine failed to start:', e);
+      // Clean up on failure so LobbyScreen doesn't see stale roomCode
+      webrtc.close();
+      signaling.leave().catch(() => {});
+      set({ signaling: null, webrtc: null, roomCode: null, isHost: false });
+      throw e;
     }
   },
 

@@ -211,8 +211,8 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
       <div className="min-h-screen relative overflow-hidden">
         <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
         <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <img src="/duet-home-bg.png" alt="" className="w-full h-full object-contain" />
+        <div className="absolute inset-0 flex items-end justify-center">
+          <img src="/duet-home-bg.png" alt="" className="w-full max-h-[85vh] object-contain" />
         </div>
         <div className="relative z-10 min-h-screen flex flex-col">
           <div className="text-center pt-12">
