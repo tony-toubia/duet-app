@@ -22,6 +22,8 @@ interface AuthState {
   refreshProfile: () => Promise<void>;
 }
 
+let _authUnsub: (() => void) | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   userProfile: null,
@@ -31,16 +33,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   emailLinkEmail: null,
 
   initializeAuth: () => {
-    const unsubscribe = authService.onAuthStateChanged(async (user) => {
+    // Prevent duplicate listeners (React strict mode double-mounts)
+    if (_authUnsub) {
+      _authUnsub();
+      _authUnsub = null;
+    }
+
+    _authUnsub = authService.onAuthStateChanged(async (user) => {
       if (user) {
-        // Set user immediately so the UI updates, then fetch profile
         set({
           user,
           isGuest: user.isAnonymous,
           isLoading: false,
         });
         const profile = await authService.getUserProfile(user.uid);
-        // Only update if still the same user (guard against rapid sign-in/out)
         if (get().user?.uid === user.uid) {
           set({ userProfile: profile });
         }
@@ -54,7 +60,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     });
 
-    return unsubscribe;
+    return () => {
+      if (_authUnsub) {
+        _authUnsub();
+        _authUnsub = null;
+      }
+    };
   },
 
   signInWithGoogle: async () => {

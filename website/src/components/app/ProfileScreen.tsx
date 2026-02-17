@@ -92,22 +92,25 @@ export function ProfileScreen() {
         </div>
 
         {/* Account info card */}
-        <div className="w-full bg-glass border border-glass-border rounded-2xl p-4 flex flex-col gap-3">
-          <div className="flex justify-between">
-            <span className="text-text-muted text-sm">Auth Provider</span>
-            <span className="text-sm font-medium capitalize">
-              {userProfile?.authProvider || (isGuest ? 'Anonymous' : 'Unknown')}
-            </span>
+        {(userProfile?.authProvider === 'google' || userProfile?.createdAt) && (
+          <div className="w-full bg-glass border border-glass-border rounded-2xl p-4 flex flex-col gap-3">
+            {userProfile?.authProvider === 'google' && (
+              <div className="flex justify-between">
+                <span className="text-text-muted text-sm">Signed in with</span>
+                <span className="text-sm font-medium">Google</span>
+              </div>
+            )}
+            {userProfile?.createdAt && (
+              <div className="flex justify-between">
+                <span className="text-text-muted text-sm">Member Since</span>
+                <span className="text-sm font-medium">
+                  {new Date(userProfile.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+            )}
           </div>
-          {userProfile?.createdAt && (
-            <div className="flex justify-between">
-              <span className="text-text-muted text-sm">Member Since</span>
-              <span className="text-sm font-medium">
-                {new Date(userProfile.createdAt).toLocaleDateString()}
-              </span>
-            </div>
-          )}
-        </div>
+        )}
+
 
         {/* Actions */}
         {isGuest ? (
