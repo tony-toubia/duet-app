@@ -83,13 +83,12 @@ export function LobbyScreen() {
     <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
       {/* Background image: scales to viewport height, width follows aspect ratio, max 600px */}
       <div className="absolute inset-0 flex justify-center overflow-hidden">
-        <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[600px] object-top" />
+        <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[560px] object-top" />
       </div>
 
-      <div className="absolute inset-0 z-10 flex justify-center">
-        <div className="relative w-full sm:max-w-[280px] h-full flex flex-col">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-5 sm:px-3 pt-4">
+      {/* Top bar — wider than content frame, sits at image edges */}
+      <div className="absolute inset-x-0 top-0 z-20 flex justify-center">
+        <div className="w-full sm:max-w-[540px] flex items-center justify-between px-5 sm:px-4 pt-4">
           <button
             onClick={() => router.push('/app/friends')}
             className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
@@ -113,6 +112,10 @@ export function LobbyScreen() {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="absolute inset-0 z-10 flex justify-center">
+        <div className="relative w-full sm:max-w-[280px] h-full flex flex-col">
 
         {/* Logo */}
         <div className="text-center pt-2">

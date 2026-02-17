@@ -211,7 +211,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
       <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
         {/* Background image: scales to viewport height, width follows aspect ratio, max 600px */}
         <div className="absolute inset-0 flex justify-center overflow-hidden">
-          <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[600px] object-top" />
+          <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[560px] object-top" />
         </div>
 
         <div className="absolute inset-0 z-10 flex justify-center">
