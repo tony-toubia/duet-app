@@ -87,9 +87,9 @@ export function LobbyScreen() {
       </div>
 
       <div className="absolute inset-0 z-10 flex justify-center">
-        <div className="relative w-full max-w-[600px] h-full flex flex-col">
+        <div className="relative w-full max-w-sm h-full flex flex-col">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-5 pt-4">
+        <div className="flex items-center justify-between px-2 pt-4">
           <button
             onClick={() => router.push('/app/friends')}
             className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
@@ -128,13 +128,13 @@ export function LobbyScreen() {
 
         {/* Ad */}
         {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
-          <div className="px-8 mb-4 max-w-sm mx-auto w-full">
+          <div className="px-2 mb-4 w-full">
             <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
           </div>
         )}
 
         {/* Buttons */}
-        <div className="px-8 pb-8 flex flex-col gap-3 max-w-sm mx-auto w-full">
+        <div className="px-2 pb-8 flex flex-col gap-3 w-full">
           {error && (
             <div className="bg-danger/15 border border-danger/30 rounded-xl px-4 py-3 text-sm text-danger">
               {error}

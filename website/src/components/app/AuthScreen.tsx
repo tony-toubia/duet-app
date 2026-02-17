@@ -215,7 +215,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
         </div>
 
         <div className="absolute inset-0 z-10 flex justify-center">
-          <div className="relative w-full max-w-[600px] h-full flex flex-col">
+          <div className="relative w-full max-w-sm h-full flex flex-col">
             <div className="text-center pt-12">
               <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
               <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>
@@ -224,7 +224,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
               </p>
             </div>
             <div className="flex-1" />
-            <div className="px-8 pb-8 flex flex-col gap-3 max-w-sm mx-auto w-full">
+            <div className="px-2 pb-8 flex flex-col gap-3 w-full">
               {errorBanner}
               <button
                 onClick={handleGoogleSignIn}
