@@ -66,8 +66,8 @@ class AuthService {
         const result = await linkWithCredential(currentUser, emailCredential);
         await updateProfile(result.user, { displayName });
         await reload(result.user);
-        await this.createOrUpdateProfile(firebaseAuth.currentUser!, 'email');
-        return firebaseAuth.currentUser!;
+        await this.createOrUpdateProfile(result.user, 'email');
+        return result.user;
       } catch (linkError: any) {
         if (linkError.code === 'auth/email-already-in-use') {
           throw new Error('An account with this email already exists. Please sign in instead.');
@@ -79,8 +79,8 @@ class AuthService {
     const result = await createUserWithEmailAndPassword(firebaseAuth, email, password);
     await updateProfile(result.user, { displayName });
     await reload(result.user);
-    await this.createOrUpdateProfile(firebaseAuth.currentUser!, 'email');
-    return firebaseAuth.currentUser!;
+    await this.createOrUpdateProfile(result.user, 'email');
+    return result.user;
   }
 
   async signInWithEmail(email: string, password: string): Promise<User> {
