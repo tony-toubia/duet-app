@@ -161,7 +161,7 @@ export function LobbyScreen() {
           </button>
 
           {showJoinInput && (
-            <div className="flex gap-3 mt-1">
+            <div className="flex gap-2 sm:gap-2 mt-1">
               <input
                 type="text"
                 placeholder="ENTER CODE"
@@ -169,7 +169,7 @@ export function LobbyScreen() {
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 maxLength={6}
                 autoFocus
-                className="flex-1 bg-white/90 text-[#1a293d] text-xl font-bold tracking-[4px] text-center py-3.5 px-4 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-base placeholder:font-normal outline-none"
+                className="flex-1 min-w-0 bg-white/90 text-[#1a293d] text-lg sm:text-base font-bold tracking-[3px] sm:tracking-[2px] text-center py-3 sm:py-2.5 px-3 sm:px-2 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-base sm:placeholder:text-sm placeholder:font-normal outline-none"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleJoinWithCode(joinCode);
                 }}
@@ -177,7 +177,7 @@ export function LobbyScreen() {
               <button
                 onClick={() => handleJoinWithCode(joinCode)}
                 disabled={isLoading || joinCode.length !== 6}
-                className="bg-primary text-white py-3.5 px-7 rounded-full text-lg font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
+                className="bg-primary text-white py-3 sm:py-2.5 px-5 sm:px-4 rounded-full text-lg sm:text-base font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
               >
                 Go
               </button>
