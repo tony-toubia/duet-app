@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { DuetAudio } from '@/native/DuetAudio';
 import { colors } from '@/theme';
+import { PlayIcon } from './icons/PlayIcon';
+import { PauseIcon } from './icons/PauseIcon';
+import { StepForwardIcon } from './icons/StepForwardIcon';
+import { StepBackwardIcon } from './icons/StepBackwardIcon';
 
 interface MediaPlayerProps {
   minimized: boolean;
@@ -36,9 +40,12 @@ export const MediaPlayer = ({ minimized, onToggleMinimized }: MediaPlayerProps) 
   if (minimized) {
     return (
       <TouchableOpacity style={styles.minimized} onPress={onToggleMinimized}>
-        <Text style={styles.minimizedText}>
-          {isPlaying ? '\u25b6  Now Playing' : '\u23f8  Paused'}
-        </Text>
+        <View style={styles.minimizedLeft}>
+          {isPlaying ? <PlayIcon size={12} color={colors.text} /> : <PauseIcon size={12} color={colors.text} />}
+          <Text style={styles.minimizedText}>
+            {isPlaying ? 'Now Playing' : 'Paused'}
+          </Text>
+        </View>
         <Text style={styles.expandIcon}>{'\u25b2'}</Text>
       </TouchableOpacity>
     );
@@ -52,13 +59,13 @@ export const MediaPlayer = ({ minimized, onToggleMinimized }: MediaPlayerProps) 
       <Text style={styles.trackTitle}>Media Controls</Text>
       <View style={styles.controls}>
         <TouchableOpacity style={styles.smallBtn} onPress={() => DuetAudio.mediaPrevious()}>
-          <Text style={styles.controlText}>{'\u23ee'}</Text>
+          <StepBackwardIcon size={20} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.playBtn} onPress={handlePlayPause}>
-          <Text style={styles.playText}>{isPlaying ? '\u23f8' : '\u25b6'}</Text>
+          {isPlaying ? <PauseIcon size={24} color="#ffffff" /> : <PlayIcon size={24} color="#ffffff" />}
         </TouchableOpacity>
         <TouchableOpacity style={styles.smallBtn} onPress={() => DuetAudio.mediaNext()}>
-          <Text style={styles.controlText}>{'\u23ed'}</Text>
+          <StepForwardIcon size={20} color={colors.text} />
         </TouchableOpacity>
       </View>
     </View>
@@ -104,10 +111,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlText: {
-    color: colors.text,
-    fontSize: 18,
-  },
   playBtn: {
     width: 56,
     height: 56,
@@ -115,10 +118,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  playText: {
-    color: '#ffffff',
-    fontSize: 22,
   },
   minimized: {
     flexDirection: 'row',
@@ -131,6 +130,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     paddingVertical: 12,
     paddingHorizontal: 16,
+  },
+  minimizedLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   minimizedText: {
     color: colors.text,
