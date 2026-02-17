@@ -12,7 +12,7 @@ export default function PrivacyPage() {
       <div className="bg-lobby-dark text-white py-10 px-5 text-center">
         <h1 className="text-3xl font-bold mb-1">Duet Privacy Policy</h1>
         <p className="text-sm opacity-70">
-          <Link href="/" className="text-primary hover:underline">duet-app.vercel.app</Link>
+          <Link href="/" className="text-primary hover:underline">getduet.app</Link>
         </p>
       </div>
 
