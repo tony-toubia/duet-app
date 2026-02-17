@@ -83,8 +83,8 @@ export function LobbyScreen() {
     <div className="h-screen-safe relative overflow-hidden">
       <div className="absolute inset-0 top-0 h-1/2 bg-[#1a293d]" />
       <div className="absolute inset-0 bottom-0 top-1/2 bg-[#f4dbc8]" />
-      <div className="absolute inset-0">
-        <img src="/duet-home-bg.png" alt="" className="w-full h-full object-cover object-bottom" />
+      <div className="absolute inset-0 flex justify-center">
+        <img src="/duet-home-bg.png" alt="" className="h-full max-w-[600px] w-full object-cover object-top" />
       </div>
 
       <div className="relative z-10 h-screen-safe flex flex-col">
