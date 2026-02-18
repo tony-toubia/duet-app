@@ -5,6 +5,7 @@ import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
 import { friendsService } from '@/services/FriendsService';
+import { useAuthStore } from './useAuthStore';
 
 interface DuetState {
   connectionState: ConnectionState;
@@ -140,7 +141,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     set({ signaling, webrtc, isHost: true });
 
-    await signaling.initialize();
+    const uid = useAuthStore.getState().user?.uid;
+    await signaling.initialize(uid);
     await webrtc.initialize();
 
     webrtc.onLocalIceCandidate = (candidate) => {
@@ -213,7 +215,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     set({ signaling, webrtc, isHost: false });
 
     try {
-      await signaling.initialize();
+      const uid = useAuthStore.getState().user?.uid;
+      await signaling.initialize(uid);
       await webrtc.initialize();
 
       webrtc.onLocalIceCandidate = (candidate) => {
