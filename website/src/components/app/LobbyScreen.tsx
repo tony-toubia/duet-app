@@ -96,8 +96,8 @@ export function LobbyScreen() {
 
   return (
     <div
-      className="min-h-screen-safe bg-[#1a293d] bg-cover bg-center bg-no-repeat flex flex-col"
-      style={{ backgroundImage: 'url(/duet-app-bg.jpg)' }}
+      className="min-h-screen-safe bg-[#1a293d] bg-cover bg-no-repeat flex flex-col"
+      style={{ backgroundImage: 'url(/duet-app-bg.jpg)', backgroundPosition: 'center 40%' }}
     >
       {/* Top bar */}
       <div className="flex justify-center w-full">

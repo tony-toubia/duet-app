@@ -216,8 +216,8 @@ export function AuthScreen({ emailLinkError, isUpgrade }: AuthScreenProps) {
   if (mode === 'landing') {
     return (
       <div
-        className="min-h-screen-safe bg-[#1a293d] bg-cover bg-center bg-no-repeat flex flex-col"
-        style={{ backgroundImage: 'url(/duet-app-bg.jpg)' }}
+        className="min-h-screen-safe bg-[#1a293d] bg-cover bg-no-repeat flex flex-col"
+        style={{ backgroundImage: 'url(/duet-app-bg.jpg)', backgroundPosition: 'center 40%' }}
       >
         <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
           <div className="text-center pt-12">
