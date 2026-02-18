@@ -14,11 +14,12 @@ interface AdSlotProps {
   className?: string;
 }
 
-export function AdSlot({ adSlot, format = 'auto', className = '' }: AdSlotProps) {
+export function AdSlot({ adSlot: rawAdSlot, format = 'auto', className = '' }: AdSlotProps) {
   const adRef = useRef<HTMLModElement>(null);
   const pushed = useRef(false);
 
-  const clientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID;
+  const clientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID?.trim();
+  const adSlot = rawAdSlot?.trim();
 
   useEffect(() => {
     if (!clientId || !adSlot || pushed.current) return;

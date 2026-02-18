@@ -77,18 +77,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInWithGoogle: async () => {
     const user = await authService.signInWithGoogle();
-    // Immediately update store in case onAuthStateChanged hasn't fired yet
     set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
+    // Eagerly load profile so UI shows correct initial immediately
+    const profile = await authService.getUserProfile(user.uid);
+    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
   },
 
   signUpWithEmail: async (email, password, displayName) => {
     const user = await authService.signUpWithEmail(email, password, displayName);
     set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
+    const profile = await authService.getUserProfile(user.uid);
+    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
   },
 
   signInWithEmail: async (email, password) => {
     const user = await authService.signInWithEmail(email, password);
     set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
+    const profile = await authService.getUserProfile(user.uid);
+    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
   },
 
   sendSignInLink: async (email) => {
