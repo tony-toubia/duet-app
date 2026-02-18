@@ -95,15 +95,13 @@ export function LobbyScreen() {
   }
 
   return (
-    <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
-      {/* Background image: scales to viewport height, width follows aspect ratio, max 600px */}
-      <div className="absolute inset-0 flex justify-center overflow-hidden">
-        <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[560px] object-top" />
-      </div>
-
-      {/* Top bar — wider than content frame, sits at image edges */}
+    <div
+      className="h-screen-safe relative overflow-hidden bg-[#1a293d] bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: 'url(/duet-app-bg.jpg)' }}
+    >
+      {/* Top bar */}
       <div className="absolute inset-x-0 top-0 z-20 flex justify-center">
-        <div className="w-full sm:max-w-[540px] flex items-center justify-between px-5 sm:px-4 pt-4">
+        <div className="w-full max-w-2xl flex items-center justify-between px-5 pt-4">
           <button
             onClick={() => router.push('/app/friends')}
             className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
@@ -130,7 +128,7 @@ export function LobbyScreen() {
       </div>
 
       <div className="absolute inset-0 z-10 flex justify-center">
-        <div className="relative w-full sm:max-w-[280px] h-full flex flex-col">
+        <div className="relative w-full max-w-sm h-full flex flex-col">
 
         {/* Logo */}
         <div className="text-center pt-2">
@@ -146,13 +144,13 @@ export function LobbyScreen() {
 
         {/* Ad */}
         {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
-          <div className="px-6 sm:px-3 mb-4 w-full">
+          <div className="px-6 mb-4 w-full">
             <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
           </div>
         )}
 
         {/* Buttons */}
-        <div className="px-6 sm:px-3 pb-8 flex flex-col gap-3 w-full">
+        <div className="px-6 pb-8 flex flex-col gap-3 w-full">
           {notice && (
             <div className="bg-warning/15 border border-warning/30 rounded-xl px-4 py-3 text-sm text-warning">
               {notice}
@@ -181,7 +179,7 @@ export function LobbyScreen() {
           </button>
 
           {showJoinInput && (
-            <div className="flex gap-2 sm:gap-2 mt-1">
+            <div className="flex gap-2 mt-1">
               <input
                 type="text"
                 placeholder="ENTER CODE"
@@ -189,7 +187,7 @@ export function LobbyScreen() {
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 maxLength={6}
                 autoFocus
-                className="flex-1 min-w-0 bg-white/90 text-[#1a293d] text-lg sm:text-base font-bold tracking-[3px] sm:tracking-[2px] text-center py-3 sm:py-2.5 px-3 sm:px-2 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-base sm:placeholder:text-sm placeholder:font-normal outline-none"
+                className="flex-1 min-w-0 bg-white/90 text-[#1a293d] text-base font-bold tracking-[2px] text-center py-3 px-3 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-sm placeholder:font-normal outline-none"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleJoinWithCode(joinCode);
                 }}
@@ -197,7 +195,7 @@ export function LobbyScreen() {
               <button
                 onClick={() => handleJoinWithCode(joinCode)}
                 disabled={isLoading || joinCode.length !== 6}
-                className="bg-primary text-white py-3 sm:py-2.5 px-5 sm:px-4 rounded-full text-lg sm:text-base font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
+                className="bg-primary text-white py-3 px-5 rounded-full text-base font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
               >
                 Go
               </button>

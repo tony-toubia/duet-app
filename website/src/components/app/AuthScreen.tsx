@@ -215,14 +215,12 @@ export function AuthScreen({ emailLinkError, isUpgrade }: AuthScreenProps) {
   // Landing
   if (mode === 'landing') {
     return (
-      <div className="h-screen-safe relative overflow-hidden bg-[#1a293d]">
-        {/* Background image: scales to viewport height, width follows aspect ratio, max 600px */}
-        <div className="absolute inset-0 flex justify-center overflow-hidden">
-          <img src="/duet-home-bg.png" alt="" className="h-full w-auto max-w-[560px] object-top" />
-        </div>
-
+      <div
+        className="h-screen-safe relative overflow-hidden bg-[#1a293d] bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: 'url(/duet-app-bg.jpg)' }}
+      >
         <div className="absolute inset-0 z-10 flex justify-center">
-          <div className="relative w-full sm:max-w-[280px] h-full flex flex-col">
+          <div className="relative w-full max-w-sm h-full flex flex-col">
             <div className="text-center pt-12">
               <img src="/duet-logo.png" alt="Duet" className="w-14 h-14 mx-auto" style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }} />
               <h1 className="text-4xl font-bold text-white mt-2">Duet</h1>
@@ -231,7 +229,7 @@ export function AuthScreen({ emailLinkError, isUpgrade }: AuthScreenProps) {
               </p>
             </div>
             <div className="flex-1" />
-            <div className="px-6 sm:px-3 pb-8 flex flex-col gap-3 w-full">
+            <div className="px-6 pb-8 flex flex-col gap-3 w-full">
               {errorBanner}
               <button
                 onClick={handleGoogleSignIn}
