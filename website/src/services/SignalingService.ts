@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   child,
 } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
 import { firebaseAuth, firebaseDb } from './firebase';
 
 export interface SignalingCallbacks {
@@ -36,15 +37,20 @@ export class SignalingService {
 
   async initialize(): Promise<string> {
     // firebaseAuth.currentUser may briefly be null right after sign-in
-    // (e.g., transitioning from anonymous → Google). Wait for it.
-    let currentUser = firebaseAuth.currentUser;
-    if (!currentUser) {
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        currentUser = firebaseAuth.currentUser;
-        if (currentUser) break;
+    // (e.g., transitioning from anonymous → Google). Use onAuthStateChanged
+    // to reliably wait for the authenticated user.
+    const currentUser = await new Promise<import('firebase/auth').User | null>((resolve) => {
+      if (firebaseAuth.currentUser) {
+        resolve(firebaseAuth.currentUser);
+        return;
       }
-    }
+      const unsub = onAuthStateChanged(firebaseAuth, (user) => {
+        unsub();
+        resolve(user);
+      });
+      // Timeout after 5 seconds
+      setTimeout(() => { unsub(); resolve(null); }, 5000);
+    });
     if (!currentUser) {
       const error = new Error('Not authenticated. User must sign in before initializing signaling.');
       this.callbacks.onError(error);
