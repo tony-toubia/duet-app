@@ -37,15 +37,13 @@ class AuthService {
 
     if (currentUser?.isAnonymous) {
       try {
-        // Can't link with popup directly, so sign in then the anonymous data is lost
-        // This is a known limitation — popup doesn't return a credential we can link with
         const result = await signInWithPopup(firebaseAuth, this.googleProvider);
-        await this.createOrUpdateProfile(result.user, 'google');
+        // Profile creation handled by onAuthStateChanged -> ensureProfile
+        // to avoid race where RTDB WebSocket hasn't re-authenticated yet
         return result.user;
       } catch (error: any) {
         if (error.code === 'auth/credential-already-in-use' && error.credential) {
           const result = await signInWithCredential(firebaseAuth, error.credential);
-          await this.createOrUpdateProfile(result.user, 'google');
           return result.user;
         }
         throw error;
@@ -53,7 +51,7 @@ class AuthService {
     }
 
     const result = await signInWithPopup(firebaseAuth, this.googleProvider);
-    await this.createOrUpdateProfile(result.user, 'google');
+    // Profile creation handled by onAuthStateChanged -> ensureProfile
     return result.user;
   }
 
@@ -66,7 +64,7 @@ class AuthService {
         const result = await linkWithCredential(currentUser, emailCredential);
         await updateProfile(result.user, { displayName });
         await reload(result.user);
-        await this.createOrUpdateProfile(result.user, 'email');
+        // Profile creation handled by onAuthStateChanged -> ensureProfile
         return result.user;
       } catch (linkError: any) {
         if (linkError.code === 'auth/email-already-in-use') {
@@ -79,7 +77,7 @@ class AuthService {
     const result = await createUserWithEmailAndPassword(firebaseAuth, email, password);
     await updateProfile(result.user, { displayName });
     await reload(result.user);
-    await this.createOrUpdateProfile(result.user, 'email');
+    // Profile creation handled by onAuthStateChanged -> ensureProfile
     return result.user;
   }
 
@@ -158,13 +156,12 @@ class AuthService {
         const emailCredential = EmailAuthProvider.credentialWithLink(email, url);
         const result = await linkWithCredential(currentUser, emailCredential);
         await updateProfile(result.user, { displayName: email.split('@')[0] });
-        await this.createOrUpdateProfile(result.user, 'email');
+        // Profile creation handled by onAuthStateChanged -> ensureProfile
         localStorage.removeItem(EMAIL_LINK_STORAGE_KEY);
         return result.user;
       } catch (linkError: any) {
         if (linkError.code === 'auth/credential-already-in-use') {
           const result = await signInWithEmailLink(firebaseAuth, email, url);
-          await this.createOrUpdateProfile(result.user, 'email');
           localStorage.removeItem(EMAIL_LINK_STORAGE_KEY);
           return result.user;
         }
@@ -173,7 +170,7 @@ class AuthService {
     }
 
     const result = await signInWithEmailLink(firebaseAuth, email, url);
-    await this.createOrUpdateProfile(result.user, 'email');
+    // Profile creation handled by onAuthStateChanged -> ensureProfile
     localStorage.removeItem(EMAIL_LINK_STORAGE_KEY);
     return result.user;
   }
@@ -203,15 +200,25 @@ class AuthService {
   }
 
   async ensureProfile(user: User): Promise<void> {
-    try {
-      const provider = user.isAnonymous
-        ? 'anonymous'
-        : user.providerData[0]?.providerId === 'google.com'
-          ? 'google'
-          : 'email';
-      await this.createOrUpdateProfile(user, provider as 'google' | 'email' | 'anonymous');
-    } catch {
-      // Profile creation is best-effort — user can still use the app
+    const provider = user.isAnonymous
+      ? 'anonymous'
+      : user.providerData[0]?.providerId === 'google.com'
+        ? 'google'
+        : 'email';
+
+    // Retry with backoff — RTDB WebSocket may not have the new auth token yet
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.createOrUpdateProfile(user, provider as 'google' | 'email' | 'anonymous');
+        return;
+      } catch (err) {
+        if (attempt < 2) {
+          console.warn(`[Auth] Profile write attempt ${attempt + 1} failed, retrying...`);
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        } else {
+          console.error('[Auth] Profile write failed after retries:', err);
+        }
+      }
     }
   }
 
