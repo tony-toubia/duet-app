@@ -77,24 +77,54 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInWithGoogle: async () => {
     const user = await authService.signInWithGoogle();
-    set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
-    // Eagerly load profile so UI shows correct initial immediately
-    const profile = await authService.getUserProfile(user.uid);
-    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
+    // Set user + temporary profile from Firebase User object for immediate UI
+    set({
+      user,
+      isGuest: false,
+      isLoading: false,
+      showUpgradeAuth: false,
+      userProfile: {
+        displayName: user.displayName || 'Duet User',
+        email: user.email || null,
+        avatarUrl: user.photoURL || null,
+        createdAt: Date.now(),
+        authProvider: 'google',
+      },
+    });
   },
 
   signUpWithEmail: async (email, password, displayName) => {
     const user = await authService.signUpWithEmail(email, password, displayName);
-    set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
-    const profile = await authService.getUserProfile(user.uid);
-    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
+    set({
+      user,
+      isGuest: false,
+      isLoading: false,
+      showUpgradeAuth: false,
+      userProfile: {
+        displayName: displayName || 'Duet User',
+        email: user.email || null,
+        avatarUrl: null,
+        createdAt: Date.now(),
+        authProvider: 'email',
+      },
+    });
   },
 
   signInWithEmail: async (email, password) => {
     const user = await authService.signInWithEmail(email, password);
-    set({ user, isGuest: false, isLoading: false, showUpgradeAuth: false });
-    const profile = await authService.getUserProfile(user.uid);
-    if (profile && get().user?.uid === user.uid) set({ userProfile: profile });
+    set({
+      user,
+      isGuest: false,
+      isLoading: false,
+      showUpgradeAuth: false,
+      userProfile: {
+        displayName: user.displayName || 'Duet User',
+        email: user.email || null,
+        avatarUrl: user.photoURL || null,
+        createdAt: Date.now(),
+        authProvider: 'email',
+      },
+    });
   },
 
   sendSignInLink: async (email) => {

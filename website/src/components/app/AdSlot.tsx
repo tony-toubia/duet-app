@@ -37,7 +37,7 @@ export function AdSlot({ adSlot: rawAdSlot, format = 'auto', className = '' }: A
     <ins
       ref={adRef}
       className={`adsbygoogle ${className}`}
-      style={{ display: 'block' }}
+      style={{ display: 'block', background: 'transparent' }}
       data-ad-client={clientId}
       data-ad-slot={adSlot}
       data-ad-format={format}
