@@ -139,17 +139,32 @@ export const onMemberLeft = functions.database
   });
 
 /**
- * Clean up room when all members leave
+ * Clean up room when all members leave — but only if the room is old enough.
+ * A short grace period prevents deleting rooms when the host briefly backgrounds
+ * the app (e.g. to share the room code), which fires onDisconnect and empties members.
  */
 export const onRoomEmpty = functions.database
   .ref('/rooms/{roomCode}/members')
   .onWrite(async (change, context) => {
     const { roomCode } = context.params;
 
-    // If members node was deleted or is empty, clean up the room
+    // If members node was deleted or is empty, check room age before deleting
     if (!change.after.exists() || !change.after.hasChildren()) {
-      console.log(`Room ${roomCode} is empty, cleaning up`);
-      await db.ref(`/rooms/${roomCode}`).remove();
+      const roomSnap = await db.ref(`/rooms/${roomCode}`).once('value');
+      const room = roomSnap.val();
+
+      if (!room) return null;
+
+      const createdAt = room.createdAt || 0;
+      const ageMs = Date.now() - createdAt;
+      const GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
+
+      if (ageMs > GRACE_PERIOD_MS) {
+        console.log(`Room ${roomCode} is empty and ${Math.round(ageMs / 1000)}s old, cleaning up`);
+        await db.ref(`/rooms/${roomCode}`).remove();
+      } else {
+        console.log(`Room ${roomCode} is empty but only ${Math.round(ageMs / 1000)}s old, keeping for grace period`);
+      }
     }
 
     return null;

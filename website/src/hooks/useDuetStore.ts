@@ -11,6 +11,7 @@ interface DuetState {
   roomCode: string | null;
   isHost: boolean;
   partnerId: string | null;
+  roomDeleted: boolean;
 
   isMuted: boolean;
   isDeafened: boolean;
@@ -65,6 +66,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   roomCode: null,
   isHost: false,
   partnerId: null,
+  roomDeleted: false,
 
   isMuted: false,
   isDeafened: false,
@@ -110,6 +112,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
+      },
+      onRoomDeleted: () => {
+        console.log('[Store] Room was deleted');
+        set({ roomDeleted: true, partnerId: null, connectionState: 'disconnected' });
       },
       onError: (error) => {
         console.error('[Signaling] Error:', error);
@@ -179,6 +185,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onPartnerJoined: () => {},
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
+      },
+      onRoomDeleted: () => {
+        console.log('[Store] Room was deleted');
+        set({ roomDeleted: true, partnerId: null, connectionState: 'disconnected' });
       },
       onError: (error) => {
         console.error('[Signaling] Error:', error);
@@ -267,6 +277,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       roomCode: null,
       isHost: false,
       partnerId: null,
+      roomDeleted: false,
       connectionState: 'disconnected',
       isSpeaking: false,
       isPartnerSpeaking: false,

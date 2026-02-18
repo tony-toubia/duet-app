@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
@@ -10,17 +10,32 @@ import { Spinner } from '@/components/ui/Spinner';
 
 export function LobbyScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isInitialized, setIsInitialized] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showJoinInput, setShowJoinInput] = useState(false);
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const { roomCode, initialize, createRoom, joinRoom } = useDuetStore();
   const userProfile = useAuthStore((s) => s.userProfile);
   const isGuest = useAuthStore((s) => s.isGuest);
-  const signOut = useAuthStore((s) => s.signOut);
+  const promptUpgrade = useAuthStore((s) => s.promptUpgrade);
+
+  // Show notice from query params (e.g., after room deletion)
+  useEffect(() => {
+    const noticeParam = searchParams.get('notice');
+    if (noticeParam === 'room_closed') {
+      setNotice('The room was closed.');
+      // Clean up the URL
+      router.replace('/app');
+      // Auto-dismiss after 5 seconds
+      const timer = setTimeout(() => setNotice(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (roomCode) {
@@ -98,7 +113,7 @@ export function LobbyScreen() {
           <div className="flex-1" />
           {isGuest ? (
             <button
-              onClick={() => signOut()}
+              onClick={() => promptUpgrade()}
               className="bg-glass border border-primary rounded-2xl py-1.5 px-3.5 text-primary text-sm font-semibold"
             >
               Sign In
@@ -138,6 +153,11 @@ export function LobbyScreen() {
 
         {/* Buttons */}
         <div className="px-6 sm:px-3 pb-8 flex flex-col gap-3 w-full">
+          {notice && (
+            <div className="bg-warning/15 border border-warning/30 rounded-xl px-4 py-3 text-sm text-warning">
+              {notice}
+            </div>
+          )}
           {error && (
             <div className="bg-danger/15 border border-danger/30 rounded-xl px-4 py-3 text-sm text-danger">
               {error}

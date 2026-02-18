@@ -31,6 +31,7 @@ export function ProfileScreen() {
   const handleSignOut = async () => {
     setShowSignOutModal(false);
     await signOut();
+    router.push('/app');
   };
 
   const displayName = userProfile?.displayName || user?.displayName || 'Duet User';

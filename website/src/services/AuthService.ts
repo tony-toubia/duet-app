@@ -90,7 +90,8 @@ class AuthService {
 
   async continueAsGuest(): Promise<User> {
     const result = await signInAnonymously(firebaseAuth);
-    await this.createOrUpdateProfile(result.user, 'anonymous');
+    // Profile creation is handled by onAuthStateChanged in useAuthStore
+    // to avoid race condition where RTDB connection doesn't have auth token yet
     return result.user;
   }
 
@@ -99,22 +100,34 @@ class AuthService {
     provider: 'google' | 'email' | 'anonymous'
   ): Promise<void> {
     const profileRef = ref(firebaseDb, `/users/${user.uid}/profile`);
-    const snapshot = await get(profileRef);
 
-    if (!snapshot.exists()) {
-      await set(profileRef, {
-        displayName: user.displayName || 'Duet User',
-        email: user.email || null,
-        avatarUrl: user.photoURL || null,
-        createdAt: serverTimestamp(),
-        authProvider: provider,
-      });
-    } else {
-      const updates: Record<string, any> = { authProvider: provider };
-      if (user.displayName) updates.displayName = user.displayName;
-      if (user.email) updates.email = user.email;
-      if (user.photoURL && !snapshot.val().avatarUrl) updates.avatarUrl = user.photoURL;
-      await update(profileRef, updates);
+    let snapshot;
+    try {
+      snapshot = await get(profileRef);
+    } catch (readErr) {
+      console.error('Profile read failed:', readErr, 'uid:', user.uid, 'isAnonymous:', user.isAnonymous);
+      throw readErr;
+    }
+
+    try {
+      if (!snapshot.exists()) {
+        await set(profileRef, {
+          displayName: user.displayName || 'Duet User',
+          email: user.email || null,
+          avatarUrl: user.photoURL || null,
+          createdAt: serverTimestamp(),
+          authProvider: provider,
+        });
+      } else {
+        const updates: Record<string, any> = { authProvider: provider };
+        if (user.displayName) updates.displayName = user.displayName;
+        if (user.email) updates.email = user.email;
+        if (user.photoURL && !snapshot.val().avatarUrl) updates.avatarUrl = user.photoURL;
+        await update(profileRef, updates);
+      }
+    } catch (writeErr) {
+      console.error('Profile write failed:', writeErr, 'uid:', user.uid, 'exists:', snapshot.exists());
+      throw writeErr;
     }
   }
 
@@ -187,6 +200,19 @@ class AuthService {
 
   isAnonymous(): boolean {
     return firebaseAuth.currentUser?.isAnonymous ?? true;
+  }
+
+  async ensureProfile(user: User): Promise<void> {
+    try {
+      const provider = user.isAnonymous
+        ? 'anonymous'
+        : user.providerData[0]?.providerId === 'google.com'
+          ? 'google'
+          : 'email';
+      await this.createOrUpdateProfile(user, provider as 'google' | 'email' | 'anonymous');
+    } catch {
+      // Profile creation is best-effort — user can still use the app
+    }
   }
 
   async getUserProfile(uid: string): Promise<UserProfile | null> {

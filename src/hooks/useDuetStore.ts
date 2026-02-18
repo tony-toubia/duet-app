@@ -14,22 +14,23 @@ interface DuetState {
   roomCode: string | null;
   isHost: boolean;
   partnerId: string | null;
-  
+  roomDeleted: boolean;
+
   // Audio controls
   isMuted: boolean;
   isDeafened: boolean;
   isSpeaking: boolean;
   isPartnerSpeaking: boolean;
-  
+
   // Settings
   duckLevel: number; // 0-100, percentage of original volume when ducking
   vadSensitivity: number; // 0-100, higher = more sensitive
   duckingEnabled: boolean; // iOS only: attempt to duck other audio (may pause some apps)
-  
+
   // Services (non-serialized)
   webrtc: WebRTCService | null;
   signaling: SignalingService | null;
-  
+
   // Actions
   initialize: () => Promise<void>;
   createRoom: () => Promise<string>;
@@ -48,6 +49,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   roomCode: null,
   isHost: false,
   partnerId: null,
+  roomDeleted: false,
   
   isMuted: false,
   isDeafened: false,
@@ -158,11 +160,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
       },
+      onRoomDeleted: () => {
+        console.log('[Store] Room was deleted');
+        set({ roomDeleted: true, partnerId: null, connectionState: 'disconnected' });
+      },
       onError: (error) => {
         console.error('[Signaling] Error:', error);
       },
     });
-    
+
     // Create WebRTC service
     const webrtc = new WebRTCService({
       onConnectionStateChange: (state) => {
@@ -246,11 +252,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onPartnerLeft: () => {
         set({ partnerId: null, connectionState: 'disconnected' });
       },
+      onRoomDeleted: () => {
+        console.log('[Store] Room was deleted');
+        set({ roomDeleted: true, partnerId: null, connectionState: 'disconnected' });
+      },
       onError: (error) => {
         console.error('[Signaling] Error:', error);
       },
     });
-    
+
     // Create WebRTC service
     const webrtc = new WebRTCService({
       onConnectionStateChange: (state) => {
@@ -342,6 +352,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       roomCode: null,
       isHost: false,
       partnerId: null,
+      roomDeleted: false,
       connectionState: 'disconnected',
       isSpeaking: false,
       isPartnerSpeaking: false,

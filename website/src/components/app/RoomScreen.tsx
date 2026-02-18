@@ -111,6 +111,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
   const {
     connectionState,
     roomCode,
+    roomDeleted,
     isHost,
     partnerId,
     isMuted,
@@ -149,6 +150,14 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
       hasBeenConnected.current = true;
     }
   }, [connectionState]);
+
+  // Auto-eject when room is deleted from Firebase
+  useEffect(() => {
+    if (roomDeleted && !hasLeft.current) {
+      hasLeft.current = true;
+      leaveRoom().then(() => router.push('/app?notice=room_closed'));
+    }
+  }, [roomDeleted, leaveRoom, router]);
 
   // Clean up on unmount
   useEffect(() => {

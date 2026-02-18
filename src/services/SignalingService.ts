@@ -23,6 +23,7 @@ export interface SignalingCallbacks {
   onIceCandidate: (candidate: RTCIceCandidate) => void;
   onPartnerJoined: () => void;
   onPartnerLeft: () => void;
+  onRoomDeleted: () => void;
   onError: (error: Error) => void;
 }
 
@@ -81,12 +82,11 @@ export class SignalingService {
     });
     
     // Remove yourself from members when you disconnect (not the whole room)
-    // The Cloud Function onRoomEmpty will clean up the room when all members leave.
-    // Using onDisconnect().remove() on the entire room would delete it immediately
-    // when the creator minimizes the app (e.g., to share the code), which causes
-    // "Room not found" for anyone trying to join.
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();
-    
+
+    // Re-add ourselves when Firebase reconnects (e.g., after app backgrounded)
+    this.listenForReconnect();
+
     // Listen for partner joining
     this.listenForPartner();
     
@@ -133,7 +133,10 @@ export class SignalingService {
     
     // Remove yourself when you disconnect
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();
-    
+
+    // Re-add ourselves when Firebase reconnects (e.g., after app backgrounded)
+    this.listenForReconnect();
+
     // Listen for offer
     this.listenForOffer();
     
@@ -247,7 +250,31 @@ export class SignalingService {
   }
   
   /**
-   * Listen for partner joining/leaving
+   * Re-add ourselves as a member when Firebase reconnects after a disconnect
+   * (e.g., app was backgrounded and onDisconnect fired, removing our member entry).
+   */
+  private listenForReconnect(): void {
+    const connRef = database().ref('.info/connected');
+    const role = this.isOfferer ? 'offerer' : 'answerer';
+
+    const unsubscribe = connRef.on('value', async (snapshot: any) => {
+      if (snapshot.val() === true && this.roomRef && this.userId) {
+        // Firebase just reconnected — re-add ourselves and re-register onDisconnect
+        const memberRef = this.roomRef.child('members').child(this.userId);
+        await memberRef.set({
+          role,
+          joinedAt: database.ServerValue.TIMESTAMP,
+        });
+        memberRef.onDisconnect().remove();
+        console.log('[Signaling] Reconnected — re-registered as member');
+      }
+    });
+
+    this.unsubscribers.push(() => connRef.off('value', unsubscribe));
+  }
+
+  /**
+   * Listen for partner joining/leaving and room deletion
    */
   private listenForPartner(): void {
     const membersRef = this.roomRef.child('members');
@@ -266,9 +293,15 @@ export class SignalingService {
         console.log('[Signaling] Partner left (only', memberCount, 'member remaining)');
         this.callbacks.onPartnerLeft();
       } else if (memberCount === 0) {
-        // Room was deleted entirely
-        console.log('[Signaling] Room empty / deleted');
-        this.callbacks.onPartnerLeft();
+        // Members node was deleted — check if room itself still exists
+        console.log('[Signaling] Members empty, checking room existence...');
+        this.roomRef.once('value').then((roomSnap: any) => {
+          if (!roomSnap.exists()) {
+            console.log('[Signaling] Room deleted entirely');
+            this.callbacks.onRoomDeleted();
+          }
+          // If room exists but members is empty, host may have backgrounded — don't eject
+        });
       }
     });
 

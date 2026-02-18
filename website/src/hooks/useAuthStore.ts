@@ -7,6 +7,7 @@ interface AuthState {
   userProfile: UserProfile | null;
   isLoading: boolean;
   isGuest: boolean;
+  showUpgradeAuth: boolean;
   emailLinkSent: boolean;
   emailLinkEmail: string | null;
 
@@ -18,6 +19,8 @@ interface AuthState {
   sendSignInLink: (email: string) => Promise<void>;
   completeSignInWithEmailLink: (url: string, email?: string) => Promise<void>;
   continueAsGuest: () => Promise<void>;
+  promptUpgrade: () => void;
+  cancelUpgrade: () => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -29,6 +32,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   userProfile: null,
   isLoading: true,
   isGuest: false,
+  showUpgradeAuth: false,
   emailLinkSent: false,
   emailLinkEmail: null,
 
@@ -45,7 +49,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           user,
           isGuest: user.isAnonymous,
           isLoading: false,
+          showUpgradeAuth: user.isAnonymous ? get().showUpgradeAuth : false,
         });
+        // Ensure profile exists (creates if needed, e.g. for anonymous users)
+        await authService.ensureProfile(user);
         const profile = await authService.getUserProfile(user.uid);
         if (get().user?.uid === user.uid) {
           set({ userProfile: profile });
@@ -92,13 +99,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   continueAsGuest: async () => {
-    await authService.continueAsGuest();
-    // onAuthStateChanged will update the store
+    const user = await authService.continueAsGuest();
+    // Set user immediately so layout switches to lobby without waiting for onAuthStateChanged
+    set({ user, isGuest: true, isLoading: false, showUpgradeAuth: false });
+  },
+
+  promptUpgrade: () => {
+    set({ showUpgradeAuth: true });
+  },
+
+  cancelUpgrade: () => {
+    set({ showUpgradeAuth: false });
   },
 
   signOut: async () => {
+    // Clear store immediately so UI updates without waiting for onAuthStateChanged
+    set({ user: null, userProfile: null, isGuest: false });
     await authService.signOut();
-    // onAuthStateChanged will set user to null
   },
 
   refreshProfile: async () => {

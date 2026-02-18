@@ -127,6 +127,9 @@
           "avatarUrl": {
             ".validate": "newData.isString() || newData.val() == null"
           },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
           "authProvider": {
             ".validate": "newData.isString() && (newData.val() == 'google' || newData.val() == 'email' || newData.val() == 'anonymous')"
           },

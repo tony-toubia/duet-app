@@ -11,7 +11,7 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isLoading, initializeAuth, completeSignInWithEmailLink } = useAuthStore();
+  const { user, isLoading, showUpgradeAuth, initializeAuth, completeSignInWithEmailLink } = useAuthStore();
   const [emailLinkError, setEmailLinkError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,8 +53,8 @@ export default function AppLayout({
     );
   }
 
-  if (!user) {
-    return <AuthScreen emailLinkError={emailLinkError} />;
+  if (!user || showUpgradeAuth) {
+    return <AuthScreen emailLinkError={emailLinkError} isUpgrade={showUpgradeAuth} />;
   }
 
   return <>{children}</>;

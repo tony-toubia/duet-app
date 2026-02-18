@@ -48,6 +48,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const {
     connectionState,
     roomCode,
+    roomDeleted,
     isHost,
     partnerId,
     isMuted,
@@ -78,6 +79,21 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       hasBeenConnected.current = true;
     }
   }, [connectionState]);
+
+  // Auto-eject when room is deleted from Firebase
+  useEffect(() => {
+    if (roomDeleted) {
+      Alert.alert(
+        'Room Closed',
+        'This room is no longer available.',
+        [{ text: 'OK', onPress: async () => {
+          await leaveRoom();
+          navigation.replace('Lobby');
+        }}],
+        { cancelable: false }
+      );
+    }
+  }, [roomDeleted]);
 
   // Clean up on unmount (e.g., app termination)
   useEffect(() => {

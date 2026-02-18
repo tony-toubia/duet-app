@@ -5,6 +5,10 @@
   "storage": {
     "rules": "firebase/storage.rules"
   },
+  "hosting": {
+    "public": "firebase/hosting-public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  },
   "functions": {
     "source": "firebase/functions",
     "predeploy": [

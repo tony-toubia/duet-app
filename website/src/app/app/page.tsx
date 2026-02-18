@@ -1,7 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { LobbyScreen } from '@/components/app/LobbyScreen';
 
 export default function AppPage() {
-  return <LobbyScreen />;
+  return (
+    <Suspense>
+      <LobbyScreen />
+    </Suspense>
+  );
 }

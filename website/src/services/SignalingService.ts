@@ -18,6 +18,7 @@ export interface SignalingCallbacks {
   onIceCandidate: (candidate: RTCIceCandidateInit) => void;
   onPartnerJoined: () => void;
   onPartnerLeft: () => void;
+  onRoomDeleted: () => void;
   onError: (error: Error) => void;
 }
 
@@ -70,6 +71,9 @@ export class SignalingService {
     const memberRef = child(roomRef, `members/${this.userId}`);
     onDisconnect(memberRef).remove();
 
+    // Re-add ourselves when Firebase reconnects (e.g., after tab hidden)
+    this.listenForReconnect();
+
     this.listenForPartner();
     this.listenForAnswer();
     this.listenForIceCandidates('answerCandidates');
@@ -106,6 +110,9 @@ export class SignalingService {
     });
 
     onDisconnect(memberRef).remove();
+
+    // Re-add ourselves when Firebase reconnects (e.g., after tab hidden)
+    this.listenForReconnect();
 
     this.listenForOffer();
     this.listenForIceCandidates('offerCandidates');
@@ -185,9 +192,33 @@ export class SignalingService {
     this.unsubscribers.push(unsub);
   }
 
+  /**
+   * Re-add ourselves as a member when Firebase reconnects after a disconnect
+   * (e.g., tab was hidden and onDisconnect fired, removing our member entry).
+   */
+  private listenForReconnect(): void {
+    const connRef = ref(firebaseDb, '.info/connected');
+    const role = this.isOfferer ? 'offerer' : 'answerer';
+
+    const unsub = onValue(connRef, async (snapshot) => {
+      if (snapshot.val() === true && this.roomCode && this.userId) {
+        // Firebase just reconnected — re-add ourselves and re-register onDisconnect
+        const memberRef = ref(firebaseDb, `rooms/${this.roomCode}/members/${this.userId}`);
+        await set(memberRef, {
+          role,
+          joinedAt: serverTimestamp(),
+        });
+        onDisconnect(memberRef).remove();
+        console.log('[Signaling] Reconnected — re-registered as member');
+      }
+    });
+
+    this.unsubscribers.push(unsub);
+  }
+
   private listenForPartner(): void {
     const membersRef = ref(firebaseDb, `rooms/${this.roomCode}/members`);
-    const unsub = onValue(membersRef, (snapshot) => {
+    const unsub = onValue(membersRef, async (snapshot) => {
       const members = snapshot.val();
       const memberCount = members ? Object.keys(members).length : 0;
       console.log('[Signaling] Members update:', memberCount, 'members');
@@ -197,13 +228,17 @@ export class SignalingService {
         console.log('[Signaling] Partner joined!');
         this.callbacks.onPartnerJoined();
       } else if (memberCount <= 1 && this.partnerEverJoined) {
-        // Only fire partnerLeft if they actually joined at some point
         console.log('[Signaling] Partner left (only', memberCount, 'member remaining)');
         this.callbacks.onPartnerLeft();
       } else if (memberCount === 0) {
-        // Room was deleted entirely
-        console.log('[Signaling] Room empty / deleted');
-        this.callbacks.onPartnerLeft();
+        // Members node was deleted — check if room itself still exists
+        console.log('[Signaling] Members empty, checking room existence...');
+        const roomSnap = await get(ref(firebaseDb, `rooms/${this.roomCode}`));
+        if (!roomSnap.exists()) {
+          console.log('[Signaling] Room deleted entirely');
+          this.callbacks.onRoomDeleted();
+        }
+        // If room exists but members is empty, host may have backgrounded — don't eject
       }
     });
     this.unsubscribers.push(unsub);

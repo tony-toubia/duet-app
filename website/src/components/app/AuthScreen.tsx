@@ -34,9 +34,10 @@ function PasswordRequirements({ password, confirmPassword }: { password: string;
 
 interface AuthScreenProps {
   emailLinkError?: string | null;
+  isUpgrade?: boolean;
 }
 
-export function AuthScreen({ emailLinkError }: AuthScreenProps) {
+export function AuthScreen({ emailLinkError, isUpgrade }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(emailLinkError ? 'emailLink' : 'landing');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,7 +48,7 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(emailLinkError ?? null);
 
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendSignInLink, completeSignInWithEmailLink, continueAsGuest } = useAuthStore();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendSignInLink, completeSignInWithEmailLink, continueAsGuest, cancelUpgrade } = useAuthStore();
 
   const isPasswordValid = (pw: string) =>
     pw.length >= 8 &&
@@ -116,12 +117,18 @@ export function AuthScreen({ emailLinkError }: AuthScreenProps) {
   };
 
   const handleGuest = async () => {
+    if (isUpgrade) {
+      // Already a guest — just go back to lobby
+      cancelUpgrade();
+      return;
+    }
     clearError();
     setIsLoading(true);
     try {
       await continueAsGuest();
     } catch (err: any) {
-      setError('Could not continue as guest. Please try again.');
+      console.error('Guest sign-in error:', err);
+      setError(err?.message || 'Could not continue as guest. Please try again.');
     } finally {
       setIsLoading(false);
     }
