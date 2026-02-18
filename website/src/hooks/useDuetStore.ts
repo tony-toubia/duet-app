@@ -96,8 +96,17 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         await webrtc?.addIceCandidate(candidate);
       },
       onPartnerJoined: async () => {
+        const { webrtc, signaling, connectionState } = get();
+        // Skip offer creation if WebRTC is already connected (e.g., partner
+        // briefly backgrounded causing Firebase member churn, but ICE stayed up)
+        if (connectionState === 'connected' || connectionState === 'reconnecting') {
+          console.log('[Store] Partner joined but WebRTC already', connectionState, '— skipping offer');
+          // Still resolve partner UID in case it changed
+          const partnerUid = await signaling?.getPartnerUid();
+          set({ partnerId: partnerUid || 'partner' });
+          return;
+        }
         console.log('[Store] Partner joined! Creating offer...');
-        const { webrtc, signaling } = get();
         if (webrtc && signaling) {
           try {
             set({ connectionState: 'connecting' });

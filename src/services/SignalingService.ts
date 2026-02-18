@@ -35,7 +35,9 @@ export class SignalingService {
   private callbacks: SignalingCallbacks;
   private unsubscribers: (() => void)[] = [];
   private partnerEverJoined: boolean = false;
-  
+  private partnerPresent: boolean = false;
+  private partnerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
   }
@@ -286,18 +288,36 @@ export class SignalingService {
 
       if (memberCount >= 2) {
         this.partnerEverJoined = true;
-        console.log('[Signaling] Partner joined! Triggering onPartnerJoined callback');
-        this.callbacks.onPartnerJoined();
+        // Debounce: only fire onPartnerJoined if partner wasn't already present
+        // This prevents duplicate fires from listenForReconnect re-adding ourselves
+        if (!this.partnerPresent) {
+          this.partnerPresent = true;
+          if (this.partnerDebounceTimer) clearTimeout(this.partnerDebounceTimer);
+          console.log('[Signaling] Partner joined!');
+          this.callbacks.onPartnerJoined();
+        }
       } else if (memberCount <= 1 && this.partnerEverJoined) {
-        // Only fire partnerLeft if they actually joined at some point
-        console.log('[Signaling] Partner left (only', memberCount, 'member remaining)');
-        this.callbacks.onPartnerLeft();
+        // Debounce partner left: wait before firing to allow brief reconnects
+        // (e.g., partner backgrounded and Firebase onDisconnect fired temporarily)
+        if (this.partnerPresent) {
+          console.log('[Signaling] Partner may have left, waiting to confirm...');
+          if (this.partnerDebounceTimer) clearTimeout(this.partnerDebounceTimer);
+          this.partnerDebounceTimer = setTimeout(() => {
+            if (this.partnerPresent) {
+              this.partnerPresent = false;
+              console.log('[Signaling] Partner left (confirmed after debounce)');
+              this.callbacks.onPartnerLeft();
+            }
+          }, 8000);
+        }
       } else if (memberCount === 0) {
         // Members node was deleted — check if room itself still exists
         console.log('[Signaling] Members empty, checking room existence...');
         this.roomRef.once('value').then((roomSnap: any) => {
           if (!roomSnap.exists()) {
             console.log('[Signaling] Room deleted entirely');
+            if (this.partnerDebounceTimer) clearTimeout(this.partnerDebounceTimer);
+            this.partnerPresent = false;
             this.callbacks.onRoomDeleted();
           }
           // If room exists but members is empty, host may have backgrounded — don't eject
@@ -344,10 +364,14 @@ export class SignalingService {
    * Leave room and cleanup
    */
   async leave(): Promise<void> {
+    if (this.partnerDebounceTimer) {
+      clearTimeout(this.partnerDebounceTimer);
+      this.partnerDebounceTimer = null;
+    }
     // Unsubscribe from all listeners
     this.unsubscribers.forEach((unsub) => unsub());
     this.unsubscribers = [];
-    
+
     // Remove yourself from the room
     if (this.roomRef && this.userId) {
       // Cancel onDisconnect since we're doing explicit cleanup
