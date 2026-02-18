@@ -35,13 +35,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const unsubscribe = authService.onAuthStateChanged(async (user) => {
       if (user) {
-        const profile = await authService.getUserProfile(user.uid);
         set({
           user,
-          userProfile: profile,
           isGuest: user.isAnonymous,
           isLoading: false,
         });
+        // Ensure profile exists (creates if needed, with retry for RTDB auth lag)
+        await authService.ensureProfile(user);
+        const profile = await authService.getUserProfile(user.uid);
+        if (get().user?.uid === user.uid) {
+          set({ userProfile: profile });
+        }
       } else {
         set({
           user: null,
@@ -59,8 +63,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const user = await authService.signInWithGoogle();
-      const profile = await authService.getUserProfile(user.uid);
-      set({ user, userProfile: profile, isGuest: false, isLoading: false });
+      // Set temporary profile from Firebase User object for immediate UI
+      set({
+        user,
+        isGuest: false,
+        isLoading: false,
+        userProfile: {
+          displayName: user.displayName || 'Duet User',
+          email: user.email || null,
+          avatarUrl: user.photoURL || null,
+          createdAt: Date.now(),
+          authProvider: 'google',
+        },
+      });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -71,8 +86,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const user = await authService.signUpWithEmail(email, password, displayName);
-      const profile = await authService.getUserProfile(user.uid);
-      set({ user, userProfile: profile, isGuest: false, isLoading: false });
+      set({
+        user,
+        isGuest: false,
+        isLoading: false,
+        userProfile: {
+          displayName: displayName || 'Duet User',
+          email: user.email || null,
+          avatarUrl: null,
+          createdAt: Date.now(),
+          authProvider: 'email',
+        },
+      });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -83,8 +108,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const user = await authService.signInWithEmail(email, password);
-      const profile = await authService.getUserProfile(user.uid);
-      set({ user, userProfile: profile, isGuest: false, isLoading: false });
+      set({
+        user,
+        isGuest: false,
+        isLoading: false,
+        userProfile: {
+          displayName: user.displayName || 'Duet User',
+          email: user.email || null,
+          avatarUrl: user.photoURL || null,
+          createdAt: Date.now(),
+          authProvider: 'email',
+        },
+      });
     } catch (error) {
       set({ isLoading: false });
       throw error;

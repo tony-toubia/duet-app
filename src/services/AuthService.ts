@@ -44,13 +44,12 @@ class AuthService {
     if (currentUser?.isAnonymous) {
       try {
         const result = await currentUser.linkWithCredential(googleCredential);
-        await this.createOrUpdateProfile(result.user, 'google');
+        // Profile creation handled by onAuthStateChanged -> ensureProfile
         return result.user;
       } catch (linkError: any) {
         // If account already exists, sign in directly
         if (linkError.code === 'auth/credential-already-in-use') {
           const result = await auth().signInWithCredential(googleCredential);
-          await this.createOrUpdateProfile(result.user, 'google');
           return result.user;
         }
         throw linkError;
@@ -58,7 +57,6 @@ class AuthService {
     }
 
     const result = await auth().signInWithCredential(googleCredential);
-    await this.createOrUpdateProfile(result.user, 'google');
     return result.user;
   }
 
@@ -195,6 +193,29 @@ class AuthService {
 
   isAnonymous(): boolean {
     return auth().currentUser?.isAnonymous ?? true;
+  }
+
+  async ensureProfile(user: FirebaseAuthTypes.User): Promise<void> {
+    const provider = user.isAnonymous
+      ? 'anonymous'
+      : user.providerData[0]?.providerId === 'google.com'
+        ? 'google'
+        : 'email';
+
+    // Retry with backoff — RTDB may not have the new auth token yet
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.createOrUpdateProfile(user, provider as 'google' | 'email' | 'anonymous');
+        return;
+      } catch (err) {
+        if (attempt < 2) {
+          console.warn(`[Auth] Profile write attempt ${attempt + 1} failed, retrying...`);
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        } else {
+          console.error('[Auth] Profile write failed after retries:', err);
+        }
+      }
+    }
   }
 
   async getUserProfile(uid: string): Promise<UserProfile | null> {
