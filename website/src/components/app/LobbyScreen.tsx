@@ -95,118 +95,120 @@ export function LobbyScreen() {
   }
 
   return (
-    <div
-      className="min-h-screen-safe bg-[#1a293d] bg-cover bg-no-repeat flex flex-col"
-      style={{ backgroundImage: 'url(/duet-app-bg.jpg)', backgroundPosition: 'center 40%' }}
-    >
-      {/* Top bar */}
-      <div className="flex justify-center w-full">
-        <div className="w-full max-w-2xl flex items-center justify-between px-5 pt-4">
-          <button
-            onClick={() => router.push('/app/friends')}
-            className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
-          >
-            Friends
-          </button>
-          <div className="flex-1" />
-          {isGuest ? (
+    <>
+      <div
+        className="min-h-screen-safe bg-[#1a293d] bg-cover bg-no-repeat flex flex-col"
+        style={{ backgroundImage: 'url(/duet-app-bg.jpg)', backgroundPosition: 'center 40%' }}
+      >
+        {/* Top bar */}
+        <div className="flex justify-center w-full">
+          <div className="w-full max-w-2xl flex items-center justify-between px-5 pt-4">
             <button
-              onClick={() => promptUpgrade()}
-              className="bg-glass border border-primary rounded-2xl py-1.5 px-3.5 text-primary text-sm font-semibold"
+              onClick={() => router.push('/app/friends')}
+              className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
             >
-              Sign In
+              Friends
             </button>
-          ) : (
-            <button
-              onClick={() => router.push('/app/profile')}
-              className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold"
-            >
-              {userProfile?.displayName?.charAt(0)?.toUpperCase() || 'P'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
-        {/* Logo */}
-        <div className="text-center pt-2">
-          <img
-            src="/duet-logo.png"
-            alt="Duet"
-            className="w-[60px] h-[56px] mx-auto"
-            style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
-          />
-        </div>
-      </div>
-
-      {/* Ad */}
-      <div className="w-full max-w-sm mx-auto">
-        {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
-          <div className="px-6 mb-4 w-full">
-            <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
+            <div className="flex-1" />
+            {isGuest ? (
+              <button
+                onClick={() => promptUpgrade()}
+                className="bg-glass border border-primary rounded-2xl py-1.5 px-3.5 text-primary text-sm font-semibold"
+              >
+                Sign In
+              </button>
+            ) : (
+              <button
+                onClick={() => router.push('/app/profile')}
+                className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold"
+              >
+                {userProfile?.displayName?.charAt(0)?.toUpperCase() || 'P'}
+              </button>
+            )}
           </div>
-        )}
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
+          {/* Logo */}
+          <div className="text-center pt-2">
+            <img
+              src="/duet-logo.png"
+              alt="Duet"
+              className="w-[60px] h-[56px] mx-auto"
+              style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
+            />
+          </div>
+        </div>
 
         {/* Buttons */}
-        <div className="px-6 pb-8 flex flex-col gap-3 w-full">
-          {notice && (
-            <div className="bg-warning/15 border border-warning/30 rounded-xl px-4 py-3 text-sm text-warning">
-              {notice}
-            </div>
-          )}
-          {error && (
-            <div className="bg-danger/15 border border-danger/30 rounded-xl px-4 py-3 text-sm text-danger">
-              {error}
-            </div>
-          )}
+        <div className="w-full max-w-sm mx-auto">
+          <div className="px-6 pb-8 flex flex-col gap-3 w-full">
+            {notice && (
+              <div className="bg-warning/15 border border-warning/30 rounded-xl px-4 py-3 text-sm text-warning">
+                {notice}
+              </div>
+            )}
+            {error && (
+              <div className="bg-danger/15 border border-danger/30 rounded-xl px-4 py-3 text-sm text-danger">
+                {error}
+              </div>
+            )}
 
-          <button
-            onClick={handleCreateRoom}
-            disabled={isLoading}
-            className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
-          >
-            {isLoading ? 'Creating...' : 'Start a Room'}
-          </button>
+            <button
+              onClick={handleCreateRoom}
+              disabled={isLoading}
+              className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
+            >
+              {isLoading ? 'Creating...' : 'Start a Room'}
+            </button>
 
-          <button
-            onClick={() => setShowJoinInput(true)}
-            disabled={isLoading}
-            className="bg-transparent text-[#3d3d50] py-4 rounded-full text-lg font-semibold border-2 border-[#3d3d50] hover:bg-[#3d3d50]/10 transition-colors"
-          >
-            Join Room
-          </button>
+            <button
+              onClick={() => setShowJoinInput(true)}
+              disabled={isLoading}
+              className="bg-transparent text-[#3d3d50] py-4 rounded-full text-lg font-semibold border-2 border-[#3d3d50] hover:bg-[#3d3d50]/10 transition-colors"
+            >
+              Join Room
+            </button>
 
-          {showJoinInput && (
-            <div className="flex gap-2 mt-1">
-              <input
-                type="text"
-                placeholder="ENTER CODE"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                maxLength={6}
-                autoFocus
-                className="flex-1 min-w-0 bg-white/90 text-[#1a293d] text-base font-bold tracking-[2px] text-center py-3 px-3 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-sm placeholder:font-normal outline-none"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleJoinWithCode(joinCode);
-                }}
-              />
-              <button
-                onClick={() => handleJoinWithCode(joinCode)}
-                disabled={isLoading || joinCode.length !== 6}
-                className="bg-primary text-white py-3 px-5 rounded-full text-base font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
-              >
-                Go
-              </button>
-            </div>
-          )}
+            {showJoinInput && (
+              <div className="flex gap-2 mt-1">
+                <input
+                  type="text"
+                  placeholder="ENTER CODE"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  maxLength={6}
+                  autoFocus
+                  className="flex-1 min-w-0 bg-white/90 text-[#1a293d] text-base font-bold tracking-[2px] text-center py-3 px-3 rounded-full placeholder:text-gray-400 placeholder:tracking-normal placeholder:text-sm placeholder:font-normal outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleJoinWithCode(joinCode);
+                  }}
+                />
+                <button
+                  onClick={() => handleJoinWithCode(joinCode)}
+                  disabled={isLoading || joinCode.length !== 6}
+                  className="bg-primary text-white py-3 px-5 rounded-full text-base font-semibold disabled:opacity-50 hover:bg-primary-light transition-colors"
+                >
+                  Go
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        <ShareModal
+          visible={!!shareCode}
+          roomCode={shareCode || ''}
+          onClose={() => setShareCode(null)}
+        />
       </div>
 
-      <ShareModal
-        visible={!!shareCode}
-        roomCode={shareCode || ''}
-        onClose={() => setShareCode(null)}
-      />
-    </div>
+      {/* Ad — rendered outside the layout container so AdSense style injection can't corrupt it */}
+      {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
+        <div className="w-full max-w-sm mx-auto px-6 py-4">
+          <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
+        </div>
+      )}
+    </>
   );
 }

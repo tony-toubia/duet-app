@@ -17,8 +17,8 @@ html, body {
 
 /* Min viewport height — for scrollable pages (profile, friends) */
 .min-h-screen-safe {
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
 }
 
 /* Prevent white space below content on mobile */
