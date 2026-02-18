@@ -96,11 +96,11 @@ export function LobbyScreen() {
 
   return (
     <div
-      className="h-screen-safe relative overflow-hidden bg-[#1a293d] bg-cover bg-center bg-no-repeat"
+      className="min-h-screen-safe bg-[#1a293d] bg-cover bg-center bg-no-repeat flex flex-col"
       style={{ backgroundImage: 'url(/duet-app-bg.jpg)' }}
     >
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 z-20 flex justify-center">
+      <div className="flex justify-center w-full">
         <div className="w-full max-w-2xl flex items-center justify-between px-5 pt-4">
           <button
             onClick={() => router.push('/app/friends')}
@@ -127,9 +127,7 @@ export function LobbyScreen() {
         </div>
       </div>
 
-      <div className="absolute inset-0 z-10 flex justify-center">
-        <div className="relative w-full max-w-sm h-full flex flex-col">
-
+      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
         {/* Logo */}
         <div className="text-center pt-2">
           <img
@@ -139,10 +137,10 @@ export function LobbyScreen() {
             style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
           />
         </div>
+      </div>
 
-        <div className="flex-1" />
-
-        {/* Ad */}
+      {/* Ad */}
+      <div className="w-full max-w-sm mx-auto">
         {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
           <div className="px-6 mb-4 w-full">
             <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
@@ -201,7 +199,6 @@ export function LobbyScreen() {
               </button>
             </div>
           )}
-        </div>
         </div>
       </div>
 
