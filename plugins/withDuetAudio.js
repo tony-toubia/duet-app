@@ -61,6 +61,15 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var duckingCheckHandler: android.os.Handler? = null
     private var duckingCheckRunnable: Runnable? = null
 
+    // Pre-duck buffer: hold first packets while ducking takes effect
+    private val preDuckBufferMs = 40L // Buffer first ~40ms of audio for ducking to kick in
+    private var preDuckBuffer: MutableList<FloatArray> = mutableListOf()
+    private var isDuckingTransition = false
+
+    // Audio route tracking for dynamic AEC mode
+    private var isSpeakerRoute = false
+    private var audioDeviceCallback: AudioDeviceCallback? = null
+
     override fun getName() = "DuetAudioManager"
 
     @ReactMethod
@@ -70,6 +79,22 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
             // Initialize the handler for ducking timeout checks
             duckingCheckHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+            // Detect initial audio route
+            updateAudioRoute()
+
+            // Register for audio route changes to dynamically switch AEC mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                audioDeviceCallback = object : AudioDeviceCallback() {
+                    override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                        updateAudioRoute()
+                    }
+                    override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                        updateAudioRoute()
+                    }
+                }
+                audioManager?.registerAudioDeviceCallback(audioDeviceCallback, duckingCheckHandler)
+            }
 
             // Prepare the focus request but don't request it yet
             // We'll request focus dynamically when partner audio arrives
@@ -99,6 +124,47 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             })
         } catch (e: Exception) {
             promise.reject("AUDIO_SESSION_ERROR", "Failed to setup audio session: ${'$'}{e.message}")
+        }
+    }
+
+    // Detect whether audio is routed to the built-in speaker (not headphones/BT)
+    private fun updateAudioRoute() {
+        val am = audioManager ?: return
+        val wasSpeaker = isSpeakerRoute
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            val hasHeadphones = devices.any {
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+            }
+            isSpeakerRoute = !hasHeadphones
+        } else {
+            @Suppress("DEPRECATION")
+            isSpeakerRoute = !am.isWiredHeadsetOn && !am.isBluetoothA2dpOn && !am.isBluetoothScoOn
+        }
+
+        android.util.Log.d("DuetAudio", "Audio route: speaker=${'$'}isSpeakerRoute (was=${'$'}wasSpeaker)")
+
+        // If route changed while recording, switch audio mode for proper AEC
+        if (wasSpeaker != isSpeakerRoute && isRecording) {
+            applyAudioMode()
+        }
+    }
+
+    // Apply the correct audio mode based on the current route
+    // Speaker: MODE_IN_COMMUNICATION for hardware AEC (no A2DP to preserve)
+    // Headphones/BT: MODE_NORMAL to keep A2DP high-quality audio
+    private fun applyAudioMode() {
+        if (isSpeakerRoute) {
+            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+            android.util.Log.d("DuetAudio", "Switched to MODE_IN_COMMUNICATION for speaker AEC")
+        } else {
+            audioManager?.mode = AudioManager.MODE_NORMAL
+            android.util.Log.d("DuetAudio", "Switched to MODE_NORMAL to preserve A2DP")
         }
     }
 
@@ -136,6 +202,8 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             audioManager?.abandonAudioFocus(null)
         }
         hasDuckingFocus = false
+        isDuckingTransition = false
+        preDuckBuffer.clear()
     }
 
     // Schedule a check to unduck after silence
@@ -155,11 +223,25 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun startAudioEngine(promise: Promise) {
         try {
-            // IMPORTANT: Do NOT use MODE_IN_COMMUNICATION - it forces Bluetooth to switch from
-            // A2DP (high quality music) to HFP/SCO (low quality voice), breaking audio companion
-            // Instead, we keep MODE_NORMAL and rely on audio focus for ducking
-            // audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION // REMOVED - breaks A2DP
-            android.util.Log.d("DuetAudio", "Audio mode kept as MODE_NORMAL to preserve A2DP")
+            // Apply audio mode based on current route:
+            // Speaker → MODE_IN_COMMUNICATION (hardware AEC)
+            // Headphones/BT → MODE_NORMAL (preserve A2DP)
+            updateAudioRoute()
+            applyAudioMode()
+
+            // Start foreground service to keep mic alive when screen is off
+            try {
+                val serviceIntent = Intent(reactApplicationContext, DuetAudioService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    reactApplicationContext.startForegroundService(serviceIntent)
+                } else {
+                    reactApplicationContext.startService(serviceIntent)
+                }
+                android.util.Log.d("DuetAudio", "Foreground service started")
+            } catch (e: Exception) {
+                android.util.Log.w("DuetAudio", "Failed to start foreground service: ${'$'}{e.message}")
+                // Non-fatal: audio will still work, just might stop when screen locks
+            }
 
             // Acquire wake lock to keep CPU running in background
             val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -193,14 +275,24 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             bufferSize * 2
         )
 
+        // Enable hardware echo cancellation — this is critical for speakerphone.
+        // AEC compares what's being played out (AudioTrack) with what's being recorded
+        // and subtracts the echo. Works best in MODE_IN_COMMUNICATION.
         if (AcousticEchoCanceler.isAvailable()) {
             echoCanceler = AcousticEchoCanceler.create(audioRecord!!.audioSessionId)
             echoCanceler?.enabled = true
+            android.util.Log.d("DuetAudio", "AcousticEchoCanceler enabled: ${'$'}{echoCanceler?.enabled}, id=${'$'}{audioRecord!!.audioSessionId}")
+        } else {
+            android.util.Log.w("DuetAudio", "AcousticEchoCanceler NOT available on this device")
         }
 
+        // Enable hardware noise suppression to reduce background noise
         if (NoiseSuppressor.isAvailable()) {
             noiseSuppressor = NoiseSuppressor.create(audioRecord!!.audioSessionId)
             noiseSuppressor?.enabled = true
+            android.util.Log.d("DuetAudio", "NoiseSuppressor enabled: ${'$'}{noiseSuppressor?.enabled}")
+        } else {
+            android.util.Log.w("DuetAudio", "NoiseSuppressor NOT available on this device")
         }
     }
 
@@ -219,13 +311,16 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfigOut, audioFormat)
 
-        // Use USAGE_ASSISTANT for playback - this keeps A2DP active on Bluetooth
-        // (unlike USAGE_VOICE_COMMUNICATION which may switch to HFP)
-        // The audio focus request (separate) handles ducking of other apps
+        // Dynamic AudioAttributes based on route:
+        // Speaker → USAGE_VOICE_COMMUNICATION for AEC reference signal
+        // Headphones/BT → USAGE_ASSISTANT to keep A2DP active
+        val usage = if (isSpeakerRoute) AudioAttributes.USAGE_VOICE_COMMUNICATION
+                    else AudioAttributes.USAGE_ASSISTANT
+
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setUsage(usage)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -242,7 +337,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
         playbackSampleRate = sampleRate
         audioTrack?.play()
-        android.util.Log.d("DuetAudio", "AudioTrack configured for ${'$'}sampleRate Hz")
+        android.util.Log.d("DuetAudio", "AudioTrack configured for ${'$'}sampleRate Hz, usage=${'$'}{if (isSpeakerRoute) "VOICE_COMMUNICATION" else "ASSISTANT"}")
     }
 
     private fun startRecording() {
@@ -285,8 +380,24 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         duckingCheckRunnable?.let { duckingCheckHandler?.removeCallbacks(it) }
         abandonDuckingFocus()
 
-        // Audio mode is already MODE_NORMAL (we don't change it to preserve A2DP)
-        android.util.Log.d("DuetAudio", "Audio engine stopped, ducking focus abandoned")
+        // Restore audio mode
+        audioManager?.mode = AudioManager.MODE_NORMAL
+        android.util.Log.d("DuetAudio", "Audio engine stopped, mode restored to MODE_NORMAL")
+
+        // Unregister audio device callback
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioDeviceCallback?.let { audioManager?.unregisterAudioDeviceCallback(it) }
+            audioDeviceCallback = null
+        }
+
+        // Stop foreground service
+        try {
+            val serviceIntent = Intent(reactApplicationContext, DuetAudioService::class.java)
+            reactApplicationContext.stopService(serviceIntent)
+            android.util.Log.d("DuetAudio", "Foreground service stopped")
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Failed to stop foreground service: ${'$'}{e.message}")
+        }
 
         // Release wake lock
         if (wakeLock?.isHeld == true) {
@@ -360,13 +471,41 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
                 setupAudioTrackWithSampleRate(receivedSampleRate)
             }
 
-            // Request ducking focus when partner audio arrives
-            requestDuckingFocus()
-            lastAudioPlayTime = System.currentTimeMillis()
-
             val floatArray = base64ToFloatArray(base64Audio)
-            val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
-            android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples at ${'$'}receivedSampleRate Hz, wrote ${'$'}written to AudioTrack")
+
+            // If ducking is not active, this is the start of a new speech burst.
+            // Request ducking and buffer the first packets so Android has time to
+            // lower media volume before we write audio to the AudioTrack.
+            if (!hasDuckingFocus) {
+                requestDuckingFocus()
+                lastAudioPlayTime = System.currentTimeMillis()
+                isDuckingTransition = true
+                preDuckBuffer.add(floatArray)
+                android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
+
+                // Schedule flush after a short delay to let ducking take effect
+                duckingCheckHandler?.postDelayed({
+                    if (isDuckingTransition) {
+                        isDuckingTransition = false
+                        // Flush all buffered packets to AudioTrack
+                        for (buffered in preDuckBuffer) {
+                            audioTrack?.write(buffered, 0, buffered.size, AudioTrack.WRITE_NON_BLOCKING)
+                        }
+                        android.util.Log.d("DuetAudio", "playAudio: flushed ${'$'}{preDuckBuffer.size} buffered packets after duck transition")
+                        preDuckBuffer.clear()
+                    }
+                }, preDuckBufferMs)
+            } else if (isDuckingTransition) {
+                // Still in the ducking transition window — keep buffering
+                lastAudioPlayTime = System.currentTimeMillis()
+                preDuckBuffer.add(floatArray)
+                android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
+            } else {
+                // Normal path: ducking already active, write directly
+                lastAudioPlayTime = System.currentTimeMillis()
+                val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
+                android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples at ${'$'}receivedSampleRate Hz, wrote ${'$'}written to AudioTrack")
+            }
 
             // Schedule unduck after silence
             scheduleDuckingTimeout()
@@ -522,6 +661,88 @@ class DuetAudioPackage : ReactPackage {
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
         return emptyList()
+    }
+}
+`;
+
+const DUET_AUDIO_SERVICE_KT = `package com.duet.audio
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+
+class DuetAudioService : Service() {
+
+    companion object {
+        private const val CHANNEL_ID = "duet_audio_channel"
+        private const val NOTIFICATION_ID = 1
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val notification = buildNotification()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
+        android.util.Log.d("DuetAudio", "Foreground service started with microphone type")
+        return START_STICKY
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Duet Voice Call",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Active voice call with your Duet partner"
+                setShowBadge(false)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        // Launch the app when the notification is tapped
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        return builder
+            .setContentTitle("Duet")
+            .setContentText("Voice call active")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
     }
 }
 `;
@@ -1248,12 +1469,47 @@ function withDuetAudioAndroid(config) {
         path.join(audioDir, 'DuetAudioPackage.kt'),
         DUET_AUDIO_PACKAGE_KT
       );
+      fs.writeFileSync(
+        path.join(audioDir, 'DuetAudioService.kt'),
+        DUET_AUDIO_SERVICE_KT
+      );
 
       console.log('[withDuetAudio] Created Android native audio module files in:', audioDir);
 
       return config;
     },
   ]);
+}
+
+function withDuetAudioService(config) {
+  const { withAndroidManifest } = require('expo/config-plugins');
+  return withAndroidManifest(config, (config) => {
+    const manifest = config.modResults.manifest;
+    const application = manifest.application?.[0];
+    if (!application) return config;
+
+    // Add the foreground service declaration if not present
+    if (!application.service) {
+      application.service = [];
+    }
+
+    const serviceExists = application.service.some(
+      (s) => s.$?.['android:name'] === '.audio.DuetAudioService'
+    );
+
+    if (!serviceExists) {
+      application.service.push({
+        $: {
+          'android:name': '.audio.DuetAudioService',
+          'android:exported': 'false',
+          'android:foregroundServiceType': 'microphone',
+        },
+      });
+      console.log('[withDuetAudio] Added DuetAudioService to AndroidManifest');
+    }
+
+    return config;
+  });
 }
 
 function withDuetAudioMainApplication(config) {
@@ -1422,6 +1678,7 @@ module.exports = function withDuetAudio(config) {
   // Android
   config = withDuetAudioAndroid(config);
   config = withDuetAudioMainApplication(config);
+  config = withDuetAudioService(config);
   config = withAndroidQueries(config);
 
   // iOS
