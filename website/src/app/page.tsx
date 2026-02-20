@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { AdSlot } from '@/components/app/AdSlot';
 
 export default function LandingPage() {
   return (
@@ -73,6 +74,13 @@ export default function LandingPage() {
             </p>
           </div>
         </div>
+
+        {/* Ad */}
+        {process.env.NEXT_PUBLIC_AD_SLOT_LANDING && (
+          <div className="w-full max-w-2xl mb-12">
+            <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LANDING} format="horizontal" />
+          </div>
+        )}
 
         {/* Footer */}
         <div className="text-center">

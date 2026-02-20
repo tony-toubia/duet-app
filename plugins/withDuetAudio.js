@@ -786,6 +786,20 @@ class DuetAudioManager: RCTEventEmitter {
   // but some apps (Spotify, Disney+) may pause instead of ducking.
   private var duckingEnabled = false
 
+  // Dynamic ducking state (mirrors Android behavior)
+  private var isDuckingActive = false
+  private var lastPartnerAudioTime: TimeInterval = 0
+  private let duckingTimeoutSec: TimeInterval = 0.5 // Unduck after 500ms silence
+  private var duckingTimeoutTimer: DispatchSourceTimer?
+
+  // Pre-duck buffer: hold first packets while ducking takes effect (mirrors Android 40ms buffer)
+  private let preDuckBufferSec: TimeInterval = 0.04 // 40ms
+  private var preDuckBuffer: [(Data, AVAudioFormat)] = []
+  private var isDuckingTransition = false
+
+  // Audio route tracking for dynamic AEC mode
+  private var isSpeakerRoute = false
+
   // Background task tracking
   private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
@@ -839,57 +853,164 @@ class DuetAudioManager: RCTEventEmitter {
   // Optional: User can enable ducking (.duckOthers) which lowers other apps' volume
   // when partner speaks. Warning: some apps (Spotify, Disney+) may pause instead.
 
-  private func audioSessionOptions() -> AVAudioSession.CategoryOptions {
+  private func audioSessionOptions(ducking: Bool = false) -> AVAudioSession.CategoryOptions {
     var options: AVAudioSession.CategoryOptions = [
       .mixWithOthers,
       .allowBluetooth,
       .allowBluetoothA2DP,
       .defaultToSpeaker
     ]
-    if duckingEnabled {
+    // Only add duckOthers when ducking is enabled AND partner is actively speaking
+    if ducking && duckingEnabled {
       options.insert(.duckOthers)
     }
     return options
   }
 
+  // Detect whether audio is routed to the built-in speaker (not headphones/BT)
+  private func updateAudioRoute() {
+    let session = AVAudioSession.sharedInstance()
+    let outputs = session.currentRoute.outputs
+    let wasSpeaker = isSpeakerRoute
+
+    let hasExternalOutput = outputs.contains { output in
+      output.portType == .headphones ||
+      output.portType == .bluetoothA2DP ||
+      output.portType == .bluetoothHFP ||
+      output.portType == .bluetoothLE ||
+      output.portType == .usbAudio
+    }
+    isSpeakerRoute = !hasExternalOutput
+
+    print("[DuetAudio] Audio route: speaker=\\(isSpeakerRoute) (was=\\(wasSpeaker))")
+
+    // If route changed while engine is running, switch audio mode for proper AEC
+    if wasSpeaker != isSpeakerRoute && audioEngine?.isRunning == true {
+      applyAudioMode()
+    }
+  }
+
+  // Apply the correct audio mode based on the current route
+  // Speaker: .voiceChat for hardware AEC (echo cancellation on speaker)
+  // Headphones/BT: .default to keep A2DP high-quality audio
+  private func applyAudioMode() {
+    do {
+      let session = AVAudioSession.sharedInstance()
+      let targetMode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
+      let currentDucking = isDuckingActive && duckingEnabled
+
+      // Pause engine briefly to reconfigure
+      audioEngine?.pause()
+
+      try session.setCategory(
+        .playAndRecord,
+        mode: targetMode,
+        options: audioSessionOptions(ducking: currentDucking)
+      )
+
+      try audioEngine?.start()
+      playerNode?.play()
+
+      print("[DuetAudio] Applied mode: \\(isSpeakerRoute ? "voiceChat (AEC)" : "default (A2DP)")")
+    } catch {
+      print("[DuetAudio] Failed to apply audio mode: \\(error)")
+      try? audioEngine?.start()
+      playerNode?.play()
+    }
+  }
+
+  // Request ducking: switch session options to include .duckOthers
+  private func requestDucking() {
+    guard duckingEnabled, !isDuckingActive else { return }
+    isDuckingActive = true
+    isDuckingTransition = true
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
+
+      // Reconfigure session with duckOthers added
+      // We don't pause the engine here - iOS handles the transition gracefully
+      try session.setCategory(
+        .playAndRecord,
+        mode: mode,
+        options: audioSessionOptions(ducking: true)
+      )
+
+      print("[DuetAudio] Ducking activated")
+    } catch {
+      print("[DuetAudio] Failed to activate ducking: \\(error)")
+      isDuckingActive = false
+      isDuckingTransition = false
+    }
+
+    // After the pre-duck buffer time, flush buffered packets and clear transition flag
+    DispatchQueue.main.asyncAfter(deadline: .now() + preDuckBufferSec) { [weak self] in
+      guard let self = self, self.isDuckingTransition else { return }
+      self.isDuckingTransition = false
+
+      // Flush all buffered packets
+      for (data, format) in self.preDuckBuffer {
+        if let buffer = self.dataToBuffer(data, format: format) {
+          self.playerNode?.scheduleBuffer(buffer, completionHandler: nil)
+        }
+      }
+      print("[DuetAudio] Flushed \\(self.preDuckBuffer.count) pre-duck buffered packets")
+      self.preDuckBuffer.removeAll()
+    }
+  }
+
+  // Abandon ducking: remove .duckOthers from session options
+  private func abandonDucking() {
+    guard isDuckingActive else { return }
+    isDuckingActive = false
+    isDuckingTransition = false
+    preDuckBuffer.removeAll()
+
+    do {
+      let session = AVAudioSession.sharedInstance()
+      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
+
+      try session.setCategory(
+        .playAndRecord,
+        mode: mode,
+        options: audioSessionOptions(ducking: false)
+      )
+
+      print("[DuetAudio] Ducking deactivated — other apps restored")
+    } catch {
+      print("[DuetAudio] Failed to deactivate ducking: \\(error)")
+    }
+  }
+
+  // Schedule unduck after silence timeout
+  private func scheduleDuckingTimeout() {
+    duckingTimeoutTimer?.cancel()
+
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + duckingTimeoutSec)
+    timer.setEventHandler { [weak self] in
+      guard let self = self else { return }
+      let elapsed = CACurrentMediaTime() - self.lastPartnerAudioTime
+      if elapsed >= self.duckingTimeoutSec {
+        self.abandonDucking()
+      }
+    }
+    timer.resume()
+    duckingTimeoutTimer = timer
+  }
+
   @objc
   func setDuckingEnabled(_ enabled: Bool) {
+    let wasEnabled = duckingEnabled
     duckingEnabled = enabled
     print("[DuetAudio] Ducking \\(enabled ? "enabled" : "disabled")")
 
-    // Apply immediately only if the engine is running.
-    // We deactivate briefly then reactivate to avoid the interruption-on-setCategory issue.
-    // The brief deactivation with .notifyOthersOnDeactivation tells other apps to resume,
-    // then the new setCategory + engine.start() reactivates cleanly.
-    if audioEngine?.isRunning == true {
-      do {
-        let session = AVAudioSession.sharedInstance()
-
-        // Stop engine temporarily
-        audioEngine?.pause()
-
-        // Deactivate and notify others to resume
-        try session.setActive(false, options: [.notifyOthersOnDeactivation])
-
-        // Reconfigure with new options
-        try session.setCategory(
-          .playAndRecord,
-          mode: .default,
-          options: audioSessionOptions()
-        )
-
-        // Restart engine (implicitly reactivates session)
-        try audioEngine?.start()
-        playerNode?.play()
-
-        print("[DuetAudio] Audio session reconfigured with ducking=\\(enabled)")
-      } catch {
-        print("[DuetAudio] Failed to reconfigure ducking: \\(error)")
-        // Try to recover
-        try? audioEngine?.start()
-        playerNode?.play()
-      }
+    // If disabling and currently ducking, abandon immediately
+    if !enabled && isDuckingActive {
+      abandonDucking()
     }
+    // If enabling while engine is running, the next partner audio packet will trigger ducking
   }
 
   // MARK: - Audio Engine
@@ -909,19 +1030,26 @@ class DuetAudioManager: RCTEventEmitter {
         self?.endBackgroundTask()
       }
 
+      // Detect initial audio route for AEC mode selection
+      updateAudioRoute()
+
       // Configure audio session for voice + mixing.
       // IMPORTANT: Do NOT call setActive(true) explicitly here.
       // Let AVAudioEngine.start() activate it implicitly - this avoids sending
       // interruption notifications to other apps (Spotify, etc.) which cause them to pause.
       let session = AVAudioSession.sharedInstance()
+      // Speaker → .voiceChat for hardware AEC; Headphones/BT → .default to preserve A2DP
+      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
       try session.setCategory(
         .playAndRecord,
-        mode: .default,
+        mode: mode,
         options: audioSessionOptions()
       )
       try session.setPreferredSampleRate(outputSampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
       // Session will be activated implicitly by engine.start() below
+
+      print("[DuetAudio] Audio mode: \\(isSpeakerRoute ? "voiceChat (AEC on speaker)" : "default (A2DP preserved)")")
 
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
@@ -993,6 +1121,13 @@ class DuetAudioManager: RCTEventEmitter {
     mixerNode = nil
     audioConverter = nil
 
+    // Clean up ducking state
+    duckingTimeoutTimer?.cancel()
+    duckingTimeoutTimer = nil
+    isDuckingActive = false
+    isDuckingTransition = false
+    preDuckBuffer.removeAll()
+
     // Deactivate session and notify other apps so they can resume
     do {
       let session = AVAudioSession.sharedInstance()
@@ -1000,6 +1135,8 @@ class DuetAudioManager: RCTEventEmitter {
     } catch {
       print("[DuetAudio] Failed to deactivate audio session: \\(error)")
     }
+
+    endBackgroundTask()
 
     resolve(["success": true])
   }
@@ -1118,13 +1255,38 @@ class DuetAudioManager: RCTEventEmitter {
       channels: AVAudioChannelCount(channels)
     )!
 
+    lastPartnerAudioTime = CACurrentMediaTime()
+
+    // On-demand ducking: request ducking when partner audio first arrives,
+    // buffer the first ~40ms of packets to let iOS lower other apps' volume
+    if !isDuckingActive && duckingEnabled {
+      // Start of a new speech burst — request ducking and buffer
+      requestDucking()
+      preDuckBuffer.append((data, format))
+      scheduleDuckingTimeout()
+      resolve(["played": true])
+      return
+    }
+
+    if isDuckingTransition {
+      // Still in the ducking transition window — keep buffering
+      preDuckBuffer.append((data, format))
+      scheduleDuckingTimeout()
+      resolve(["played": true])
+      return
+    }
+
+    // Normal path: ducking already active or not enabled — write directly
     if let buffer = dataToBuffer(data, format: format) {
       player.scheduleBuffer(buffer, completionHandler: nil)
-
-      resolve(["played": true])
-    } else {
-      reject("BUFFER_ERROR", "Failed to create audio buffer", nil)
     }
+
+    // Schedule unduck after silence
+    if isDuckingActive {
+      scheduleDuckingTimeout()
+    }
+
+    resolve(["played": true])
   }
 
   // MARK: - Controls
@@ -1328,7 +1490,6 @@ class DuetAudioManager: RCTEventEmitter {
     switch reason {
     case .newDeviceAvailable:
       // New audio device connected (e.g., AirPods, car Bluetooth)
-      // Check if it's a Bluetooth device and ensure A2DP is preserved
       let isBluetoothA2DP = currentRoute.outputs.contains { output in
         output.portType == .bluetoothA2DP
       }
@@ -1336,12 +1497,15 @@ class DuetAudioManager: RCTEventEmitter {
         output.portType == .bluetoothHFP
       }
 
+      // Update route and apply correct AEC mode (speaker vs headphones/BT)
+      updateAudioRoute()
+
       if isBluetoothA2DP {
         print("[DuetAudio] Bluetooth A2DP connected - high quality audio preserved")
       } else if isBluetoothHFP {
-        // HFP is voice-optimized but lower quality - try to switch to A2DP if available
-        print("[DuetAudio] Warning: Bluetooth HFP active - attempting to preserve A2DP")
-        reconfigureAudioSessionForBluetooth()
+        // HFP is voice-optimized but lower quality - reconfigure to preserve A2DP
+        print("[DuetAudio] Warning: Bluetooth HFP active - reconfiguring for A2DP")
+        applyAudioMode()
       }
 
       sendEvent(withName: "onConnectionStateChange", body: [
@@ -1351,9 +1515,9 @@ class DuetAudioManager: RCTEventEmitter {
       ])
 
     case .oldDeviceUnavailable:
-      // Audio device disconnected - reconfigure session
+      // Audio device disconnected - update route and reconfigure
       print("[DuetAudio] Device disconnected, reconfiguring audio session")
-      reconfigureAudioSessionForBluetooth()
+      updateAudioRoute()
       sendEvent(withName: "onConnectionStateChange", body: [
         "state": "routeChanged",
         "reason": "deviceDisconnected"
@@ -1362,26 +1526,10 @@ class DuetAudioManager: RCTEventEmitter {
     case .categoryChange:
       // Audio category changed by another app - restore our settings
       print("[DuetAudio] Category changed externally, reconfiguring")
-      reconfigureAudioSessionForBluetooth()
+      applyAudioMode()
 
     default:
       break
-    }
-  }
-
-  private func reconfigureAudioSessionForBluetooth() {
-    do {
-      let session = AVAudioSession.sharedInstance()
-      // Reconfigure with our preferred settings to ensure A2DP is used when available
-      try session.setCategory(
-        .playAndRecord,
-        mode: .default,  // default mode allows A2DP; voiceChat forces HFP
-        options: audioSessionOptions()
-      )
-      try session.setActive(true)
-      print("[DuetAudio] Audio session reconfigured for Bluetooth A2DP")
-    } catch {
-      print("[DuetAudio] Failed to reconfigure audio session: \\(error)")
     }
   }
 
@@ -1393,6 +1541,7 @@ class DuetAudioManager: RCTEventEmitter {
   }
 
   deinit {
+    duckingTimeoutTimer?.cancel()
     NotificationCenter.default.removeObserver(self)
     endBackgroundTask()
   }

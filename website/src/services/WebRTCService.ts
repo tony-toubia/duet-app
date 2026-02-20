@@ -22,6 +22,7 @@ export interface AudioPacket {
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
+  onIceRestartOffer: (offer: RTCSessionDescriptionInit) => void;
   onError: (error: Error) => void;
 }
 
@@ -32,6 +33,8 @@ export class WebRTCService {
   private _connectionState: ConnectionState = 'disconnected';
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private remoteDescriptionSet = false;
+  private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private isOfferer = false;
 
   constructor(callbacks: WebRTCCallbacks) {
     this.callbacks = callbacks;
@@ -68,15 +71,20 @@ export class WebRTCService {
         console.log('[WebRTC] Connection state changed:', state);
         switch (state) {
           case 'connected':
+            this.cancelIceRestart();
             this.setConnectionState('connected');
             break;
           case 'disconnected':
             this.setConnectionState('reconnecting');
+            this.scheduleIceRestart();
             break;
           case 'failed':
+            this.cancelIceRestart();
             this.setConnectionState('failed');
+            this.attemptIceRestart();
             break;
           case 'closed':
+            this.cancelIceRestart();
             this.setConnectionState('disconnected');
             break;
         }
@@ -106,6 +114,7 @@ export class WebRTCService {
       throw new Error('Peer connection not initialized');
     }
 
+    this.isOfferer = true;
     this.setConnectionState('connecting');
 
     const channel = this.peerConnection.createDataChannel('audio', {
@@ -224,8 +233,49 @@ export class WebRTCService {
 
   onLocalIceCandidate: ((candidate: RTCIceCandidate) => void) | null = null;
 
+  private scheduleIceRestart(): void {
+    this.cancelIceRestart();
+    this.iceRestartTimer = setTimeout(() => {
+      this.attemptIceRestart();
+    }, 3000);
+    console.log('[WebRTC] ICE restart scheduled in 3s');
+  }
+
+  private cancelIceRestart(): void {
+    if (this.iceRestartTimer) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
+  }
+
+  private async attemptIceRestart(): Promise<void> {
+    if (!this.peerConnection) return;
+
+    const state = this.peerConnection.connectionState;
+    if (state === 'connected') {
+      console.log('[WebRTC] Connection recovered, skipping ICE restart');
+      return;
+    }
+
+    if (!this.isOfferer) {
+      console.log('[WebRTC] Answerer waiting for ICE restart offer from host');
+      return;
+    }
+
+    console.log('[WebRTC] Attempting ICE restart...');
+    try {
+      const offer = await this.peerConnection.createOffer({ iceRestart: true });
+      await this.peerConnection.setLocalDescription(offer);
+      console.log('[WebRTC] ICE restart offer created, sending via signaling');
+      this.callbacks.onIceRestartOffer(offer);
+    } catch (e) {
+      console.error('[WebRTC] ICE restart failed:', e);
+    }
+  }
+
   close(): void {
     console.log('[WebRTC] Closing connection');
+    this.cancelIceRestart();
     this.dataChannel?.close();
     this.dataChannel = null;
 
@@ -234,6 +284,7 @@ export class WebRTCService {
 
     this.remoteDescriptionSet = false;
     this.pendingCandidates = [];
+    this.isOfferer = false;
 
     this.setConnectionState('disconnected');
   }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { AdSlot } from './AdSlot';
 
 interface ShareModalProps {
   visible: boolean;
@@ -80,12 +79,6 @@ export function ShareModal({ visible, roomCode, onClose }: ShareModalProps) {
             {copied ? 'Copied!' : 'Tap to copy'}
           </div>
         </button>
-
-        {process.env.NEXT_PUBLIC_AD_SLOT_SHARE && (
-          <div className="mb-4">
-            <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_SHARE} format="horizontal" />
-          </div>
-        )}
 
         <button
           onClick={handleShare}

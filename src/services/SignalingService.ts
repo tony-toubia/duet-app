@@ -37,6 +37,7 @@ export class SignalingService {
   private partnerEverJoined: boolean = false;
   private partnerPresent: boolean = false;
   private partnerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
@@ -89,15 +90,18 @@ export class SignalingService {
     // Re-add ourselves when Firebase reconnects (e.g., after app backgrounded)
     this.listenForReconnect();
 
+    // Keep Firebase socket alive during background/screen lock
+    this.startHeartbeat();
+
     // Listen for partner joining
     this.listenForPartner();
-    
+
     // Listen for answer
     this.listenForAnswer();
-    
+
     // Listen for answer ICE candidates
     this.listenForIceCandidates('answerCandidates');
-    
+
     console.log('[Signaling] Created room:', this.roomCode);
     return this.roomCode;
   }
@@ -138,6 +142,9 @@ export class SignalingService {
 
     // Re-add ourselves when Firebase reconnects (e.g., after app backgrounded)
     this.listenForReconnect();
+
+    // Keep Firebase socket alive during background/screen lock
+    this.startHeartbeat();
 
     // Listen for offer
     this.listenForOffer();
@@ -276,6 +283,35 @@ export class SignalingService {
   }
 
   /**
+   * Keep the Firebase socket alive by writing a heartbeat timestamp every 10s.
+   * Prevents Android from killing the idle TCP connection when the screen locks
+   * or the app is backgrounded, which would trigger onDisconnect and remove
+   * our member entry.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.roomRef && this.userId) {
+        this.roomRef
+          .child('members')
+          .child(this.userId)
+          .child('heartbeat')
+          .set(database.ServerValue.TIMESTAMP)
+          .catch(() => {}); // Ignore errors (e.g., if room was deleted)
+      }
+    }, 10_000);
+    console.log('[Signaling] Heartbeat started (10s interval)');
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      console.log('[Signaling] Heartbeat stopped');
+    }
+  }
+
+  /**
    * Listen for partner joining/leaving and room deletion
    */
   private listenForPartner(): void {
@@ -364,6 +400,7 @@ export class SignalingService {
    * Leave room and cleanup
    */
   async leave(): Promise<void> {
+    this.stopHeartbeat();
     if (this.partnerDebounceTimer) {
       clearTimeout(this.partnerDebounceTimer);
       this.partnerDebounceTimer = null;

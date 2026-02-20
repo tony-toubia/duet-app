@@ -30,6 +30,7 @@ export interface AudioPacket {
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
+  onIceRestartOffer: (offer: RTCSessionDescription) => void;
   onError: (error: Error) => void;
 }
 
@@ -50,6 +51,10 @@ export class WebRTCService {
   // Queue ICE candidates until remote description is set
   private pendingCandidates: RTCIceCandidate[] = [];
   private remoteDescriptionSet: boolean = false;
+
+  // ICE restart: schedule a restart after brief disconnection (e.g., screen lock)
+  private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private isOfferer: boolean = false;
 
   constructor(callbacks: WebRTCCallbacks) {
     this.callbacks = callbacks;
@@ -98,15 +103,21 @@ export class WebRTCService {
         console.log('[WebRTC] Connection state changed:', state);
         switch (state) {
           case 'connected':
+            this.cancelIceRestart();
             this.setConnectionState('connected');
             break;
           case 'disconnected':
             this.setConnectionState('reconnecting');
+            this.scheduleIceRestart();
             break;
           case 'failed':
+            this.cancelIceRestart();
             this.setConnectionState('failed');
+            // Also attempt ICE restart on failed — last chance before giving up
+            this.attemptIceRestart();
             break;
           case 'closed':
+            this.cancelIceRestart();
             this.setConnectionState('disconnected');
             break;
         }
@@ -152,8 +163,9 @@ export class WebRTCService {
       throw new Error('Peer connection not initialized');
     }
     
+    this.isOfferer = true;
     this.setConnectionState('connecting');
-    
+
     // Create data channel for audio data
     const channel = this.peerConnection.createDataChannel('audio', {
       ordered: false, // Don't need ordering for real-time audio
@@ -311,10 +323,56 @@ export class WebRTCService {
   onLocalIceCandidate: ((candidate: RTCIceCandidate) => void) | null = null;
   
   /**
+   * Schedule an ICE restart after 3 seconds if the connection doesn't self-recover.
+   * Only the offerer initiates ICE restart (creates new offer with iceRestart flag).
+   */
+  private scheduleIceRestart(): void {
+    this.cancelIceRestart();
+    this.iceRestartTimer = setTimeout(() => {
+      this.attemptIceRestart();
+    }, 3000);
+    console.log('[WebRTC] ICE restart scheduled in 3s');
+  }
+
+  private cancelIceRestart(): void {
+    if (this.iceRestartTimer) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
+  }
+
+  private async attemptIceRestart(): Promise<void> {
+    if (!this.peerConnection) return;
+
+    const state = this.peerConnection.connectionState;
+    if (state === 'connected') {
+      console.log('[WebRTC] Connection recovered, skipping ICE restart');
+      return;
+    }
+
+    if (!this.isOfferer) {
+      // Answerer can't initiate ICE restart — wait for offerer's new offer
+      console.log('[WebRTC] Answerer waiting for ICE restart offer from host');
+      return;
+    }
+
+    console.log('[WebRTC] Attempting ICE restart...');
+    try {
+      const offer = await this.peerConnection.createOffer({ iceRestart: true } as any);
+      await this.peerConnection.setLocalDescription(offer);
+      console.log('[WebRTC] ICE restart offer created, sending via signaling');
+      this.callbacks.onIceRestartOffer(offer as RTCSessionDescription);
+    } catch (e) {
+      console.error('[WebRTC] ICE restart failed:', e);
+    }
+  }
+
+  /**
    * Close connection and cleanup
    */
   close(): void {
     console.log('[WebRTC] Closing connection');
+    this.cancelIceRestart();
     this.dataChannel?.close();
     this.dataChannel = null;
 
@@ -324,6 +382,7 @@ export class WebRTCService {
     // Reset state
     this.remoteDescriptionSet = false;
     this.pendingCandidates = [];
+    this.isOfferer = false;
 
     this.setConnectionState('disconnected');
   }

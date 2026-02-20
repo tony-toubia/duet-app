@@ -190,6 +190,14 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         // This keeps UI in sync with audio ducking behavior
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onIceRestartOffer: async (offer) => {
+        // Host sends ICE restart offer via signaling so answerer can renegotiate
+        const { signaling } = get();
+        if (signaling) {
+          console.log('[Store] Sending ICE restart offer via signaling');
+          await signaling.sendOffer(offer);
+        }
+      },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
         crashlyticsService.logWebRTCError(error, 'createRoom');
@@ -279,6 +287,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isPartnerSpeaking: true });
         // Match native ducking timeout (500ms)
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+      },
+      onIceRestartOffer: async () => {
+        // Only the offerer (host) initiates ICE restart — answerer is a no-op here.
+        // The answerer handles the restart offer via the signaling onOffer callback.
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);

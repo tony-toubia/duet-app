@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
-import { AdSlot } from './AdSlot';
+import { PreRollAd, type ImaAdDisplayContainer } from './PreRollAd';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function LobbyScreen() {
@@ -18,6 +18,11 @@ export function LobbyScreen() {
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showingAd, setShowingAd] = useState(false);
+
+  const adContainerRef = useRef<HTMLDivElement | null>(null);
+  const adVideoRef = useRef<HTMLVideoElement | null>(null);
+  const adDisplayContainerRef = useRef<ImaAdDisplayContainer | null>(null);
 
   const { roomCode, initialize, createRoom, joinRoom } = useDuetStore();
   const userProfile = useAuthStore((s) => s.userProfile);
@@ -38,10 +43,10 @@ export function LobbyScreen() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (roomCode) {
+    if (roomCode && !showingAd) {
       router.push(`/app/room/${roomCode}`);
     }
-  }, [roomCode, router]);
+  }, [roomCode, showingAd, router]);
 
   useEffect(() => {
     const init = async () => {
@@ -55,14 +60,76 @@ export function LobbyScreen() {
     init();
   }, [initialize]);
 
+  // --- IMA Pre-Roll Ad helpers ---
+
+  const isAdEnabled = (): boolean => {
+    const vastTag = process.env.NEXT_PUBLIC_IMA_VAST_TAG?.trim();
+    return !!vastTag && !!window.google?.ima;
+  };
+
+  const initializeAdContainer = (): boolean => {
+    try {
+      const ima = window.google?.ima;
+      if (!ima) return false;
+
+      const containerDiv = document.createElement('div');
+      containerDiv.id = 'ima-ad-container';
+      containerDiv.style.cssText =
+        'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+        'width:min(640px,90vw);height:min(360px,50vh);z-index:101;';
+      document.body.appendChild(containerDiv);
+
+      const videoEl = document.createElement('video');
+      videoEl.playsInline = true;
+      videoEl.style.cssText = 'width:100%;height:100%;background:#000;border-radius:12px;';
+      containerDiv.appendChild(videoEl);
+
+      const adDisplayContainer = new ima.AdDisplayContainer(containerDiv, videoEl);
+      adDisplayContainer.initialize();
+
+      adContainerRef.current = containerDiv;
+      adVideoRef.current = videoEl;
+      adDisplayContainerRef.current = adDisplayContainer;
+
+      return true;
+    } catch (err) {
+      console.warn('[LobbyScreen] Failed to initialize IMA container:', err);
+      return false;
+    }
+  };
+
+  const cleanupAdElements = () => {
+    if (adContainerRef.current) {
+      adContainerRef.current.remove();
+      adContainerRef.current = null;
+    }
+    adVideoRef.current = null;
+    adDisplayContainerRef.current = null;
+  };
+
+  const handleAdComplete = useCallback(() => {
+    cleanupAdElements();
+    setShowingAd(false);
+  }, []);
+
+  // --- Room handlers ---
+
   const handleCreateRoom = async () => {
     setError(null);
     setIsLoading(true);
+
+    const adReady = isAdEnabled() && initializeAdContainer();
+
     try {
       const code = await createRoom();
       setShareCode(code);
+
+      if (adReady) {
+        setShowingAd(true);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to create room.');
+      if (adReady) cleanupAdElements();
     } finally {
       setIsLoading(false);
     }
@@ -75,11 +142,19 @@ export function LobbyScreen() {
     }
     setError(null);
     setIsLoading(true);
+
+    const adReady = isAdEnabled() && initializeAdContainer();
+
     try {
       await joinRoom(code.toUpperCase());
       setShowJoinInput(false);
+
+      if (adReady) {
+        setShowingAd(true);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to join room.');
+      if (adReady) cleanupAdElements();
     } finally {
       setIsLoading(false);
     }
@@ -128,17 +203,17 @@ export function LobbyScreen() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
-          {/* Logo */}
-          <div className="text-center pt-2">
-            <img
-              src="/duet-logo.png"
-              alt="Duet"
-              className="w-[60px] h-[56px] mx-auto"
-              style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
-            />
-          </div>
+        {/* Logo */}
+        <div className="text-center pt-6">
+          <img
+            src="/duet-logo.png"
+            alt="Duet"
+            className="w-[60px] h-[56px] mx-auto"
+            style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
+          />
         </div>
+
+        <div className="flex-1" />
 
         {/* Buttons */}
         <div className="w-full max-w-sm mx-auto">
@@ -197,17 +272,19 @@ export function LobbyScreen() {
         </div>
 
         <ShareModal
-          visible={!!shareCode}
+          visible={!!shareCode && !showingAd}
           roomCode={shareCode || ''}
           onClose={() => setShareCode(null)}
         />
       </div>
 
-      {/* Ad — rendered outside the layout container so AdSense style injection can't corrupt it */}
-      {process.env.NEXT_PUBLIC_AD_SLOT_LOBBY && (
-        <div className="w-full max-w-sm mx-auto px-6 py-4">
-          <AdSlot adSlot={process.env.NEXT_PUBLIC_AD_SLOT_LOBBY} format="rectangle" />
-        </div>
+      {showingAd && adDisplayContainerRef.current && adVideoRef.current && adContainerRef.current && (
+        <PreRollAd
+          adDisplayContainer={adDisplayContainerRef.current}
+          videoElement={adVideoRef.current}
+          adContainerElement={adContainerRef.current}
+          onComplete={handleAdComplete}
+        />
       )}
     </>
   );

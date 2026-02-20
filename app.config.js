@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "9",
+      buildNumber: "10",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com"
@@ -43,7 +43,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 19,
+      versionCode: 20,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       intentFilters: [
         {
@@ -83,8 +83,8 @@ module.exports = {
             minSdkVersion: 24,
             compileSdkVersion: 35,
             targetSdkVersion: 35,
-            enableProguardInReleaseBuilds: false,
-            enableShrinkResourcesInReleaseBuilds: false,
+            enableProguardInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
           },
           ios: {
             deploymentTarget: "15.1",
