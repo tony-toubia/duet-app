@@ -883,39 +883,27 @@ class DuetAudioManager: RCTEventEmitter {
     isSpeakerRoute = !hasExternalOutput
 
     print("[DuetAudio] Audio route: speaker=\\(isSpeakerRoute) (was=\\(wasSpeaker))")
-
-    // If route changed while engine is running, switch audio mode for proper AEC
-    if wasSpeaker != isSpeakerRoute && audioEngine?.isRunning == true {
-      applyAudioMode()
-    }
   }
 
-  // Apply the correct audio mode based on the current route
-  // Speaker: .voiceChat for hardware AEC (echo cancellation on speaker)
-  // Headphones/BT: .default to keep A2DP high-quality audio
-  private func applyAudioMode() {
+  // Reconfigure audio session (e.g., after route change or external category change).
+  // Always uses .default mode — iOS .playAndRecord already provides hardware AEC.
+  // Using .voiceChat can deadlock the UI thread on some iOS versions.
+  private func reconfigureAudioSession() {
+    guard audioEngine?.isRunning == true else { return }
+
     do {
       let session = AVAudioSession.sharedInstance()
-      let targetMode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
       let currentDucking = isDuckingActive && duckingEnabled
-
-      // Pause engine briefly to reconfigure
-      audioEngine?.pause()
 
       try session.setCategory(
         .playAndRecord,
-        mode: targetMode,
+        mode: .default,
         options: audioSessionOptions(ducking: currentDucking)
       )
 
-      try audioEngine?.start()
-      playerNode?.play()
-
-      print("[DuetAudio] Applied mode: \\(isSpeakerRoute ? "voiceChat (AEC)" : "default (A2DP)")")
+      print("[DuetAudio] Audio session reconfigured, route: \\(isSpeakerRoute ? "speaker" : "external")")
     } catch {
-      print("[DuetAudio] Failed to apply audio mode: \\(error)")
-      try? audioEngine?.start()
-      playerNode?.play()
+      print("[DuetAudio] Failed to reconfigure audio session: \\(error)")
     }
   }
 
@@ -927,13 +915,11 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
 
       // Reconfigure session with duckOthers added
-      // We don't pause the engine here - iOS handles the transition gracefully
       try session.setCategory(
         .playAndRecord,
-        mode: mode,
+        mode: .default,
         options: audioSessionOptions(ducking: true)
       )
 
@@ -969,11 +955,10 @@ class DuetAudioManager: RCTEventEmitter {
 
     do {
       let session = AVAudioSession.sharedInstance()
-      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
 
       try session.setCategory(
         .playAndRecord,
-        mode: mode,
+        mode: .default,
         options: audioSessionOptions(ducking: false)
       )
 
@@ -1030,26 +1015,26 @@ class DuetAudioManager: RCTEventEmitter {
         self?.endBackgroundTask()
       }
 
-      // Detect initial audio route for AEC mode selection
+      // Detect initial audio route
       updateAudioRoute()
 
       // Configure audio session for voice + mixing.
       // IMPORTANT: Do NOT call setActive(true) explicitly here.
       // Let AVAudioEngine.start() activate it implicitly - this avoids sending
       // interruption notifications to other apps (Spotify, etc.) which cause them to pause.
+      // Always use .default mode — .playAndRecord already provides hardware AEC.
+      // Note: .voiceChat mode can deadlock the UI thread on some iOS versions.
       let session = AVAudioSession.sharedInstance()
-      // Speaker → .voiceChat for hardware AEC; Headphones/BT → .default to preserve A2DP
-      let mode: AVAudioSession.Mode = isSpeakerRoute ? .voiceChat : .default
       try session.setCategory(
         .playAndRecord,
-        mode: mode,
+        mode: .default,
         options: audioSessionOptions()
       )
       try session.setPreferredSampleRate(outputSampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
       // Session will be activated implicitly by engine.start() below
 
-      print("[DuetAudio] Audio mode: \\(isSpeakerRoute ? "voiceChat (AEC on speaker)" : "default (A2DP preserved)")")
+      print("[DuetAudio] Audio session configured (.default mode, route: \\(isSpeakerRoute ? "speaker" : "external"))")
 
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
@@ -1505,7 +1490,7 @@ class DuetAudioManager: RCTEventEmitter {
       } else if isBluetoothHFP {
         // HFP is voice-optimized but lower quality - reconfigure to preserve A2DP
         print("[DuetAudio] Warning: Bluetooth HFP active - reconfiguring for A2DP")
-        applyAudioMode()
+        reconfigureAudioSession()
       }
 
       sendEvent(withName: "onConnectionStateChange", body: [
@@ -1526,7 +1511,7 @@ class DuetAudioManager: RCTEventEmitter {
     case .categoryChange:
       // Audio category changed by another app - restore our settings
       print("[DuetAudio] Category changed externally, reconfiguring")
-      applyAudioMode()
+      reconfigureAudioSession()
 
     default:
       break
