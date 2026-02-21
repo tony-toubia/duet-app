@@ -26,3 +26,9 @@ html, body {
   min-height: 100vh;
   min-height: 100dvh;
 }
+
+/* Native select dropdown options need dark text on light bg */
+select option {
+  color: #000;
+  background: #fff;
+}
