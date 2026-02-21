@@ -18,6 +18,8 @@ export default function NewCampaignPage() {
   const [includeUnsub, setIncludeUnsub] = useState(true);
   const [pushTitle, setPushTitle] = useState('');
   const [pushBody, setPushBody] = useState('');
+  const [pushImageUrl, setPushImageUrl] = useState('');
+  const [pushActionUrl, setPushActionUrl] = useState('');
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -65,7 +67,7 @@ export default function NewCampaignPage() {
         segmentId,
         channels,
         email: hasEmail ? { subject, body, includeUnsub } : null,
-        push: hasPush ? { title: pushTitle, body: pushBody, data: null } : null,
+        push: hasPush ? { title: pushTitle, body: pushBody, imageUrl: pushImageUrl.trim() || null, actionUrl: pushActionUrl.trim() || null, data: null } : null,
       });
       router.push(`/admin/campaigns/${id}`);
     } catch (err: any) {
@@ -197,6 +199,26 @@ export default function NewCampaignPage() {
                   rows={3}
                   placeholder="Notification message..."
                   className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary resize-y"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
+                <input
+                  type="text"
+                  value={pushImageUrl}
+                  onChange={(e) => setPushImageUrl(e.target.value)}
+                  placeholder="https://example.com/image.png"
+                  className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
+                <input
+                  type="text"
+                  value={pushActionUrl}
+                  onChange={(e) => setPushActionUrl(e.target.value)}
+                  placeholder="https://getduet.app or duet://room/ABC123"
+                  className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
                 />
               </div>
             </>

@@ -6,9 +6,9 @@
  * - Room invitations (future)
  */
 
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, Linking } from 'react-native';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 
@@ -124,12 +124,18 @@ class PushNotificationService {
         } else if (message.notification) {
           // Campaign/generic notification — display via notifee since FCM
           // doesn't auto-show notifications when app is in foreground
+          const imageUrl = message.notification.android?.imageUrl || message.data?.imageUrl;
           await notifee.displayNotification({
             title: message.notification.title,
             body: message.notification.body,
+            data: message.data,
             android: {
               channelId: 'duet_notifications',
               pressAction: { id: 'default' },
+              ...(imageUrl ? {
+                largeIcon: imageUrl as string,
+                style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl as string },
+              } : {}),
             },
           });
         }
@@ -232,7 +238,17 @@ class PushNotificationService {
         break;
 
       default:
-        console.log('[Push] Unknown message type:', data?.type);
+        // Campaign/journey notification with optional action URL
+        if (data?.actionUrl) {
+          const url = data.actionUrl as string;
+          if (url.startsWith('http')) {
+            Linking.openURL(url);
+          } else if (url.startsWith('duet://room/')) {
+            const roomCode = url.replace('duet://room/', '');
+            this.callbacks.onRoomInvite?.(roomCode, '', '');
+          }
+        }
+        break;
     }
   }
 

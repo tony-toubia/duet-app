@@ -39,6 +39,8 @@ export default function CampaignDetailPage() {
   const [editIncludeUnsub, setEditIncludeUnsub] = useState(true);
   const [editPushTitle, setEditPushTitle] = useState('');
   const [editPushBody, setEditPushBody] = useState('');
+  const [editPushImageUrl, setEditPushImageUrl] = useState('');
+  const [editPushActionUrl, setEditPushActionUrl] = useState('');
 
   useEffect(() => {
     loadSegments();
@@ -71,6 +73,8 @@ export default function CampaignDetailPage() {
     setEditIncludeUnsub(campaign.email?.includeUnsub ?? true);
     setEditPushTitle(campaign.push?.title || '');
     setEditPushBody(campaign.push?.body || '');
+    setEditPushImageUrl(campaign.push?.imageUrl || '');
+    setEditPushActionUrl(campaign.push?.actionUrl || '');
     setIsEditing(true);
   };
 
@@ -85,7 +89,7 @@ export default function CampaignDetailPage() {
         segmentId: editSegmentId,
         channels: editChannels,
         email: hasEmail ? { subject: editSubject, body: editBody, includeUnsub: editIncludeUnsub } : null,
-        push: hasPush ? { title: editPushTitle, body: editPushBody, data: null } : null,
+        push: hasPush ? { title: editPushTitle, body: editPushBody, imageUrl: editPushImageUrl.trim() || null, actionUrl: editPushActionUrl.trim() || null, data: null } : null,
       });
       setCampaign(updated);
       setIsEditing(false);
@@ -284,6 +288,26 @@ export default function CampaignDetailPage() {
                       className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary resize-y"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
+                    <input
+                      type="text"
+                      value={editPushImageUrl}
+                      onChange={(e) => setEditPushImageUrl(e.target.value)}
+                      placeholder="https://example.com/image.png"
+                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
+                    <input
+                      type="text"
+                      value={editPushActionUrl}
+                      onChange={(e) => setEditPushActionUrl(e.target.value)}
+                      placeholder="https://getduet.app or duet://room/ABC123"
+                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
+                    />
+                  </div>
                 </>
               )}
 
@@ -338,6 +362,12 @@ export default function CampaignDetailPage() {
                   <h3 className="text-sm font-medium text-text-muted mb-2">Push Notification</h3>
                   <p className="text-white text-sm font-medium">{campaign.push.title}</p>
                   <p className="text-sm text-lobby-warm/70">{campaign.push.body}</p>
+                  {campaign.push.imageUrl && (
+                    <p className="text-xs text-text-muted mt-2">Image: {campaign.push.imageUrl}</p>
+                  )}
+                  {campaign.push.actionUrl && (
+                    <p className="text-xs text-text-muted mt-1">Action: {campaign.push.actionUrl}</p>
+                  )}
                 </div>
               )}
 
@@ -427,6 +457,13 @@ export default function CampaignDetailPage() {
                   <p className="text-sm text-lobby-warm/70">
                     {isEditing ? editPushBody : campaign?.push?.body}
                   </p>
+                  {(isEditing ? editPushImageUrl : campaign?.push?.imageUrl) && (
+                    <img
+                      src={isEditing ? editPushImageUrl : campaign?.push?.imageUrl}
+                      className="w-full rounded-md mt-2 max-h-32 object-cover"
+                      alt="Push image"
+                    />
+                  )}
                 </div>
               </div>
             </div>

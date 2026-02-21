@@ -88,24 +88,37 @@ export async function executeCampaign(
       // Send push
       if (sendPush && campaign.push && user.pushToken && user.preferences?.pushOptIn !== false) {
         try {
+          const pushData: Record<string, string> = {
+            ...(campaign.push.data || {}),
+            ...(campaign.push.actionUrl ? { actionUrl: campaign.push.actionUrl } : {}),
+          };
           await messaging.send({
             token: user.pushToken,
             notification: {
               title: campaign.push.title,
               body: campaign.push.body,
+              imageUrl: campaign.push.imageUrl || undefined,
             },
-            data: campaign.push.data || undefined,
+            data: Object.keys(pushData).length > 0 ? pushData : undefined,
             android: {
               priority: 'high' as const,
-              notification: { channelId: 'duet_notifications', priority: 'high' as const },
+              notification: {
+                channelId: 'duet_notifications',
+                priority: 'high' as const,
+                imageUrl: campaign.push.imageUrl || undefined,
+              },
             },
             apns: {
               payload: {
                 aps: {
                   alert: { title: campaign.push.title, body: campaign.push.body },
                   sound: 'default',
+                  ...(campaign.push.imageUrl ? { 'mutable-content': 1 } : {}),
                 },
               },
+              fcmOptions: campaign.push.imageUrl
+                ? { imageUrl: campaign.push.imageUrl }
+                : undefined,
             },
           });
           pushSent++;

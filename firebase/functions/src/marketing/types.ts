@@ -11,6 +11,8 @@ export interface Campaign {
   push: {
     title: string;
     body: string;
+    imageUrl: string | null;
+    actionUrl: string | null;
     data: Record<string, string> | null;
   } | null;
   createdAt: number;
