@@ -7,6 +7,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
 import { PreRollAd, type ImaAdDisplayContainer } from './PreRollAd';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 
 export function LobbyScreen() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export function LobbyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showingAd, setShowingAd] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
 
   const adContainerRef = useRef<HTMLDivElement | null>(null);
   const adVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -160,11 +162,15 @@ export function LobbyScreen() {
     }
   };
 
-  if (!isInitialized) {
+  if (!isInitialized || !splashDone) {
     return (
       <div className="h-screen-safe bg-background flex flex-col items-center justify-center">
-        <Spinner size="lg" />
-        <p className="text-text-muted mt-4">Initializing...</p>
+        <AnimatedLogo size={160} onComplete={() => setSplashDone(true)} />
+        {!isInitialized && (
+          <div className="mt-6">
+            <Spinner size="lg" />
+          </div>
+        )}
       </div>
     );
   }

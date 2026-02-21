@@ -7,6 +7,7 @@ import { ShareModal } from './ShareModal';
 import { GuestRoomTimer } from './GuestRoomTimer';
 import { ReactionBar } from './ReactionBar';
 import { ReactionOverlay } from './ReactionOverlay';
+import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 
 
 function AvatarCircle({
@@ -254,11 +255,18 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           </button>
         </div>
 
-        {/* Avatars */}
-        <div className="flex justify-center items-center gap-10 sm:gap-16 py-8 sm:py-12">
-          <AvatarCircle label="You" initials="Y" isSpeaking={isSpeaking} isMuted={isMuted} />
-          <AvatarCircle label="Partner" initials="P" isSpeaking={isPartnerSpeaking} isDeafened={isDeafened} />
-        </div>
+        {/* Avatars / Connecting animation */}
+        {connectionState === 'connected' ? (
+          <div className="flex justify-center items-center gap-10 sm:gap-16 py-8 sm:py-12">
+            <AvatarCircle label="You" initials="Y" isSpeaking={isSpeaking} isMuted={isMuted} />
+            <AvatarCircle label="Partner" initials="P" isSpeaking={isPartnerSpeaking} isDeafened={isDeafened} />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 sm:py-12">
+            <AnimatedLogo size={120} loop />
+            <p className="text-text-muted text-sm mt-4">{getConnectionText()}</p>
+          </div>
+        )}
 
         {/* Action buttons */}
         <div className="flex justify-center gap-4 sm:gap-6 px-5">
