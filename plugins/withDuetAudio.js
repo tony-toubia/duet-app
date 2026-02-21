@@ -797,8 +797,9 @@ class DuetAudioManager: RCTEventEmitter {
   private var preDuckBuffer: [(Data, AVAudioFormat)] = []
   private var isDuckingTransition = false
 
-  // Audio route tracking for dynamic AEC mode
+  // Audio route tracking
   private var isSpeakerRoute = false
+  private var isReconfiguring = false // Guard against re-entrant setCategory
 
   // Background task tracking
   private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -885,11 +886,12 @@ class DuetAudioManager: RCTEventEmitter {
     print("[DuetAudio] Audio route: speaker=\\(isSpeakerRoute) (was=\\(wasSpeaker))")
   }
 
-  // Reconfigure audio session (e.g., after route change or external category change).
+  // Reconfigure audio session (e.g., after route change).
   // Always uses .default mode — iOS .playAndRecord already provides hardware AEC.
-  // Using .voiceChat can deadlock the UI thread on some iOS versions.
+  // Guard prevents re-entrant calls (setCategory fires .categoryChange notification).
   private func reconfigureAudioSession() {
-    guard audioEngine?.isRunning == true else { return }
+    guard audioEngine?.isRunning == true, !isReconfiguring else { return }
+    isReconfiguring = true
 
     do {
       let session = AVAudioSession.sharedInstance()
@@ -905,6 +907,8 @@ class DuetAudioManager: RCTEventEmitter {
     } catch {
       print("[DuetAudio] Failed to reconfigure audio session: \\(error)")
     }
+
+    isReconfiguring = false
   }
 
   // Request ducking: switch session options to include .duckOthers
@@ -912,6 +916,7 @@ class DuetAudioManager: RCTEventEmitter {
     guard duckingEnabled, !isDuckingActive else { return }
     isDuckingActive = true
     isDuckingTransition = true
+    isReconfiguring = true
 
     do {
       let session = AVAudioSession.sharedInstance()
@@ -929,6 +934,7 @@ class DuetAudioManager: RCTEventEmitter {
       isDuckingActive = false
       isDuckingTransition = false
     }
+    isReconfiguring = false
 
     // After the pre-duck buffer time, flush buffered packets and clear transition flag
     DispatchQueue.main.asyncAfter(deadline: .now() + preDuckBufferSec) { [weak self] in
@@ -952,6 +958,7 @@ class DuetAudioManager: RCTEventEmitter {
     isDuckingActive = false
     isDuckingTransition = false
     preDuckBuffer.removeAll()
+    isReconfiguring = true
 
     do {
       let session = AVAudioSession.sharedInstance()
@@ -966,6 +973,7 @@ class DuetAudioManager: RCTEventEmitter {
     } catch {
       print("[DuetAudio] Failed to deactivate ducking: \\(error)")
     }
+    isReconfiguring = false
   }
 
   // Schedule unduck after silence timeout
