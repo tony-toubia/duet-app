@@ -56,8 +56,8 @@ export async function executeCampaign(
       // Send email
       if (sendEmail && campaign.email && user.profile?.email) {
         const emailStateSnap = await db.ref(`emailState/${userId}/unsubscribed`).once('value');
-        if (emailStateSnap.val()) {
-          // Skip unsubscribed users
+        if (emailStateSnap.val() || user.preferences?.emailOptIn === false) {
+          // Skip unsubscribed or opted-out users
         } else {
           try {
             const html = campaignEmailHtml(
@@ -86,7 +86,7 @@ export async function executeCampaign(
       }
 
       // Send push
-      if (sendPush && campaign.push && user.pushToken) {
+      if (sendPush && campaign.push && user.pushToken && user.preferences?.pushOptIn !== false) {
         try {
           await messaging.send({
             token: user.pushToken,

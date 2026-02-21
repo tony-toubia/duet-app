@@ -1,10 +1,18 @@
 import { create } from 'zustand';
 import { User } from 'firebase/auth';
+import { ref, get as dbGet, update } from 'firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
+import { firebaseDb } from '@/services/firebase';
+
+export interface NotificationPreferences {
+  emailOptIn: boolean;
+  pushOptIn: boolean;
+}
 
 interface AuthState {
   user: User | null;
   userProfile: UserProfile | null;
+  preferences: NotificationPreferences;
   isLoading: boolean;
   isGuest: boolean;
   showUpgradeAuth: boolean;
@@ -23,6 +31,7 @@ interface AuthState {
   cancelUpgrade: () => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
 }
 
 let _authUnsub: (() => void) | null = null;
@@ -30,6 +39,7 @@ let _authUnsub: (() => void) | null = null;
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   userProfile: null,
+  preferences: { emailOptIn: true, pushOptIn: true },
   isLoading: true,
   isGuest: false,
   showUpgradeAuth: false,
@@ -53,9 +63,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         // Ensure profile exists (creates if needed, e.g. for anonymous users)
         await authService.ensureProfile(user);
-        const profile = await authService.getUserProfile(user.uid);
+        const [profile, prefsSnap] = await Promise.all([
+          authService.getUserProfile(user.uid),
+          dbGet(ref(firebaseDb, `/users/${user.uid}/preferences`)),
+        ]);
         if (get().user?.uid === user.uid) {
-          set({ userProfile: profile });
+          const prefsVal = prefsSnap.val() as Record<string, boolean> | null;
+          set({
+            userProfile: profile,
+            preferences: {
+              emailOptIn: prefsVal?.emailOptIn !== false,
+              pushOptIn: prefsVal?.pushOptIn !== false,
+            },
+          });
         }
       } else {
         set({
@@ -153,15 +173,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     // Clear store immediately so UI updates without waiting for onAuthStateChanged
-    set({ user: null, userProfile: null, isGuest: false });
+    set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
     await authService.signOut();
   },
 
   refreshProfile: async () => {
     const { user } = get();
     if (user) {
-      const profile = await authService.getUserProfile(user.uid);
-      set({ userProfile: profile });
+      const [profile, prefsSnap] = await Promise.all([
+        authService.getUserProfile(user.uid),
+        dbGet(ref(firebaseDb, `/users/${user.uid}/preferences`)),
+      ]);
+      const prefsVal = prefsSnap.val() as Record<string, boolean> | null;
+      set({
+        userProfile: profile,
+        preferences: {
+          emailOptIn: prefsVal?.emailOptIn !== false,
+          pushOptIn: prefsVal?.pushOptIn !== false,
+        },
+      });
     }
+  },
+
+  updatePreferences: async (prefs) => {
+    const { user, preferences } = get();
+    if (!user) return;
+    const updated = { ...preferences, ...prefs };
+    set({ preferences: updated });
+    await update(ref(firebaseDb, `/users/${user.uid}/preferences`), prefs);
   },
 }));

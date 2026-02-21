@@ -8,6 +8,7 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +23,7 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const insets = useSafeAreaInsets();
-  const { user, userProfile, isGuest, signOut, refreshProfile } = useAuthStore();
+  const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
 
   const handleChangePhoto = () => {
     setShowPhotoModal(true);
@@ -155,6 +156,38 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             </View>
           </View>
         </View>
+
+        {!isGuest && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            <View style={styles.card}>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={styles.infoLabel}>Email Notifications</Text>
+                  <Text style={styles.toggleDescription}>Receive marketing emails and updates</Text>
+                </View>
+                <Switch
+                  value={preferences.emailOptIn}
+                  onValueChange={(val) => updatePreferences({ emailOptIn: val })}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
+                  thumbColor={colors.text}
+                />
+              </View>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleInfo}>
+                  <Text style={styles.infoLabel}>Push Notifications</Text>
+                  <Text style={styles.toggleDescription}>Receive push alerts on this device</Text>
+                </View>
+                <Switch
+                  value={preferences.pushOptIn}
+                  onValueChange={(val) => updatePreferences({ pushOptIn: val })}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
+                  thumbColor={colors.text}
+                />
+              </View>
+            </View>
+          </View>
+        )}
 
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
@@ -346,6 +379,25 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '500',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.glassBorder,
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggleDescription: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+    opacity: 0.7,
   },
   signOutBtn: {
     marginHorizontal: 20,

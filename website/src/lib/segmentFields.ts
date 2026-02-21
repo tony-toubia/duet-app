@@ -47,6 +47,8 @@ export const SEGMENT_FIELDS: FieldDefinition[] = [
   { path: 'profile.displayName', label: 'Display name', source: 'users', type: 'string' },
   { path: 'pushToken', label: 'Push token', source: 'users', type: 'string' },
   { path: 'platform', label: 'Platform', source: 'users', type: 'enum', enumValues: ['ios', 'android'] },
+  { path: 'preferences.emailOptIn', label: 'Email opt-in', source: 'users', type: 'boolean' },
+  { path: 'preferences.pushOptIn', label: 'Push opt-in', source: 'users', type: 'boolean' },
   { path: 'unsubscribed', label: 'Unsubscribed', source: 'emailState', type: 'boolean' },
   { path: 'hasCreatedRoom', label: 'Has created room', source: 'emailState', type: 'boolean' },
   { path: 'welcomeSentAt', label: 'Welcome email sent', source: 'emailState', type: 'timestamp' },

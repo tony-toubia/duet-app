@@ -39,11 +39,12 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
   {
     id: 'has_email_subscribed',
     name: 'Subscribed email users',
-    description: 'Has email and not unsubscribed',
+    description: 'Has email, not unsubscribed, and email opt-in enabled',
     compute: ({ users, emailStates }) => {
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
         if (u.profile?.email && u.profile.authProvider !== 'anonymous') {
+          if (u.preferences?.emailOptIn === false) continue;
           const es = emailStates[uid];
           if (!es?.unsubscribed) members.add(uid);
         }
@@ -59,6 +60,20 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
         if (u.pushToken) members.add(uid);
+      }
+      return members;
+    },
+  },
+  {
+    id: 'push_opted_in',
+    name: 'Push opted in',
+    description: 'Has push token and push opt-in enabled',
+    compute: ({ users }) => {
+      const members = new Set<string>();
+      for (const [uid, u] of Object.entries(users)) {
+        if (u.pushToken && u.preferences?.pushOptIn !== false) {
+          members.add(uid);
+        }
       }
       return members;
     },
@@ -150,12 +165,14 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
   {
     id: 'email_and_push',
     name: 'Email + push available',
-    description: 'Subscribed email users who also have a push token',
+    description: 'Subscribed email users who also have a push token and both opted in',
     compute: ({ users, emailStates }) => {
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
         if (!u.profile?.email || u.profile.authProvider === 'anonymous') continue;
         if (!u.pushToken) continue;
+        if (u.preferences?.emailOptIn === false) continue;
+        if (u.preferences?.pushOptIn === false) continue;
         const es = emailStates[uid];
         if (!es?.unsubscribed) members.add(uid);
       }

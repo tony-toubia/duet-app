@@ -7,7 +7,7 @@ import { storageService } from '@/services/StorageService';
 
 export function ProfileScreen() {
   const router = useRouter();
-  const { user, userProfile, isGuest, signOut, refreshProfile } = useAuthStore();
+  const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
   const [isUploading, setIsUploading] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,31 @@ export function ProfileScreen() {
           </div>
         )}
 
+
+        {/* Notifications */}
+        {!isGuest && (
+          <div className="w-full bg-glass border border-glass-border rounded-2xl p-4">
+            <h3 className="text-xs text-text-muted uppercase tracking-wide font-semibold mb-3">Notifications</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Email Notifications</p>
+                <p className="text-xs text-text-muted mt-0.5 opacity-70">Receive marketing emails and updates</p>
+              </div>
+              <button
+                onClick={() => updatePreferences({ emailOptIn: !preferences.emailOptIn })}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  preferences.emailOptIn ? 'bg-primary' : 'bg-text-muted/30'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    preferences.emailOptIn ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         {isGuest ? (

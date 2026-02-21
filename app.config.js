@@ -15,7 +15,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "14",
+      buildNumber: "15",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com"
@@ -43,7 +43,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 21,
+      versionCode: 22,
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
       intentFilters: [
         {

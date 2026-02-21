@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import database from '@react-native-firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
+
+export interface NotificationPreferences {
+  emailOptIn: boolean;
+  pushOptIn: boolean;
+}
 
 interface AuthState {
   user: FirebaseAuthTypes.User | null;
   userProfile: UserProfile | null;
+  preferences: NotificationPreferences;
   isLoading: boolean;
   isGuest: boolean;
   emailLinkSent: boolean;
@@ -20,11 +27,13 @@ interface AuthState {
   continueAsGuest: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   userProfile: null,
+  preferences: { emailOptIn: true, pushOptIn: true },
   isLoading: true,
   isGuest: false,
   emailLinkSent: false,
@@ -42,9 +51,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         // Ensure profile exists (creates if needed, with retry for RTDB auth lag)
         await authService.ensureProfile(user);
-        const profile = await authService.getUserProfile(user.uid);
+        const [profile, prefsSnap] = await Promise.all([
+          authService.getUserProfile(user.uid),
+          database().ref(`/users/${user.uid}/preferences`).once('value'),
+        ]);
         if (get().user?.uid === user.uid) {
-          set({ userProfile: profile });
+          const prefsVal = prefsSnap.val();
+          set({
+            userProfile: profile,
+            preferences: {
+              emailOptIn: prefsVal?.emailOptIn !== false,
+              pushOptIn: prefsVal?.pushOptIn !== false,
+            },
+          });
         }
       } else {
         set({
@@ -156,14 +175,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     await authService.signOut();
-    set({ user: null, userProfile: null, isGuest: false });
+    set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
   },
 
   refreshProfile: async () => {
     const { user } = get();
     if (user) {
-      const profile = await authService.getUserProfile(user.uid);
-      set({ userProfile: profile });
+      const [profile, prefsSnap] = await Promise.all([
+        authService.getUserProfile(user.uid),
+        database().ref(`/users/${user.uid}/preferences`).once('value'),
+      ]);
+      const prefsVal = prefsSnap.val();
+      set({
+        userProfile: profile,
+        preferences: {
+          emailOptIn: prefsVal?.emailOptIn !== false,
+          pushOptIn: prefsVal?.pushOptIn !== false,
+        },
+      });
     }
+  },
+
+  updatePreferences: async (prefs) => {
+    const { user, preferences } = get();
+    if (!user) return;
+    const updated = { ...preferences, ...prefs };
+    set({ preferences: updated });
+    await database().ref(`/users/${user.uid}/preferences`).update(prefs);
   },
 }));

@@ -144,6 +144,15 @@
 
         "platform": {
           ".validate": "newData.isString() && (newData.val() == 'ios' || newData.val() == 'android')"
+        },
+
+        "preferences": {
+          "emailOptIn": {
+            ".validate": "newData.isBoolean()"
+          },
+          "pushOptIn": {
+            ".validate": "newData.isBoolean()"
+          }
         }
       }
     },
