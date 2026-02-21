@@ -4,6 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { computeAllSegments } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
+import { seedWelcomeJourney } from './journeys';
 import type { Campaign } from './types';
 
 const resendApiKey = defineSecret('RESEND_API_KEY');
@@ -153,6 +154,17 @@ export const marketingApi = onRequest(
 
       // ── Journeys ─────────────────────────────────────────────
       if (path === 'journeys' && method === 'GET') {
+        const snap = await db.ref('marketing/journeys').once('value');
+        const journeys: any[] = [];
+        snap.forEach((child) => {
+          journeys.push({ id: child.key, ...child.val() });
+        });
+        json(res, 200, { journeys });
+        return;
+      }
+
+      if (path === 'journeys/seed' && method === 'POST') {
+        await seedWelcomeJourney();
         const snap = await db.ref('marketing/journeys').once('value');
         const journeys: any[] = [];
         snap.forEach((child) => {

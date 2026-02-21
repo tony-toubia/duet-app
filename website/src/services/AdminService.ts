@@ -83,3 +83,7 @@ export async function fetchJourneys() {
 export async function updateJourney(id: string, data: any) {
   return api<any>(`journeys/${id}`, 'PUT', data);
 }
+
+export async function seedJourneys() {
+  return api<{ journeys: any[] }>('journeys/seed', 'POST');
+}

@@ -17,6 +17,7 @@ import {
   reengagementEmailHtml,
 } from './marketing/templates';
 import { computeAllSegments } from './marketing/segments';
+import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
 
 initializeApp();
@@ -368,6 +369,23 @@ export const computeSegments = onSchedule('every 6 hours', async () => {
   console.log('[Segments] Scheduled refresh complete:', JSON.stringify(counts));
 });
 
+// ─── Scheduled journey processor ─────────────────────────────────────
+
+/**
+ * Process all enabled journeys every hour. Checks each enrolled user's
+ * journey state, evaluates delays and conditions, sends messages.
+ */
+export const processJourneys = onSchedule(
+  {
+    schedule: 'every 1 hours',
+    secrets: [resendApiKey, unsubSecret],
+  },
+  async () => {
+    const result = await processAllJourneys(resendApiKey.value(), unsubSecret.value());
+    console.log('[Journeys] Scheduled run:', JSON.stringify(result));
+  }
+);
+
 // ─── Email welcome journey ───────────────────────────────────────────
 
 /**
@@ -418,6 +436,9 @@ export const onUserProfileCreated = onValueCreated(
     if (!sent) {
       // Allow retry by removing the timestamp
       await db.ref(`/emailState/${userId}/welcomeSentAt`).remove();
+    } else {
+      // Enroll in journeys (welcome flow step 0 already handled above)
+      await enrollUserInJourney(userId, 'user_created');
     }
   }
 );
@@ -471,6 +492,8 @@ export const onAuthProviderUpgraded = onValueWritten(
 
     if (!sent) {
       await db.ref(`/emailState/${userId}/welcomeSentAt`).remove();
+    } else {
+      await enrollUserInJourney(userId, 'user_created');
     }
   }
 );
