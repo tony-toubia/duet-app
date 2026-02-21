@@ -7,7 +7,6 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
 import { PreRollAd, type ImaAdDisplayContainer } from './PreRollAd';
 import { Spinner } from '@/components/ui/Spinner';
-import { AnimatedLogo } from '@/components/ui/AnimatedLogo';
 
 export function LobbyScreen() {
   const router = useRouter();
@@ -20,7 +19,6 @@ export function LobbyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showingAd, setShowingAd] = useState(false);
-  const [splashDone, setSplashDone] = useState(false);
 
   const adContainerRef = useRef<HTMLDivElement | null>(null);
   const adVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -162,15 +160,10 @@ export function LobbyScreen() {
     }
   };
 
-  if (!isInitialized || !splashDone) {
+  if (!isInitialized) {
     return (
       <div className="h-screen-safe bg-background flex flex-col items-center justify-center">
-        <AnimatedLogo size={160} onComplete={() => setSplashDone(true)} />
-        {!isInitialized && (
-          <div className="mt-6">
-            <Spinner size="lg" />
-          </div>
-        )}
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -212,10 +205,9 @@ export function LobbyScreen() {
         {/* Logo */}
         <div className="text-center pt-6">
           <img
-            src="/duet-logo.png"
+            src="/duet-logo-animated.gif"
             alt="Duet"
-            className="w-[60px] h-[56px] mx-auto"
-            style={{ filter: 'brightness(0) saturate(100%) invert(55%) sepia(80%) saturate(500%) hue-rotate(340deg)' }}
+            className="w-[80px] h-[60px] mx-auto object-contain"
           />
         </div>
 
