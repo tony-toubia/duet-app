@@ -20,25 +20,29 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-[#1a293d]" />
 
         {/* Hero content */}
-        <div className="relative z-10 text-center px-6 pb-32">
-          <h1
-            className="text-6xl font-bold tracking-tight mb-6 max-sm:text-4xl"
-            style={{ textShadow: '0 4px 24px rgba(232, 115, 74, 0.3)' }}
-          >
-            Duet
-          </h1>
+        <div className="relative z-10 text-center px-6 flex flex-col items-center justify-between min-h-screen py-16">
+          {/* Top group: logo + title */}
+          <div>
+            <img
+              src="/duet-logo-animated-once.gif"
+              alt="Duet"
+              width={140}
+              height={105}
+              className="mx-auto mb-4 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
+            />
+            <h1
+              className="text-6xl font-bold tracking-tight max-sm:text-4xl"
+              style={{ textShadow: '0 4px 24px rgba(232, 115, 74, 0.3)' }}
+            >
+              Duet
+            </h1>
+          </div>
 
-          {/* Animated logo — plays once */}
-          <img
-            src="/duet-logo-animated-once.gif"
-            alt="Duet"
-            width={140}
-            height={105}
-            className="mx-auto mb-28 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
-          />
-          <p className="text-xl text-white/85 leading-relaxed max-w-lg mx-auto mb-10 max-sm:text-lg">
-            Always-on voice for the people who matter most.
-          </p>
+          {/* Bottom group: tagline + CTAs */}
+          <div>
+            <p className="text-xl text-white/85 leading-relaxed max-w-lg mx-auto mb-10 max-sm:text-lg">
+              Always-on voice for the people who matter most.
+            </p>
 
           {/* CTAs */}
           <div className="flex gap-4 flex-wrap justify-center">
@@ -54,6 +58,7 @@ export default function LandingPage() {
             >
               Download
             </a>
+          </div>
           </div>
         </div>
 
