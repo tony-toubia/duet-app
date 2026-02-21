@@ -21,6 +21,13 @@ export default function LandingPage() {
 
         {/* Hero content */}
         <div className="relative z-10 text-center px-6 py-20">
+          <h1
+            className="text-6xl font-bold tracking-tight mb-6 max-sm:text-4xl"
+            style={{ textShadow: '0 4px 24px rgba(232, 115, 74, 0.3)' }}
+          >
+            Duet
+          </h1>
+
           {/* Animated logo — plays once */}
           <img
             src="/duet-logo-animated-once.gif"
@@ -29,13 +36,6 @@ export default function LandingPage() {
             height={105}
             className="mx-auto mb-6 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
           />
-
-          <h1
-            className="text-6xl font-bold tracking-tight mb-4 max-sm:text-4xl"
-            style={{ textShadow: '0 4px 24px rgba(232, 115, 74, 0.3)' }}
-          >
-            Duet
-          </h1>
           <p className="text-xl text-white/85 leading-relaxed max-w-lg mx-auto mb-10 max-sm:text-lg">
             Always-on voice for the people who matter most.
           </p>
@@ -125,7 +125,7 @@ export default function LandingPage() {
       </section>
 
       {/* ============ APP SHOWCASE ============ */}
-      <section className="py-24 px-6" style={{ background: 'linear-gradient(180deg, #1a293d 0%, #1e3148 50%, #1a293d 100%)' }}>
+      <section className="relative z-10 py-24 px-6" style={{ background: 'linear-gradient(180deg, #1a293d 0%, #1e3148 50%, #1a293d 100%)' }}>
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-4 max-sm:text-2xl">
             See it in action
@@ -258,7 +258,7 @@ export default function LandingPage() {
               Contact
             </a>
           </div>
-          <p className="text-white/30 text-xs">&copy; 2026 Duet. All rights reserved.</p>
+          <p className="text-white/30 text-xs">&copy; {new Date().getFullYear()} Duet. All rights reserved.</p>
         </div>
       </footer>
     </div>
