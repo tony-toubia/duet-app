@@ -23,7 +23,7 @@ export function HeroLights() {
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0 pointer-events-none [&_svg]:w-full [&_svg]:h-full [&_svg]:object-cover"
       aria-hidden="true"
     />
   );
