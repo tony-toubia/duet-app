@@ -34,7 +34,7 @@ export default function LandingPage() {
             alt="Duet"
             width={140}
             height={105}
-            className="mx-auto mb-14 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
+            className="mx-auto mb-28 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
           />
           <p className="text-xl text-white/85 leading-relaxed max-w-lg mx-auto mb-10 max-sm:text-lg">
             Always-on voice for the people who matter most.
