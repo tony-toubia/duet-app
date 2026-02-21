@@ -142,7 +142,7 @@ class AuthService {
     await AsyncStorage.setItem(EMAIL_LINK_STORAGE_KEY, email);
   }
 
-  isSignInWithEmailLink(url: string): boolean {
+  async isSignInWithEmailLink(url: string): Promise<boolean> {
     return auth().isSignInWithEmailLink(url);
   }
 

@@ -74,7 +74,6 @@ module.exports = {
     },
     plugins: [
       "@react-native-firebase/app",
-      "@react-native-firebase/analytics",
       "@react-native-firebase/crashlytics",
       "@react-native-google-signin/google-signin",
       [

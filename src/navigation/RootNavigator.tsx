@@ -35,7 +35,7 @@ export const RootNavigator = () => {
     const { completeSignInWithEmailLink } = useAuthStore.getState();
 
     const handleUrl = async (url: string) => {
-      if (authService.isSignInWithEmailLink(url)) {
+      if (await authService.isSignInWithEmailLink(url)) {
         try {
           await completeSignInWithEmailLink(url);
         } catch (error: any) {
