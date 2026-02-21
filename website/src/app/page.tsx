@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { AdSlot } from '@/components/app/AdSlot';
+import { HeroLights } from '@/components/ui/HeroLights';
 
 export default function LandingPage() {
   return (
@@ -16,11 +17,15 @@ export default function LandingPage() {
           className="object-cover"
           priority
         />
+        {/* Animated lights overlay (Lottie) */}
+        <div className="absolute inset-0 z-[1] mix-blend-screen opacity-60">
+          <HeroLights />
+        </div>
         {/* Dark overlay for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-[#1a293d]" />
+        <div className="absolute inset-0 z-[2] bg-gradient-to-b from-black/60 via-black/40 to-[#1a293d]" />
 
         {/* Hero content */}
-        <div className="relative z-10 text-center px-6 flex flex-col items-center justify-between min-h-screen py-16">
+        <div className="relative z-[3] text-center px-6 flex flex-col items-center justify-between min-h-screen py-16">
           {/* Top group: logo + title */}
           <div>
             <img
@@ -63,7 +68,7 @@ export default function LandingPage() {
         </div>
 
         {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 animate-bounce opacity-60">
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[4] animate-bounce opacity-60">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
