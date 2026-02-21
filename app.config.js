@@ -21,7 +21,7 @@ module.exports = {
         "applinks:duet-33cf5.firebaseapp.com"
       ],
       entitlements: {
-        "aps-environment": "development"
+        "aps-environment": "production"
       },
       infoPlist: {
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
@@ -74,6 +74,7 @@ module.exports = {
     },
     plugins: [
       "@react-native-firebase/app",
+      "@react-native-firebase/analytics",
       "@react-native-firebase/crashlytics",
       "@react-native-google-signin/google-signin",
       [

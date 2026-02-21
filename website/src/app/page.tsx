@@ -2,9 +2,22 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { AdSlot } from '@/components/app/AdSlot';
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Duet',
+  applicationCategory: 'CommunicationApplication',
+  operatingSystem: 'iOS, Android, Web',
+  description: 'Always-on voice for the people who matter most. One-tap rooms, peer-to-peer encrypted audio.',
+  url: 'https://getduet.app',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  installUrl: 'https://play.google.com/store/apps/details?id=com.duet.app',
+};
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-lobby-dark text-white">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* ============ HERO ============ */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">

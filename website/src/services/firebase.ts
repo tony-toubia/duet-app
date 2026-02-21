@@ -2,6 +2,7 @@ import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getDatabase, type Database } from 'firebase/database';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
+import { getAnalytics, type Analytics } from 'firebase/analytics';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -19,6 +20,7 @@ let _app: FirebaseApp | null = null;
 let _auth: Auth | null = null;
 let _db: Database | null = null;
 let _storage: FirebaseStorage | null = null;
+let _analytics: Analytics | null = null;
 
 function getApp(): FirebaseApp {
   if (!_app) {
@@ -47,3 +49,11 @@ export const firebaseStorage: FirebaseStorage = new Proxy({} as FirebaseStorage,
     return (_storage as any)[prop];
   },
 });
+
+export function getFirebaseAnalytics(): Analytics | null {
+  if (typeof window === 'undefined') return null;
+  if (!_analytics) {
+    try { _analytics = getAnalytics(getApp()); } catch { return null; }
+  }
+  return _analytics;
+}

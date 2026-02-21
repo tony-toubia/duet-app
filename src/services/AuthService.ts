@@ -3,6 +3,7 @@ import database from '@react-native-firebase/database';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { analyticsService } from './AnalyticsService';
 
 const EMAIL_LINK_STORAGE_KEY = 'emailForSignIn';
 
@@ -57,6 +58,8 @@ class AuthService {
     }
 
     const result = await auth().signInWithCredential(googleCredential);
+    analyticsService.logLogin('google');
+    analyticsService.setUserId(result.user.uid);
     return result.user;
   }
 
@@ -83,17 +86,23 @@ class AuthService {
     await result.user.updateProfile({ displayName });
     await result.user.reload();
     await this.createOrUpdateProfile(auth().currentUser!, 'email');
+    analyticsService.logSignUp('email');
+    analyticsService.setUserId(auth().currentUser!.uid);
     return auth().currentUser!;
   }
 
   async signInWithEmail(email: string, password: string): Promise<FirebaseAuthTypes.User> {
     const result = await auth().signInWithEmailAndPassword(email, password);
+    analyticsService.logLogin('email');
+    analyticsService.setUserId(result.user.uid);
     return result.user;
   }
 
   async continueAsGuest(): Promise<FirebaseAuthTypes.User> {
     const result = await auth().signInAnonymously();
     await this.createOrUpdateProfile(result.user, 'anonymous');
+    analyticsService.logLogin('anonymous');
+    analyticsService.setUserId(result.user.uid);
     return result.user;
   }
 
@@ -184,6 +193,7 @@ class AuthService {
 
   async signOut(): Promise<void> {
     try { await GoogleSignin.signOut(); } catch {}
+    analyticsService.setUserId(null);
     await auth().signOut();
   }
 

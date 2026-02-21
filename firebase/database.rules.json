@@ -24,8 +24,8 @@
 
         "members": {
           "$memberId": {
-            // Members can add themselves
-            ".write": true,
+            // Members can add/remove themselves (onDisconnect inherits auth from registration)
+            ".write": "auth != null",
             ".validate": "newData.hasChildren(['role', 'joinedAt'])",
 
             "role": {
@@ -40,7 +40,7 @@
 
         // WebRTC signaling data
         "offer": {
-          ".write": true,
+          ".write": "auth != null",
           ".validate": "newData.hasChildren(['type', 'sdp'])",
 
           "type": {
@@ -53,7 +53,7 @@
         },
 
         "answer": {
-          ".write": true,
+          ".write": "auth != null",
           ".validate": "newData.hasChildren(['type', 'sdp'])",
 
           "type": {
@@ -67,7 +67,7 @@
 
         "offerCandidates": {
           "$candidateId": {
-            ".write": true,
+            ".write": "auth != null",
             ".validate": "newData.hasChildren(['candidate', 'sdpMid', 'sdpMLineIndex'])",
 
             "candidate": {
@@ -86,7 +86,7 @@
 
         "answerCandidates": {
           "$candidateId": {
-            ".write": true,
+            ".write": "auth != null",
             ".validate": "newData.hasChildren(['candidate', 'sdpMid', 'sdpMLineIndex'])",
 
             "candidate": {
@@ -222,8 +222,9 @@
     "friendCodes": {
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null",
-        ".validate": "newData.isString() && newData.val().length > 0"
+        // Only allow writing if the code doesn't exist yet, or the current user owns it
+        ".write": "auth != null && (!data.exists() || data.val() == auth.uid)",
+        ".validate": "newData.isString() && newData.val() == auth.uid"
       }
     },
 

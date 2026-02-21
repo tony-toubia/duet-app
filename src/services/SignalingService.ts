@@ -1,6 +1,7 @@
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import { RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
+import { analyticsService } from './AnalyticsService';
 
 /**
  * Firebase Signaling Service
@@ -103,6 +104,7 @@ export class SignalingService {
     this.listenForIceCandidates('answerCandidates');
 
     console.log('[Signaling] Created room:', this.roomCode);
+    analyticsService.logRoomCreated();
     return this.roomCode;
   }
   
@@ -156,6 +158,7 @@ export class SignalingService {
     this.listenForPartner();
     
     console.log('[Signaling] Joined room:', this.roomCode);
+    analyticsService.logRoomJoined();
   }
   
   /**

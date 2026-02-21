@@ -1,5 +1,6 @@
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
+import { analyticsService } from './AnalyticsService';
 
 export interface FriendEntry {
   status: 'pending' | 'accepted';
@@ -45,6 +46,7 @@ class FriendsService {
     };
 
     await database().ref().update(updates);
+    analyticsService.logFriendAdded();
     console.log('[Friends] Request sent to:', targetUid);
   }
 

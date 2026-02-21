@@ -1,76 +1,72 @@
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { onValueWritten, onValueDeleted, onValueCreated } from 'firebase-functions/v2/database';
+import { initializeApp } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
+import { getMessaging } from 'firebase-admin/messaging';
+import type { Message } from 'firebase-admin/messaging';
 
-admin.initializeApp();
+initializeApp();
 
-const db = admin.database();
-const messaging = admin.messaging();
-
-/**
- * Clean up stale rooms older than 24 hours
- * Runs every hour
- */
-export const cleanupStaleRooms = functions.pubsub
-  .schedule('every 1 hours')
-  .onRun(async (context) => {
-    const cutoffTime = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
-
-    try {
-      const snapshot = await db
-        .ref('rooms')
-        .orderByChild('createdAt')
-        .endAt(cutoffTime)
-        .once('value');
-
-      const deletions: Promise<void>[] = [];
-
-      snapshot.forEach((child) => {
-        console.log(`Deleting stale room: ${child.key}`);
-        deletions.push(child.ref.remove());
-      });
-
-      await Promise.all(deletions);
-      console.log(`Cleaned up ${deletions.length} stale rooms`);
-
-      return null;
-    } catch (error) {
-      console.error('Error cleaning up rooms:', error);
-      throw error;
-    }
-  });
+const db = getDatabase();
+const messaging = getMessaging();
 
 /**
- * Send push notification when a partner leaves the room
- * Triggered when a member is removed from a room
+ * Clean up stale rooms older than 24 hours.
+ * Runs every hour.
  */
-export const onMemberLeft = functions.database
-  .ref('/rooms/{roomCode}/members/{memberId}')
-  .onDelete(async (snapshot, context) => {
-    const { roomCode, memberId } = context.params;
+export const cleanupStaleRooms = onSchedule('every 1 hours', async () => {
+  const cutoffTime = Date.now() - 24 * 60 * 60 * 1000;
+
+  try {
+    const snapshot = await db
+      .ref('rooms')
+      .orderByChild('createdAt')
+      .endAt(cutoffTime)
+      .once('value');
+
+    const deletions: Promise<void>[] = [];
+    snapshot.forEach((child) => {
+      console.log(`Deleting stale room: ${child.key}`);
+      deletions.push(child.ref.remove());
+    });
+
+    await Promise.all(deletions);
+    console.log(`Cleaned up ${deletions.length} stale rooms`);
+  } catch (error) {
+    console.error('Error cleaning up rooms:', error);
+    throw error;
+  }
+});
+
+/**
+ * Send push notification when a partner leaves the room.
+ * Triggered when a member is removed from a room.
+ */
+export const onMemberLeft = onValueDeleted(
+  { ref: '/rooms/{roomCode}/members/{memberId}', region: 'us-central1' },
+  async (event) => {
+    const roomCode = event.params.roomCode;
+    const memberId = event.params.memberId;
 
     try {
-      // Get the room to find the other member
       const roomSnapshot = await db.ref(`/rooms/${roomCode}`).once('value');
       const room = roomSnapshot.val();
 
       if (!room || !room.members) {
         console.log(`Room ${roomCode} no longer exists or has no members`);
-        return null;
+        return;
       }
 
-      // Find remaining members
       const remainingMemberIds = Object.keys(room.members).filter(
         (id) => id !== memberId
       );
 
       if (remainingMemberIds.length === 0) {
         console.log(`No remaining members in room ${roomCode}`);
-        return null;
+        return;
       }
 
-      // Send notification to each remaining member
       const notifications = remainingMemberIds.map(async (remainingMemberId) => {
-        // Get the user's push token
         const userSnapshot = await db
           .ref(`/users/${remainingMemberId}`)
           .once('value');
@@ -81,7 +77,7 @@ export const onMemberLeft = functions.database
           return;
         }
 
-        const message: admin.messaging.Message = {
+        const message: Message = {
           token: userData.pushToken,
           notification: {
             title: 'Partner Disconnected',
@@ -91,7 +87,6 @@ export const onMemberLeft = functions.database
             type: 'partner_left',
             roomCode,
           },
-          // Platform-specific options
           android: {
             priority: 'high',
             notification: {
@@ -117,7 +112,6 @@ export const onMemberLeft = functions.database
           await messaging.send(message);
           console.log(`Notification sent to ${remainingMemberId}`);
         } catch (error: any) {
-          // Handle invalid tokens
           if (
             error.code === 'messaging/invalid-registration-token' ||
             error.code === 'messaging/registration-token-not-registered'
@@ -131,33 +125,30 @@ export const onMemberLeft = functions.database
       });
 
       await Promise.all(notifications);
-      return null;
     } catch (error) {
       console.error('Error in onMemberLeft:', error);
       throw error;
     }
-  });
+  }
+);
 
 /**
  * Clean up room when all members leave — but only if the room is old enough.
- * A short grace period prevents deleting rooms when the host briefly backgrounds
- * the app (e.g. to share the room code), which fires onDisconnect and empties members.
  */
-export const onRoomEmpty = functions.database
-  .ref('/rooms/{roomCode}/members')
-  .onWrite(async (change, context) => {
-    const { roomCode } = context.params;
+export const onRoomEmpty = onValueWritten(
+  { ref: '/rooms/{roomCode}/members', region: 'us-central1' },
+  async (event) => {
+    const roomCode = event.params.roomCode;
 
-    // If members node was deleted or is empty, check room age before deleting
-    if (!change.after.exists() || !change.after.hasChildren()) {
+    if (!event.data.after.exists() || !event.data.after.hasChildren()) {
       const roomSnap = await db.ref(`/rooms/${roomCode}`).once('value');
       const room = roomSnap.val();
 
-      if (!room) return null;
+      if (!room) return;
 
       const createdAt = room.createdAt || 0;
       const ageMs = Date.now() - createdAt;
-      const GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
+      const GRACE_PERIOD_MS = 5 * 60 * 1000;
 
       if (ageMs > GRACE_PERIOD_MS) {
         console.log(`Room ${roomCode} is empty and ${Math.round(ageMs / 1000)}s old, cleaning up`);
@@ -166,33 +157,30 @@ export const onRoomEmpty = functions.database
         console.log(`Room ${roomCode} is empty but only ${Math.round(ageMs / 1000)}s old, keeping for grace period`);
       }
     }
-
-    return null;
-  });
+  }
+);
 
 /**
- * Send push notification when a friend request is created
+ * Send push notification when a friend request is created.
  */
-export const onFriendRequestCreated = functions.database
-  .ref('/friends/{userId}/{friendId}')
-  .onCreate(async (snapshot, context) => {
-    const { userId, friendId } = context.params;
-    const friendData = snapshot.val();
+export const onFriendRequestCreated = onValueCreated(
+  { ref: '/friends/{userId}/{friendId}', region: 'us-central1' },
+  async (event) => {
+    const userId = event.params.userId;
+    const friendId = event.params.friendId;
+    const friendData = event.data.val();
 
-    // Only notify the recipient (the user who didn't initiate)
     if (friendData.initiatedBy === userId) {
-      // The friend entry was written TO userId's list BY friendId (the initiator)
-      // So userId is the recipient
       try {
         const userSnapshot = await db.ref(`/users/${userId}`).once('value');
         const userData = userSnapshot.val();
 
         if (!userData?.pushToken) {
           console.log(`No push token for user ${userId}`);
-          return null;
+          return;
         }
 
-        const message: admin.messaging.Message = {
+        const message: Message = {
           token: userData.pushToken,
           notification: {
             title: 'Friend Request',
@@ -229,21 +217,18 @@ export const onFriendRequestCreated = functions.database
         console.error('Error sending friend request notification:', error);
       }
     }
-
-    return null;
-  });
+  }
+);
 
 /**
- * Send push notification when a room invitation is created
+ * Send push notification when a room invitation is created.
  */
-export const onInvitationCreated = functions.database
-  .ref('/invitations/{invitationId}')
-  .onCreate(async (snapshot, context) => {
-    const invitation = snapshot.val();
+export const onInvitationCreated = onValueCreated(
+  { ref: '/invitations/{invitationId}', region: 'us-central1' },
+  async (event) => {
+    const invitation = event.data.val();
 
-    if (!invitation?.toUid) {
-      return null;
-    }
+    if (!invitation?.toUid) return;
 
     try {
       const userSnapshot = await db.ref(`/users/${invitation.toUid}`).once('value');
@@ -251,10 +236,10 @@ export const onInvitationCreated = functions.database
 
       if (!userData?.pushToken) {
         console.log(`No push token for user ${invitation.toUid}`);
-        return null;
+        return;
       }
 
-      const message: admin.messaging.Message = {
+      const message: Message = {
         token: userData.pushToken,
         notification: {
           title: 'Room Invitation',
@@ -290,10 +275,9 @@ export const onInvitationCreated = functions.database
       console.log(`Room invitation notification sent to ${invitation.toUid}`);
 
       // Clean up invitation after sending
-      await snapshot.ref.remove();
+      await event.data.ref.remove();
     } catch (error) {
       console.error('Error sending room invitation notification:', error);
     }
-
-    return null;
-  });
+  }
+);
