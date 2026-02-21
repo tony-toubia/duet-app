@@ -107,7 +107,6 @@ module.exports = {
           delayAppMeasurementInit: true
         }
       ],
-      "@notifee/react-native",
       "./plugins/withDuetAudio",
       "./plugins/withAndroidQueries"
     ],
