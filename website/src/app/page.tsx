@@ -135,7 +135,7 @@ export default function LandingPage() {
           </p>
 
           {/* Phone mockups */}
-          <div className="flex justify-center items-start gap-6 sm:gap-10 overflow-x-auto pb-4 max-sm:px-4">
+          <div className="flex justify-center items-start gap-6 sm:gap-10 overflow-visible pb-4 max-sm:overflow-x-auto max-sm:px-4">
             {/* Lobby */}
             <div className="flex-shrink-0 text-center">
               <div className="transform -rotate-3 hover:rotate-0 transition-transform duration-500">
