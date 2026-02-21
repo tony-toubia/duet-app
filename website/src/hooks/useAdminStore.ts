@@ -26,6 +26,7 @@ interface AdminState {
   refreshSegments: () => Promise<void>;
   createCampaign: (data: any) => Promise<string>;
   sendCampaign: (id: string) => Promise<void>;
+  deleteCustomSegment: (id: string) => Promise<void>;
 }
 
 export const useAdminStore = create<AdminState>((set, get) => ({
@@ -87,5 +88,10 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   sendCampaign: async (id) => {
     await admin.sendCampaign(id);
     await get().loadCampaigns();
+  },
+
+  deleteCustomSegment: async (id) => {
+    await admin.deleteCustomSegment(id);
+    await get().loadSegments();
   },
 }));

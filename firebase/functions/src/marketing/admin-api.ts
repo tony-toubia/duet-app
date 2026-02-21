@@ -2,10 +2,10 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
-import { computeAllSegments } from './segments';
+import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
-import type { Campaign } from './types';
+import type { Campaign, SegmentContext } from './types';
 
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
@@ -61,13 +61,13 @@ export const marketingApi = onRequest(
       if (path === 'segments' && method === 'GET') {
         const snap = await db.ref('marketing/segments').once('value');
         const segments = snap.val() || {};
-        // Strip members from the list response for performance
         const list = Object.entries(segments).map(([id, s]: [string, any]) => ({
           id,
           name: s.name,
           description: s.description,
           memberCount: s.memberCount || 0,
           lastComputedAt: s.lastComputedAt || 0,
+          isCustom: !!s.isCustom,
         }));
         json(res, 200, { segments: list });
         return;
@@ -77,6 +77,84 @@ export const marketingApi = onRequest(
         const counts = await computeAllSegments();
         json(res, 200, { counts });
         return;
+      }
+
+      // ── Custom Segments ────────────────────────────────────────
+      if (path === 'custom-segments' && method === 'GET') {
+        const snap = await db.ref('marketing/customSegments').once('value');
+        const raw = snap.val() || {};
+        const list = Object.entries(raw).map(([id, s]: [string, any]) => ({
+          id, name: s.name, description: s.description,
+          rules: s.rules, createdAt: s.createdAt, updatedAt: s.updatedAt,
+        }));
+        json(res, 200, { customSegments: list });
+        return;
+      }
+
+      if (path === 'custom-segments' && method === 'POST') {
+        const { name, description, rules } = req.body;
+        if (!name || !rules?.groups?.length) {
+          json(res, 400, { error: 'Name and at least one rule group required' });
+          return;
+        }
+        const id = `custom_${Date.now()}`;
+        const now = Date.now();
+        const segment = { name, description: description || '', rules, createdAt: now, updatedAt: now };
+        await db.ref(`marketing/customSegments/${id}`).set(segment);
+        json(res, 201, { id, ...segment });
+        return;
+      }
+
+      if (path === 'custom-segments/preview' && method === 'POST') {
+        const { rules } = req.body;
+        if (!rules?.groups?.length) {
+          json(res, 400, { error: 'Rules required' });
+          return;
+        }
+        const [usersSnap, emailStatesSnap, statusesSnap] = await Promise.all([
+          db.ref('users').once('value'),
+          db.ref('emailState').once('value'),
+          db.ref('status').once('value'),
+        ]);
+        const ctx: SegmentContext = {
+          users: usersSnap.val() || {},
+          emailStates: emailStatesSnap.val() || {},
+          statuses: statusesSnap.val() || {},
+          now: Date.now(),
+        };
+        const memberSet = computeCustomSegment(rules, ctx);
+        json(res, 200, { memberCount: memberSet.size });
+        return;
+      }
+
+      const customSegMatch = path.match(/^custom-segments\/(custom_[^/]+)$/);
+      if (customSegMatch) {
+        const segId = customSegMatch[1];
+
+        if (method === 'GET') {
+          const snap = await db.ref(`marketing/customSegments/${segId}`).once('value');
+          if (!snap.exists()) { json(res, 404, { error: 'Not found' }); return; }
+          json(res, 200, { id: segId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'PUT') {
+          const existing = await db.ref(`marketing/customSegments/${segId}`).once('value');
+          if (!existing.exists()) { json(res, 404, { error: 'Not found' }); return; }
+          const body = req.body;
+          body.updatedAt = Date.now();
+          await db.ref(`marketing/customSegments/${segId}`).update(body);
+          const snap = await db.ref(`marketing/customSegments/${segId}`).once('value');
+          json(res, 200, { id: segId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'DELETE') {
+          await db.ref(`marketing/customSegments/${segId}`).remove();
+          await db.ref(`marketing/segments/${segId}`).remove();
+          json(res, 200, { deleted: segId });
+          return;
+        }
       }
 
       // ── Campaigns ────────────────────────────────────────────

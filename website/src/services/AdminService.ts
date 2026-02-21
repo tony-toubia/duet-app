@@ -75,6 +75,31 @@ export async function fetchStats() {
   }>('stats');
 }
 
+// Custom Segments
+export async function fetchCustomSegments() {
+  return api<{ customSegments: any[] }>('custom-segments');
+}
+
+export async function createCustomSegment(data: { name: string; description?: string; rules: any }) {
+  return api<any>('custom-segments', 'POST', data);
+}
+
+export async function fetchCustomSegment(id: string) {
+  return api<any>(`custom-segments/${id}`);
+}
+
+export async function updateCustomSegment(id: string, data: any) {
+  return api<any>(`custom-segments/${id}`, 'PUT', data);
+}
+
+export async function deleteCustomSegment(id: string) {
+  return api<{ deleted: string }>(`custom-segments/${id}`, 'DELETE');
+}
+
+export async function previewSegmentRules(rules: any) {
+  return api<{ memberCount: number }>('custom-segments/preview', 'POST', { rules });
+}
+
 // Journeys
 export async function fetchJourneys() {
   return api<{ journeys: any[] }>('journeys');

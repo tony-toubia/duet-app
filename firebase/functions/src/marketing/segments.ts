@@ -1,5 +1,6 @@
 import { getDatabase } from 'firebase-admin/database';
-import type { SegmentDefinition, SegmentContext } from './types';
+import type { SegmentDefinition, SegmentContext, SegmentRuleSet, SegmentCondition, FieldDefinition } from './types';
+import { SEGMENT_FIELDS } from './types';
 
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
@@ -163,6 +164,81 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
   },
 ];
 
+// ─── Custom segment rule evaluator ───────────────────────────────────
+
+const FIELD_MAP = new Map(SEGMENT_FIELDS.map((f) => [f.path, f]));
+
+function resolvePath(obj: any, path: string): any {
+  const parts = path.split('.');
+  let current = obj;
+  for (const part of parts) {
+    if (current == null) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function getFieldValue(uid: string, fieldDef: FieldDefinition, ctx: SegmentContext): any {
+  let source: any;
+  switch (fieldDef.source) {
+    case 'users':      source = ctx.users[uid]; break;
+    case 'emailState': source = ctx.emailStates[uid]; break;
+    case 'status':     source = ctx.statuses[uid]; break;
+  }
+  if (!source) return undefined;
+  return resolvePath(source, fieldDef.path);
+}
+
+function evaluateCondition(value: any, cond: SegmentCondition, now: number): boolean {
+  switch (cond.operator) {
+    case 'exists':             return value != null && value !== '';
+    case 'not_exists':         return value == null || value === '';
+    case 'is_true':            return value === true;
+    case 'is_false':           return value === false || value == null;
+    case 'equals':             return value == cond.value;
+    case 'not_equals':         return value != cond.value;
+    case 'contains':           return typeof value === 'string' && value.toLowerCase().includes(String(cond.value).toLowerCase());
+    case 'not_contains':       return typeof value === 'string' && !value.toLowerCase().includes(String(cond.value).toLowerCase());
+    case 'greater_than':       return typeof value === 'number' && value > Number(cond.value);
+    case 'less_than':          return typeof value === 'number' && value < Number(cond.value);
+    case 'between':            return typeof value === 'number' && value >= Number(cond.value) && value <= Number(cond.value2);
+    case 'within_last_days': {
+      if (typeof value !== 'number') return false;
+      return value >= now - Number(cond.value) * 86400000;
+    }
+    case 'more_than_days_ago': {
+      if (typeof value !== 'number') return false;
+      return value < now - Number(cond.value) * 86400000;
+    }
+    default: return false;
+  }
+}
+
+function evaluateRuleSet(uid: string, rules: SegmentRuleSet, ctx: SegmentContext): boolean {
+  const groupResults = rules.groups.map((group) => {
+    const condResults = group.conditions.map((cond) => {
+      const fieldDef = FIELD_MAP.get(cond.field);
+      if (!fieldDef) return false;
+      const value = getFieldValue(uid, fieldDef, ctx);
+      return evaluateCondition(value, cond, ctx.now);
+    });
+    return group.combinator === 'AND'
+      ? condResults.every(Boolean)
+      : condResults.some(Boolean);
+  });
+  return rules.combinator === 'AND'
+    ? groupResults.every(Boolean)
+    : groupResults.some(Boolean);
+}
+
+export function computeCustomSegment(rules: SegmentRuleSet, ctx: SegmentContext): Set<string> {
+  const members = new Set<string>();
+  for (const uid of Object.keys(ctx.users)) {
+    if (evaluateRuleSet(uid, rules, ctx)) members.add(uid);
+  }
+  return members;
+}
+
 // ─── Segment computation ─────────────────────────────────────────────
 
 export async function computeAllSegments(): Promise<Record<string, number>> {
@@ -199,6 +275,27 @@ export async function computeAllSegments(): Promise<Record<string, number>> {
       lastComputedAt: now,
       memberCount: memberSet.size,
       members,
+    };
+  }
+
+  // Process custom segments
+  const customSnap = await db.ref('marketing/customSegments').once('value');
+  const customSegments = customSnap.val() || {};
+
+  for (const [id, def] of Object.entries(customSegments) as [string, any][]) {
+    if (!def.rules?.groups?.length) continue;
+    const memberSet = computeCustomSegment(def.rules, ctx);
+    const members: Record<string, true> = {};
+    for (const uid of memberSet) members[uid] = true;
+
+    counts[id] = memberSet.size;
+    updates[`segments/${id}`] = {
+      name: def.name,
+      description: def.description || '',
+      lastComputedAt: now,
+      memberCount: memberSet.size,
+      members,
+      isCustom: true,
     };
   }
 
