@@ -11,6 +11,7 @@ import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messag
 import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
+import { eventTrackingService } from './EventTrackingService';
 
 export interface PushNotificationCallbacks {
   onPartnerLeft?: (roomCode: string) => void;
@@ -159,6 +160,9 @@ class PushNotificationService {
     // Handle notification opens (when user taps notification)
     messaging().onNotificationOpenedApp((message) => {
       console.log('[Push] Notification opened app:', message.data?.type);
+      eventTrackingService.track('push_opened', {
+        type: (message.data?.type as string) || 'notification',
+      });
       this.handleMessage(message, false);
     });
 
@@ -168,6 +172,9 @@ class PushNotificationService {
       .then((message) => {
         if (message) {
           console.log('[Push] App opened from notification:', message.data?.type);
+          eventTrackingService.track('push_opened', {
+            type: (message.data?.type as string) || 'notification',
+          });
           this.handleMessage(message, false);
         }
       });

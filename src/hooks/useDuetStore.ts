@@ -7,6 +7,7 @@ import { SignalingService } from '@/services/SignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { friendsService } from '@/services/FriendsService';
+import { eventTrackingService } from '@/services/EventTrackingService';
 
 interface DuetState {
   // Connection
@@ -228,6 +229,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const roomCode = await signaling.createRoom();
     set({ roomCode });
     crashlyticsService.logRoomCreated(roomCode);
+    eventTrackingService.track('room_created', { roomCode });
 
     // Request mic permission on Android (iOS handles via infoPlist)
     if (Platform.OS === 'android') {
@@ -327,6 +329,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const partnerUid = await signaling.getPartnerUid();
     set({ partnerId: partnerUid || 'partner' });
     crashlyticsService.logRoomJoined(code);
+    eventTrackingService.track('room_joined', { roomCode: code });
 
     // Request mic permission on Android (iOS handles via infoPlist)
     if (Platform.OS === 'android') {

@@ -241,6 +241,26 @@ export const marketingApi = onRequest(
         return;
       }
 
+      if (path === 'journeys' && method === 'POST') {
+        const body = req.body;
+        if (!body.name) {
+          json(res, 400, { error: 'Name is required' });
+          return;
+        }
+        const now = Date.now();
+        const journey = {
+          name: body.name,
+          trigger: body.trigger || 'manual',
+          enabled: false,
+          flow: body.flow || { nodes: [], edges: [] },
+          createdAt: now,
+          updatedAt: now,
+        };
+        const ref = await db.ref('marketing/journeys').push(journey);
+        json(res, 201, { id: ref.key, ...journey });
+        return;
+      }
+
       if (path === 'journeys/seed' && method === 'POST') {
         await seedWelcomeJourney();
         const snap = await db.ref('marketing/journeys').once('value');
@@ -252,13 +272,72 @@ export const marketingApi = onRequest(
         return;
       }
 
-      const journeyMatch = path.match(/^journeys\/([^/]+)$/);
-      if (journeyMatch && method === 'PUT') {
-        const journeyId = journeyMatch[1];
-        await db.ref(`marketing/journeys/${journeyId}`).update(req.body);
-        const snap = await db.ref(`marketing/journeys/${journeyId}`).once('value');
-        json(res, 200, { id: journeyId, ...snap.val() });
+      // Journey stats
+      const journeyStatsMatch = path.match(/^journeys\/([^/]+)\/stats$/);
+      if (journeyStatsMatch && method === 'GET') {
+        const journeyId = journeyStatsMatch[1];
+        const stateSnap = await db.ref('marketing/flowJourneyState').once('value');
+        const allStates = stateSnap.val() || {};
+
+        let enrolled = 0;
+        let completed = 0;
+        let active = 0;
+        const nodeDistribution: Record<string, number> = {};
+
+        for (const [, userJourneys] of Object.entries(allStates) as [string, any][]) {
+          const state = userJourneys?.[journeyId];
+          if (!state) continue;
+          enrolled++;
+          if (state.completed) {
+            completed++;
+          } else {
+            active++;
+            const nodeId = state.currentNodeId;
+            nodeDistribution[nodeId] = (nodeDistribution[nodeId] || 0) + 1;
+          }
+        }
+
+        json(res, 200, { enrolled, completed, active, nodeDistribution });
         return;
+      }
+
+      const journeyMatch = path.match(/^journeys\/([^/]+)$/);
+      if (journeyMatch) {
+        const journeyId = journeyMatch[1];
+
+        if (method === 'GET') {
+          const snap = await db.ref(`marketing/journeys/${journeyId}`).once('value');
+          if (!snap.exists()) { json(res, 404, { error: 'Not found' }); return; }
+          json(res, 200, { id: journeyId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'PUT') {
+          const body = req.body;
+          body.updatedAt = Date.now();
+          await db.ref(`marketing/journeys/${journeyId}`).update(body);
+          const snap = await db.ref(`marketing/journeys/${journeyId}`).once('value');
+          json(res, 200, { id: journeyId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'DELETE') {
+          await db.ref(`marketing/journeys/${journeyId}`).remove();
+          // Clean up flow journey states
+          const statesSnap = await db.ref('marketing/flowJourneyState').once('value');
+          const allStates = statesSnap.val() || {};
+          const updates: Record<string, null> = {};
+          for (const [userId, userJourneys] of Object.entries(allStates) as [string, any][]) {
+            if (userJourneys?.[journeyId]) {
+              updates[`${userId}/${journeyId}`] = null;
+            }
+          }
+          if (Object.keys(updates).length > 0) {
+            await db.ref('marketing/flowJourneyState').update(updates);
+          }
+          json(res, 200, { deleted: journeyId });
+          return;
+        }
       }
 
       // ── Stats ────────────────────────────────────────────────

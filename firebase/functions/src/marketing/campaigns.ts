@@ -3,6 +3,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { Resend } from 'resend';
 import type { Campaign } from './types';
 import { campaignEmailHtml, baseEmailLayout } from './templates';
+import { logEvent } from './events';
 
 export async function executeCampaign(
   campaignId: string,
@@ -77,6 +78,7 @@ export async function executeCampaign(
               emailsFailed++;
             } else {
               emailsSent++;
+              await logEvent(userId, 'email_sent', { source: 'campaign', sourceId: campaignId });
             }
           } catch (err) {
             console.error(`[Campaign] Email exception for ${userId}:`, err);
@@ -122,6 +124,7 @@ export async function executeCampaign(
             },
           });
           pushSent++;
+          await logEvent(userId, 'push_received', { source: 'campaign', sourceId: campaignId });
         } catch (err: any) {
           if (
             err.code === 'messaging/invalid-registration-token' ||

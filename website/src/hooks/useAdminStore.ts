@@ -12,20 +12,26 @@ interface AdminState {
   } | null;
   segments: any[];
   campaigns: any[];
+  journeys: any[];
 
   // Loading states
   isLoadingStats: boolean;
   isLoadingSegments: boolean;
   isLoadingCampaigns: boolean;
+  isLoadingJourneys: boolean;
   isRefreshingSegments: boolean;
 
   // Actions
   loadStats: () => Promise<void>;
   loadSegments: () => Promise<void>;
   loadCampaigns: () => Promise<void>;
+  loadJourneys: () => Promise<void>;
   refreshSegments: () => Promise<void>;
   createCampaign: (data: any) => Promise<string>;
   sendCampaign: (id: string) => Promise<void>;
+  createJourney: (data: any) => Promise<string>;
+  updateJourney: (id: string, data: any) => Promise<void>;
+  deleteJourney: (id: string) => Promise<void>;
   deleteCustomSegment: (id: string) => Promise<void>;
 }
 
@@ -33,9 +39,11 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   stats: null,
   segments: [],
   campaigns: [],
+  journeys: [],
   isLoadingStats: false,
   isLoadingSegments: false,
   isLoadingCampaigns: false,
+  isLoadingJourneys: false,
   isRefreshingSegments: false,
 
   loadStats: async () => {
@@ -88,6 +96,32 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   sendCampaign: async (id) => {
     await admin.sendCampaign(id);
     await get().loadCampaigns();
+  },
+
+  loadJourneys: async () => {
+    set({ isLoadingJourneys: true });
+    try {
+      const { journeys } = await admin.fetchJourneys();
+      set({ journeys });
+    } finally {
+      set({ isLoadingJourneys: false });
+    }
+  },
+
+  createJourney: async (data) => {
+    const result = await admin.createJourney(data);
+    await get().loadJourneys();
+    return result.id;
+  },
+
+  updateJourney: async (id, data) => {
+    await admin.updateJourney(id, data);
+    await get().loadJourneys();
+  },
+
+  deleteJourney: async (id) => {
+    await admin.deleteJourney(id);
+    await get().loadJourneys();
   },
 
   deleteCustomSegment: async (id) => {

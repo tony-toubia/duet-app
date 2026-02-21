@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { fetchJourneys, updateJourney, seedJourneys } from '@/services/AdminService';
 import { Spinner } from '@/components/ui/Spinner';
 
@@ -10,24 +11,8 @@ const TRIGGER_LABELS: Record<string, string> = {
   manual: 'Manual enrollment',
 };
 
-const DELAY_LABELS: Record<number, string> = {
-  0: 'Immediately',
-  3600000: '1 hour',
-  86400000: '1 day',
-  172800000: '2 days',
-  259200000: '3 days',
-  604800000: '7 days',
-};
-
-function formatDelay(ms: number): string {
-  if (DELAY_LABELS[ms]) return DELAY_LABELS[ms];
-  const hours = ms / 3600000;
-  if (hours < 24) return `${hours}h`;
-  const days = hours / 24;
-  return `${days}d`;
-}
-
 export default function JourneysPage() {
+  const router = useRouter();
   const [journeys, setJourneys] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -62,7 +47,8 @@ export default function JourneysPage() {
     load();
   }, []);
 
-  const handleToggle = async (id: string, currentEnabled: boolean) => {
+  const handleToggle = async (e: React.MouseEvent, id: string, currentEnabled: boolean) => {
+    e.stopPropagation();
     setTogglingId(id);
     setError(null);
     try {
@@ -89,6 +75,24 @@ export default function JourneysPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Journeys</h1>
+        <div className="flex gap-2">
+          {journeys.length === 0 && (
+            <button
+              onClick={handleSeed}
+              disabled={isSeeding}
+              className="px-3 py-2 bg-glass border border-glass-border text-text-muted rounded-lg text-sm hover:text-white transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {isSeeding && <Spinner size="sm" />}
+              Seed Welcome Flow
+            </button>
+          )}
+          <button
+            onClick={() => router.push('/admin/journeys/new')}
+            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-light transition-colors"
+          >
+            New Journey
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -99,42 +103,65 @@ export default function JourneysPage() {
 
       {journeys.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-text-muted mb-4">No journeys configured yet.</p>
-          <button
-            onClick={handleSeed}
-            disabled={isSeeding}
-            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-light transition-colors disabled:opacity-50 flex items-center gap-2 mx-auto"
-          >
-            {isSeeding && <Spinner size="sm" />}
-            Seed Welcome Journey
-          </button>
+          <p className="text-text-muted mb-2">No journeys yet.</p>
+          <p className="text-sm text-text-muted/60">
+            Create a new journey or seed the default welcome flow.
+          </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-4">
           {journeys.map((journey: any) => {
-            const steps = journey.steps
-              ? Object.entries(journey.steps).sort(
-                  ([a], [b]) => parseInt(a) - parseInt(b)
-                )
-              : [];
+            const isFlow = !!journey.flow;
+            const nodeCount = isFlow ? (journey.flow.nodes?.length || 0) : 0;
+            const stepCount = !isFlow && journey.steps
+              ? Object.keys(journey.steps).length
+              : 0;
 
             return (
               <div
                 key={journey.id}
-                className="bg-surface rounded-xl border border-glass-border overflow-hidden"
+                onClick={() => {
+                  if (isFlow) router.push(`/admin/journeys/${journey.id}`);
+                }}
+                className={`bg-surface rounded-xl border border-glass-border overflow-hidden ${
+                  isFlow ? 'cursor-pointer hover:border-primary/40 transition-colors' : ''
+                }`}
               >
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-glass-border/50">
-                  <div>
-                    <h3 className="text-sm font-medium text-white">{journey.name}</h3>
-                    <p className="text-xs text-text-muted mt-0.5">
-                      Trigger: {TRIGGER_LABELS[journey.trigger] || journey.trigger}
-                    </p>
+                <div className="flex items-center justify-between p-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium text-white">
+                        {journey.name}
+                      </h3>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                          journey.enabled
+                            ? 'bg-success/20 text-success'
+                            : 'bg-text-muted/20 text-text-muted'
+                        }`}
+                      >
+                        {journey.enabled ? 'Active' : 'Paused'}
+                      </span>
+                      {!isFlow && (
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-text-muted/20 text-text-muted">
+                          Legacy
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 mt-1">
+                      <p className="text-xs text-text-muted">
+                        Trigger: {TRIGGER_LABELS[journey.trigger] || journey.trigger}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {isFlow ? `${nodeCount} nodes` : `${stepCount} steps`}
+                      </p>
+                    </div>
                   </div>
+
                   <button
-                    onClick={() => handleToggle(journey.id, journey.enabled)}
+                    onClick={(e) => handleToggle(e, journey.id, journey.enabled)}
                     disabled={togglingId === journey.id}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${
+                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
                       journey.enabled ? 'bg-success' : 'bg-text-muted/30'
                     }`}
                   >
@@ -146,81 +173,63 @@ export default function JourneysPage() {
                   </button>
                 </div>
 
-                {/* Steps visualization */}
-                {steps.length > 0 && (
-                  <div className="p-4">
-                    <div className="flex items-start gap-0">
-                      {steps.map(([idx, step]: [string, any], i: number) => (
-                        <div key={idx} className="flex items-start">
-                          {/* Step node */}
-                          <div className="flex flex-col items-center min-w-[120px]">
-                            <div
-                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                                journey.enabled
-                                  ? 'bg-primary/20 text-primary border border-primary/40'
-                                  : 'bg-glass text-text-muted border border-glass-border'
+                {/* Mini flow preview for flow-based journeys */}
+                {isFlow && journey.flow.nodes?.length > 0 && (
+                  <div className="px-4 pb-3">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {(journey.flow.nodes as any[])
+                        .sort((a: any, b: any) => a.position.y - b.position.y)
+                        .slice(0, 8)
+                        .map((node: any, i: number) => (
+                          <div key={node.id} className="flex items-center gap-1">
+                            {i > 0 && (
+                              <span className="text-text-muted/40 text-[10px]">&rarr;</span>
+                            )}
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                node.type === 'trigger'
+                                  ? 'bg-success/20 text-success'
+                                  : node.type === 'action'
+                                  ? 'bg-primary/20 text-primary'
+                                  : node.type === 'condition'
+                                  ? 'bg-warning/20 text-warning'
+                                  : node.type === 'delay'
+                                  ? 'bg-text-muted/20 text-text-muted'
+                                  : 'bg-danger/20 text-danger'
                               }`}
                             >
-                              {parseInt(idx) + 1}
-                            </div>
-                            <div className="mt-2 text-center">
-                              <p className="text-xs font-medium text-white">
-                                {step.templateId}
-                              </p>
-                              <p className="text-[10px] text-text-muted mt-0.5">
-                                {step.channel === 'email' ? 'Email' : 'Push'}
-                              </p>
-                              <p className="text-[10px] text-primary mt-0.5">
-                                {formatDelay(step.delayMs)}
-                              </p>
-                              {step.condition && (
-                                <p className="text-[10px] text-warning mt-0.5">
-                                  if: {step.condition}
-                                </p>
-                              )}
-                            </div>
+                              {node.type}
+                            </span>
                           </div>
-
-                          {/* Connector line */}
-                          {i < steps.length - 1 && (
-                            <div className="flex items-center mt-3.5">
-                              <div
-                                className={`w-8 h-px ${
-                                  journey.enabled ? 'bg-primary/40' : 'bg-glass-border'
-                                }`}
-                              />
-                              <div
-                                className={`text-[10px] px-1 ${
-                                  journey.enabled ? 'text-primary/60' : 'text-text-muted/40'
-                                }`}
-                              >
-                                &rarr;
-                              </div>
-                              <div
-                                className={`w-8 h-px ${
-                                  journey.enabled ? 'bg-primary/40' : 'bg-glass-border'
-                                }`}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        ))}
+                      {(journey.flow.nodes as any[]).length > 8 && (
+                        <span className="text-[10px] text-text-muted">
+                          +{(journey.flow.nodes as any[]).length - 8} more
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
 
-                {/* Status badge */}
-                <div className="px-4 pb-3">
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                      journey.enabled
-                        ? 'bg-success/20 text-success'
-                        : 'bg-text-muted/20 text-text-muted'
-                    }`}
-                  >
-                    {journey.enabled ? 'Active' : 'Paused'}
-                  </span>
-                </div>
+                {/* Legacy steps preview */}
+                {!isFlow && journey.steps && (
+                  <div className="px-4 pb-3">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {Object.entries(journey.steps)
+                        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                        .map(([idx, step]: [string, any], i: number) => (
+                          <div key={idx} className="flex items-center gap-1">
+                            {i > 0 && (
+                              <span className="text-text-muted/40 text-[10px]">&rarr;</span>
+                            )}
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/20 text-primary">
+                              {step.templateId}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

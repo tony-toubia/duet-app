@@ -105,8 +105,29 @@ export async function fetchJourneys() {
   return api<{ journeys: any[] }>('journeys');
 }
 
+export async function fetchJourney(id: string) {
+  return api<any>(`journeys/${id}`);
+}
+
+export async function createJourney(data: any) {
+  return api<any>('journeys', 'POST', data);
+}
+
 export async function updateJourney(id: string, data: any) {
   return api<any>(`journeys/${id}`, 'PUT', data);
+}
+
+export async function deleteJourney(id: string) {
+  return api<{ deleted: string }>(`journeys/${id}`, 'DELETE');
+}
+
+export async function fetchJourneyStats(id: string) {
+  return api<{
+    enrolled: number;
+    completed: number;
+    active: number;
+    nodeDistribution: Record<string, number>;
+  }>(`journeys/${id}/stats`);
 }
 
 export async function seedJourneys() {

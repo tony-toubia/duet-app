@@ -56,6 +56,101 @@ export interface JourneyState {
   completed: boolean;
 }
 
+// ─── Event tracking ─────────────────────────────────────────────────
+
+export type TrackableEvent =
+  | 'push_received'
+  | 'push_opened'
+  | 'email_sent'
+  | 'room_created'
+  | 'room_joined'
+  | 'login'
+  | 'signup'
+  | 'profile_updated'
+  | 'ad_viewed'
+  | 'session_start';
+
+export interface TrackedEvent {
+  type: TrackableEvent;
+  timestamp: number;
+  metadata?: Record<string, string>;
+}
+
+// ─── Flow-based journeys ────────────────────────────────────────────
+
+export interface JourneyFlow {
+  name: string;
+  trigger: 'user_created' | 'room_created' | 'manual';
+  enabled: boolean;
+  flow: {
+    nodes: FlowNode[];
+    edges: FlowEdge[];
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FlowNode {
+  id: string;
+  type: 'trigger' | 'action' | 'condition' | 'delay' | 'exit';
+  position: { x: number; y: number };
+  data: TriggerData | ActionData | ConditionData | DelayData | ExitData;
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+}
+
+export interface TriggerData {
+  label?: string;
+  triggerType: 'user_created' | 'room_created' | 'manual';
+}
+
+export interface ActionData {
+  label?: string;
+  channel: 'email' | 'push';
+  templateId: string;
+  customSubject?: string;
+  customBody?: string;
+  customTitle?: string;
+  pushImageUrl?: string | null;
+  pushActionUrl?: string | null;
+}
+
+export interface ConditionData {
+  label?: string;
+  conditionType: 'event_occurred' | 'user_property' | 'time_elapsed';
+  eventType?: TrackableEvent;
+  sinceTrigger?: boolean;
+  field?: string;
+  operator?: ConditionOperator;
+  value?: string | number | boolean | null;
+  elapsedMs?: number;
+}
+
+export interface DelayData {
+  label?: string;
+  delayMs: number;
+}
+
+export interface ExitData {
+  label?: string;
+}
+
+export interface FlowJourneyState {
+  enteredAt: number;
+  currentNodeId: string;
+  lastProcessedAt: number;
+  waitingSince: number | null;
+  completed: boolean;
+  path: string[];
+}
+
+// ─── Send log ───────────────────────────────────────────────────────
+
 export interface SendLogEntry {
   userId: string;
   channel: 'email' | 'push';

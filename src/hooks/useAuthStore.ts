@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import database from '@react-native-firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
+import { eventTrackingService } from '@/services/EventTrackingService';
 
 export interface NotificationPreferences {
   emailOptIn: boolean;
@@ -49,6 +50,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isGuest: user.isAnonymous,
           isLoading: false,
         });
+        // Track login/session
+        eventTrackingService.track('session_start');
+        if (!user.isAnonymous) {
+          eventTrackingService.track('login', {
+            provider: user.providerData?.[0]?.providerId || 'unknown',
+          });
+        }
         // Ensure profile exists (creates if needed, with retry for RTDB auth lag)
         await authService.ensureProfile(user);
         const [profile, prefsSnap] = await Promise.all([
