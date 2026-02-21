@@ -640,6 +640,17 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun playChime() {
+        try {
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 300)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ toneGen.release() }, 500)
+        } catch (e: Exception) {
+            // Ignore — chime is non-critical
+        }
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {}
 
     @ReactMethod
@@ -751,7 +762,8 @@ class DuetAudioService : Service() {
 // iOS NATIVE CODE
 // =====================
 
-const DUET_AUDIO_MANAGER_SWIFT = `import AVFoundation
+const DUET_AUDIO_MANAGER_SWIFT = `import AudioToolbox
+import AVFoundation
 import Foundation
 import MediaPlayer
 import React
@@ -1397,6 +1409,13 @@ class DuetAudioManager: RCTEventEmitter {
     }
   }
 
+  // MARK: - Chime
+
+  @objc
+  func playChime() {
+    AudioServicesPlaySystemSound(1007)
+  }
+
   // MARK: - Utility Functions
 
   private func bufferToBase64(_ buffer: AVAudioPCMBuffer) -> String? {
@@ -1566,6 +1585,8 @@ RCT_EXTERN_METHOD(mediaPrevious)
 
 RCT_EXTERN_METHOD(getMediaPlaybackState:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(playChime)
 
 @end
 `;

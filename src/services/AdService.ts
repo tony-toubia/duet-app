@@ -167,6 +167,33 @@ class AdService {
   get isRewardedReady(): boolean {
     return this.rewardedLoaded;
   }
+
+  // ── Pre-Roll (Room Entry) ──
+
+  /**
+   * Show an interstitial ad immediately (for room entry pre-roll).
+   * Resolves when the ad is closed, or immediately if no ad is loaded.
+   */
+  async showPreRoll(): Promise<void> {
+    if (!this.isLoaded || !this.interstitial) {
+      console.log('[Ad] Pre-roll not ready, skipping');
+      return;
+    }
+    try {
+      const closedPromise = new Promise<void>((resolve) => {
+        this.onClosedResolve = resolve;
+      });
+      await this.interstitial.show();
+      await closedPromise;
+    } catch (error) {
+      console.log('[Ad] Failed to show pre-roll:', error);
+      this.onClosedResolve = null;
+    }
+  }
+
+  get isPreRollReady(): boolean {
+    return this.isLoaded;
+  }
 }
 
 export const adService = new AdService();

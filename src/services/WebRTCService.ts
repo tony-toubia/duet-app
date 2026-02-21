@@ -30,6 +30,7 @@ export interface AudioPacket {
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
+  onReaction?: (emoji: string) => void;
   onIceRestartOffer: (offer: RTCSessionDescription) => void;
   onError: (error: Error) => void;
 }
@@ -280,6 +281,15 @@ export class WebRTCService {
       this.dataChannel.send(JSON.stringify(packet));
     }
   }
+
+  /**
+   * Send an emoji reaction to peer
+   */
+  sendReaction(emoji: string): void {
+    if (this.dataChannel?.readyState === 'open') {
+      this.dataChannel.send(JSON.stringify({ type: 'reaction', emoji }));
+    }
+  }
   
   /**
    * Setup data channel event handlers
@@ -296,13 +306,16 @@ export class WebRTCService {
     };
     
     channel.onmessage = (event) => {
-      // Received audio data from peer - parse JSON packet
       try {
-        const packet: AudioPacket = JSON.parse(event.data);
-        this.callbacks.onAudioData(packet);
+        const data = JSON.parse(event.data);
+        if (data.type === 'reaction') {
+          this.callbacks.onReaction?.(data.emoji);
+        } else {
+          // Audio packet (with or without explicit type field)
+          this.callbacks.onAudioData(data as AudioPacket);
+        }
       } catch (e) {
         // Fallback for legacy raw base64 data (backward compatibility)
-        console.warn('[WebRTC] Received non-JSON data, using defaults');
         this.callbacks.onAudioData({
           audio: event.data,
           sampleRate: 48000,

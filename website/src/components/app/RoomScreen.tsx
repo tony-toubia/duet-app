@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { ShareModal } from './ShareModal';
 import { GuestRoomTimer } from './GuestRoomTimer';
+import { ReactionBar } from './ReactionBar';
+import { ReactionOverlay } from './ReactionOverlay';
 
 
 function AvatarCircle({
@@ -103,6 +105,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
   const router = useRouter();
   const [showShareModal, setShowShareModal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [controlsLocked, setControlsLocked] = useState(false);
   const hasShownInitialShare = useRef(false);
   const hasBeenConnected = useRef(false);
   const hasLeft = useRef(false);
@@ -242,7 +245,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
             <span className="text-text-main text-sm font-semibold tracking-widest">{displayCode}</span>
           </button>
           <span className={`text-xs ${getConnectionColor()}`}>{getConnectionText()}</span>
-          <GuestRoomTimer partnerJoined={!!partnerId} onTimeExpired={handleLeave} />
+          <GuestRoomTimer partnerJoined={!!partnerId} onTimeExpired={handleLeave} onControlsLocked={setControlsLocked} />
           <button
             onClick={() => setShowLeaveConfirm(true)}
             className="bg-danger/25 border border-danger/40 rounded-2xl py-1.5 px-3.5 text-[#ff6b6b] text-sm font-semibold hover:bg-danger/35 transition-colors"
@@ -260,28 +263,33 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
         {/* Action buttons */}
         <div className="flex justify-center gap-4 sm:gap-6 px-5">
           <button
-            onClick={() => setMuted(!isMuted)}
+            onClick={() => !controlsLocked && setMuted(!isMuted)}
+            disabled={controlsLocked}
             className={`flex items-center gap-2 rounded-3xl py-3 px-5 border transition-colors ${
               isMuted
                 ? 'bg-primary/25 border-primary'
                 : 'bg-glass border-glass-border'
-            }`}
+            } ${controlsLocked ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <span className="text-lg">{isMuted ? '\ud83d\udd07' : '\ud83c\udfa4'}</span>
             <span className="text-text-main text-sm font-medium">{isMuted ? 'Unmute' : 'Mute'}</span>
           </button>
           <button
-            onClick={() => setDeafened(!isDeafened)}
+            onClick={() => !controlsLocked && setDeafened(!isDeafened)}
+            disabled={controlsLocked}
             className={`flex items-center gap-2 rounded-3xl py-3 px-5 border transition-colors ${
               isDeafened
                 ? 'bg-primary/25 border-primary'
                 : 'bg-glass border-glass-border'
-            }`}
+            } ${controlsLocked ? 'opacity-40 cursor-not-allowed' : ''}`}
           >
             <span className="text-lg">{isDeafened ? '\ud83d\udd15' : '\ud83d\udd0a'}</span>
             <span className="text-text-main text-sm font-medium">{isDeafened ? 'Undeafen' : 'Deafen'}</span>
           </button>
         </div>
+
+        {/* Reactions */}
+        <ReactionBar />
 
         {/* Voice sensitivity */}
         <div className="mt-4 max-w-md mx-auto w-full px-5">
@@ -318,6 +326,8 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           roomCode={displayCode}
           onClose={() => setShowShareModal(false)}
         />
+
+        <ReactionOverlay />
       </div>
     </div>
   );

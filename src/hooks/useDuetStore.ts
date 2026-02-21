@@ -22,6 +22,9 @@ interface DuetState {
   isSpeaking: boolean;
   isPartnerSpeaking: boolean;
 
+  // Reactions
+  incomingReaction: { emoji: string; id: number } | null;
+
   // Settings
   duckLevel: number; // 0-100, percentage of original volume when ducking
   vadSensitivity: number; // 0-100, higher = more sensitive
@@ -41,6 +44,7 @@ interface DuetState {
   setDuckLevel: (level: number) => void;
   setVadSensitivity: (sensitivity: number) => void;
   setDuckingEnabled: (enabled: boolean) => void;
+  sendReaction: (emoji: string) => void;
 }
 
 export const useDuetStore = create<DuetState>((set, get) => ({
@@ -55,7 +59,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   isDeafened: false,
   isSpeaking: false,
   isPartnerSpeaking: false,
-  
+
+  incomingReaction: null,
+
   duckLevel: 30,
   vadSensitivity: 40, // Default: moderate-low, good for car/road noise environments
   duckingEnabled: false, // Default off - mixing only; ducking may pause some apps
@@ -190,6 +196,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         // This keeps UI in sync with audio ducking behavior
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onReaction: (emoji) => {
+        set({ incomingReaction: { emoji, id: Date.now() } });
+      },
       onIceRestartOffer: async (offer) => {
         // Host sends ICE restart offer via signaling so answerer can renegotiate
         const { signaling } = get();
@@ -288,6 +297,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         // Match native ducking timeout (500ms)
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onReaction: (emoji) => {
+        set({ incomingReaction: { emoji, id: Date.now() } });
+      },
       onIceRestartOffer: async () => {
         // Only the offerer (host) initiates ICE restart — answerer is a no-op here.
         // The answerer handles the restart offer via the signaling onOffer callback.
@@ -375,6 +387,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       connectionState: 'disconnected',
       isSpeaking: false,
       isPartnerSpeaking: false,
+      incomingReaction: null,
     });
   },
   
@@ -411,6 +424,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       DuetAudio.setDuckingEnabled(enabled);
     }
     set({ duckingEnabled: enabled });
+  },
+
+  sendReaction: (emoji: string) => {
+    const { webrtc } = get();
+    webrtc?.sendReaction(emoji);
   },
 }));
 

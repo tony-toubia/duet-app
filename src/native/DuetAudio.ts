@@ -164,6 +164,17 @@ export const DuetAudio = {
   },
 
   // =====================
+  // CHIME
+  // =====================
+
+  /**
+   * Play a short system notification chime (for timer warnings).
+   */
+  playChime(): void {
+    DuetAudioManager.playChime();
+  },
+
+  // =====================
   // EVENT LISTENERS
   // =====================
 

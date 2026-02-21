@@ -23,6 +23,17 @@ const config: Config = {
         'lobby-warm': '#f4dbc8',
         'lobby-dark': '#1a293d',
       },
+      keyframes: {
+        'float-emoji': {
+          '0%': { transform: 'translateY(0) scale(0.3)', opacity: '1' },
+          '15%': { transform: 'translateY(-10vh) scale(1)', opacity: '1' },
+          '70%': { opacity: '1' },
+          '100%': { transform: 'translateY(-50vh) scale(0.6)', opacity: '0' },
+        },
+      },
+      animation: {
+        'float-emoji': 'float-emoji 2s ease-out forwards',
+      },
     },
   },
   plugins: [],

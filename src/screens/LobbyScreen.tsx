@@ -40,12 +40,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const isGuest = useAuthStore((s) => s.isGuest);
   const signOut = useAuthStore((s) => s.signOut);
 
-  // Navigate to room when connected
+  const [showingAd, setShowingAd] = useState(false);
+
+  // Navigate to room when connected (gated by showingAd for pre-roll)
   useEffect(() => {
-    if (roomCode) {
+    if (roomCode && !showingAd) {
       navigation.replace('Room');
     }
-  }, [roomCode, navigation]);
+  }, [roomCode, showingAd, navigation]);
 
   // Handle auto-join from push notification
   useEffect(() => {
@@ -73,6 +75,12 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       const code = await createRoom();
+      // Show pre-roll ad before navigating to room
+      if (adService.isPreRollReady) {
+        setShowingAd(true);
+        await adService.showPreRoll();
+        setShowingAd(false);
+      }
       setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
@@ -90,6 +98,12 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       await joinRoom(code.toUpperCase());
+      // Show pre-roll ad before navigating to room
+      if (adService.isPreRollReady) {
+        setShowingAd(true);
+        await adService.showPreRoll();
+        setShowingAd(false);
+      }
       setShowJoinInput(false);
     } catch (error: any) {
       console.error('[Lobby] Join room failed:', error);
@@ -211,7 +225,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         {!showJoinInput && <LobbyNativeAd />}
       </KeyboardAvoidingView>
       <ShareModal
-        visible={!!shareCode}
+        visible={!!shareCode && !showingAd}
         roomCode={shareCode || ''}
         onClose={() => setShareCode(null)}
       />

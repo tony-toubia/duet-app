@@ -19,6 +19,8 @@ interface DuetState {
   isSpeaking: boolean;
   isPartnerSpeaking: boolean;
 
+  incomingReaction: { emoji: string; id: number } | null;
+
   vadSensitivity: number;
 
   webrtc: WebRTCService | null;
@@ -32,6 +34,7 @@ interface DuetState {
   setMuted: (muted: boolean) => void;
   setDeafened: (deafened: boolean) => void;
   setVadSensitivity: (sensitivity: number) => void;
+  sendReaction: (emoji: string) => void;
 }
 
 async function createAndStartAudioEngine(
@@ -73,6 +76,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   isDeafened: false,
   isSpeaking: false,
   isPartnerSpeaking: false,
+
+  incomingReaction: null,
 
   vadSensitivity: 40,
 
@@ -137,14 +142,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ connectionState: state });
       },
       onAudioData: (packet) => {
-        // Phase 4: feed packet to WebAudioEngine playback
         const { audioEngine } = get();
         audioEngine?.playAudio(packet.audio, packet.sampleRate, packet.channels);
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onReaction: (emoji) => {
+        set({ incomingReaction: { emoji, id: Date.now() } });
+      },
       onIceRestartOffer: async (offer) => {
-        // Host sends ICE restart offer via signaling so answerer can renegotiate
         const { signaling } = get();
         if (signaling) {
           console.log('[Store] Sending ICE restart offer via signaling');
@@ -224,10 +230,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
-      onIceRestartOffer: async () => {
-        // Only the offerer (host) initiates ICE restart — answerer is a no-op here.
-        // The answerer handles the restart offer via the signaling onOffer callback.
+      onReaction: (emoji) => {
+        set({ incomingReaction: { emoji, id: Date.now() } });
       },
+      onIceRestartOffer: async () => {},
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
       },
@@ -305,6 +311,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       connectionState: 'disconnected',
       isSpeaking: false,
       isPartnerSpeaking: false,
+      incomingReaction: null,
     });
   },
 
@@ -325,5 +332,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const threshold = 0.001 + (0.099 * (100 - sensitivity) / 100);
     audioEngine?.setVadThreshold(threshold);
     set({ vadSensitivity: sensitivity });
+  },
+
+  sendReaction: (emoji: string) => {
+    const { webrtc } = get();
+    webrtc?.sendReaction(emoji);
   },
 }));

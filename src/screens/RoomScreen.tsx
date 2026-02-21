@@ -24,6 +24,8 @@ import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
+import { ReactionBar } from '@/components/ReactionBar';
+import { ReactionOverlay } from '@/components/ReactionOverlay';
 import { ShareModal } from '@/components/ShareModal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { InviteModal } from '@/components/InviteModal';
@@ -38,6 +40,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [controlsLocked, setControlsLocked] = useState(false);
   const hasShownInitialShare = useRef(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -177,7 +180,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       <Text style={[styles.connectionText, { color: getConnectionColor() }]}>
         {getConnectionText()}
       </Text>
-      <GuestRoomTimer onTimeExpired={handleLeave} />
+      <GuestRoomTimer onTimeExpired={handleLeave} onControlsLocked={setControlsLocked} />
       <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn}>
         <Text style={styles.leaveBtnText}>Leave</Text>
       </TouchableOpacity>
@@ -194,15 +197,17 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const actionButtons = (
     <View style={styles.actionRow}>
       <TouchableOpacity
-        style={[styles.actionBtn, isMuted && styles.actionBtnActive]}
-        onPress={() => setMuted(!isMuted)}
+        style={[styles.actionBtn, isMuted && styles.actionBtnActive, controlsLocked && styles.actionBtnLocked]}
+        onPress={() => !controlsLocked && setMuted(!isMuted)}
+        disabled={controlsLocked}
       >
         <Text style={styles.actionIcon}>{isMuted ? '\ud83d\udd07' : '\ud83c\udfa4'}</Text>
         <Text style={styles.actionLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
       </TouchableOpacity>
       <TouchableOpacity
-        style={[styles.actionBtn, isDeafened && styles.actionBtnActive]}
-        onPress={() => setDeafened(!isDeafened)}
+        style={[styles.actionBtn, isDeafened && styles.actionBtnActive, controlsLocked && styles.actionBtnLocked]}
+        onPress={() => !controlsLocked && setDeafened(!isDeafened)}
+        disabled={controlsLocked}
       >
         <Text style={styles.actionIcon}>{isDeafened ? '\ud83d\udd15' : '\ud83d\udd0a'}</Text>
         <Text style={styles.actionLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</Text>
@@ -261,6 +266,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
             <View style={styles.twoColLeft}>
               {avatars}
               {actionButtons}
+              <ReactionBar />
             </View>
             <View style={styles.twoColRight}>
               <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
@@ -271,6 +277,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
             </View>
           </View>
           <View style={{ height: insets.bottom }} />
+          <ReactionOverlay />
           {adTransitionOverlay}
           <ShareModal
             visible={showShareModal}
@@ -314,12 +321,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           {topBar}
           {avatars}
           {actionButtons}
+          <ReactionBar />
           <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
           <RoomNativeAd />
           {duckingToggle}
           {mediaPlayer}
           <NavigationWidget />
         </ScrollView>
+        <ReactionOverlay />
         {adTransitionOverlay}
         <ShareModal
           visible={showShareModal}
@@ -429,6 +438,9 @@ const styles = StyleSheet.create({
   actionBtnActive: {
     backgroundColor: 'rgba(232, 115, 74, 0.25)',
     borderColor: colors.primary,
+  },
+  actionBtnLocked: {
+    opacity: 0.4,
   },
   actionIcon: {
     fontSize: 18,

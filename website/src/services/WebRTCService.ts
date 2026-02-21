@@ -22,6 +22,7 @@ export interface AudioPacket {
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
+  onReaction?: (emoji: string) => void;
   onIceRestartOffer: (offer: RTCSessionDescriptionInit) => void;
   onError: (error: Error) => void;
 }
@@ -202,6 +203,12 @@ export class WebRTCService {
     }
   }
 
+  sendReaction(emoji: string): void {
+    if (this.dataChannel?.readyState === 'open') {
+      this.dataChannel.send(JSON.stringify({ type: 'reaction', emoji }));
+    }
+  }
+
   private setupDataChannel(channel: RTCDataChannel): void {
     this.dataChannel = channel;
 
@@ -215,8 +222,12 @@ export class WebRTCService {
 
     channel.onmessage = (event) => {
       try {
-        const packet: AudioPacket = JSON.parse(event.data);
-        this.callbacks.onAudioData(packet);
+        const data = JSON.parse(event.data);
+        if (data.type === 'reaction') {
+          this.callbacks.onReaction?.(data.emoji);
+        } else {
+          this.callbacks.onAudioData(data as AudioPacket);
+        }
       } catch {
         this.callbacks.onAudioData({
           audio: event.data,
