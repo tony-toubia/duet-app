@@ -30,9 +30,14 @@ const config: Config = {
           '70%': { opacity: '1' },
           '100%': { transform: 'translateY(-50vh) scale(0.6)', opacity: '0' },
         },
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         'float-emoji': 'float-emoji 2s ease-out forwards',
+        'fade-in-up': 'fade-in-up 0.7s ease-out forwards',
       },
     },
   },
