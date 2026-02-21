@@ -20,7 +20,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-[#1a293d]" />
 
         {/* Hero content */}
-        <div className="relative z-10 text-center px-6 py-20">
+        <div className="relative z-10 text-center px-6 pb-32">
           <h1
             className="text-6xl font-bold tracking-tight mb-6 max-sm:text-4xl"
             style={{ textShadow: '0 4px 24px rgba(232, 115, 74, 0.3)' }}
