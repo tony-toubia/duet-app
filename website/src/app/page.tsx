@@ -28,7 +28,7 @@ export default function LandingPage() {
               alt="Duet"
               width={140}
               height={105}
-              className="mx-auto mb-4 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)]"
+              className="mx-auto mb-4 drop-shadow-[0_8px_32px_rgba(232,115,74,0.4)] mix-blend-screen"
             />
             <h1
               className="text-6xl font-bold tracking-tight max-sm:text-4xl"
