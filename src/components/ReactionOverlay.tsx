@@ -12,7 +12,6 @@ interface FloatingEmoji {
   translateY: Animated.Value;
   opacity: Animated.Value;
   scale: Animated.Value;
-  wobble: Animated.Value;
 }
 
 export const ReactionOverlay = () => {
@@ -27,8 +26,6 @@ export const ReactionOverlay = () => {
     const translateY = new Animated.Value(0);
     const opacity = new Animated.Value(1);
     const scale = new Animated.Value(0.3);
-    const wobble = new Animated.Value(0);
-
     // Random horizontal position in the middle 60% of screen
     const x = SCREEN_WIDTH * 0.2 + Math.random() * SCREEN_WIDTH * 0.6;
 
@@ -39,12 +36,11 @@ export const ReactionOverlay = () => {
       translateY,
       opacity,
       scale,
-      wobble,
     };
 
     setEmojis((prev) => [...prev, entry]);
 
-    // Animate: scale in, float up, wobble, fade out
+    // Animate: scale in, float up, fade out
     Animated.parallel([
       Animated.sequence([
         Animated.spring(scale, {
@@ -70,20 +66,6 @@ export const ReactionOverlay = () => {
         delay: ANIMATION_DURATION * 0.3,
         useNativeDriver: true,
       }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(wobble, {
-            toValue: 1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-          Animated.timing(wobble, {
-            toValue: -1,
-            duration: 400,
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
     ]).start(() => {
       setEmojis((prev) => prev.filter((e) => e.id !== id));
     });
@@ -93,13 +75,7 @@ export const ReactionOverlay = () => {
 
   return (
     <>
-      {emojis.map((e) => {
-        const translateX = e.wobble.interpolate({
-          inputRange: [-1, 1],
-          outputRange: [-15, 15],
-        });
-
-        return (
+      {emojis.map((e) => (
           <Animated.View
             key={e.id}
             pointerEvents="none"
@@ -111,7 +87,6 @@ export const ReactionOverlay = () => {
                 opacity: e.opacity,
                 transform: [
                   { translateY: e.translateY },
-                  { translateX },
                   { scale: e.scale },
                 ],
               },
@@ -119,8 +94,7 @@ export const ReactionOverlay = () => {
           >
             <Text style={styles.emoji}>{e.emoji}</Text>
           </Animated.View>
-        );
-      })}
+        ))}
     </>
   );
 };

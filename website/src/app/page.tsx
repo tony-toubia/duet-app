@@ -156,7 +156,13 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {/* Drivers */}
             <div className="bg-white/[0.06] backdrop-blur-md border border-white/10 rounded-2xl p-8 text-center">
-              <div className="text-4xl mb-5">🚗</div>
+              <div className="w-14 h-14 mx-auto mb-5" style={{
+                backgroundColor: '#ee7777',
+                WebkitMaskImage: 'url(/on-the-road.png)', WebkitMaskSize: 'contain',
+                WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center',
+                maskImage: 'url(/on-the-road.png)', maskSize: 'contain',
+                maskRepeat: 'no-repeat', maskPosition: 'center'
+              }} />
               <h3 className="text-lg font-semibold mb-2">On the road</h3>
               <p className="text-sm text-white/60 leading-relaxed">
                 Rideshare drivers keeping a friend on the line between pickups. No awkward speakerphone &mdash; just company while you drive.
@@ -165,7 +171,13 @@ export default function LandingPage() {
 
             {/* Exploring */}
             <div className="bg-white/[0.06] backdrop-blur-md border border-white/10 rounded-2xl p-8 text-center">
-              <div className="text-4xl mb-5">🎧</div>
+              <div className="w-14 h-14 mx-auto mb-5" style={{
+                backgroundColor: '#ee7777',
+                WebkitMaskImage: 'url(/exploring.png)', WebkitMaskSize: 'contain',
+                WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center',
+                maskImage: 'url(/exploring.png)', maskSize: 'contain',
+                maskRepeat: 'no-repeat', maskPosition: 'center'
+              }} />
               <h3 className="text-lg font-semibold mb-2">Out exploring</h3>
               <p className="text-sm text-white/60 leading-relaxed">
                 Couples in a busy city keeping their own music on but staying one tap away when they spot something worth sharing.
@@ -174,7 +186,13 @@ export default function LandingPage() {
 
             {/* Study/Work */}
             <div className="bg-white/[0.06] backdrop-blur-md border border-white/10 rounded-2xl p-8 text-center">
-              <div className="text-4xl mb-5">📚</div>
+              <div className="w-14 h-14 mx-auto mb-5" style={{
+                backgroundColor: '#ee7777',
+                WebkitMaskImage: 'url(/working.png)', WebkitMaskSize: 'contain',
+                WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center',
+                maskImage: 'url(/working.png)', maskSize: 'contain',
+                maskRepeat: 'no-repeat', maskPosition: 'center'
+              }} />
               <h3 className="text-lg font-semibold mb-2">Working together, apart</h3>
               <p className="text-sm text-white/60 leading-relaxed">
                 Study buddies or coworkers with music playing and a voice room open &mdash; like being at the same desk without the commute.

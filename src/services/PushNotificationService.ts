@@ -8,6 +8,7 @@
 
 import { Platform, Alert } from 'react-native';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 
@@ -43,6 +44,17 @@ class PushNotificationService {
       }
 
       console.log('[Push] Permission granted');
+
+      // Create Android notification channel (required for Android 8+)
+      if (Platform.OS === 'android') {
+        await notifee.createChannel({
+          id: 'duet_notifications',
+          name: 'Duet Notifications',
+          importance: AndroidImportance.HIGH,
+          sound: 'default',
+        });
+        console.log('[Push] Android notification channel created');
+      }
 
       // Register for remote messages (required on iOS before getToken)
       if (!messaging().isDeviceRegisteredForRemoteMessages) {
@@ -104,8 +116,23 @@ class PushNotificationService {
     // Handle foreground messages
     this.unsubscribeOnMessage = messaging().onMessage(
       async (message: FirebaseMessagingTypes.RemoteMessage) => {
-        console.log('[Push] Foreground message:', message.data?.type);
-        this.handleMessage(message, true);
+        console.log('[Push] Foreground message:', message.data?.type || 'notification-only');
+
+        if (message.data?.type) {
+          // App-specific message (partner_left, friend_request, etc.)
+          this.handleMessage(message, true);
+        } else if (message.notification) {
+          // Campaign/generic notification — display via notifee since FCM
+          // doesn't auto-show notifications when app is in foreground
+          await notifee.displayNotification({
+            title: message.notification.title,
+            body: message.notification.body,
+            android: {
+              channelId: 'duet_notifications',
+              pressAction: { id: 'default' },
+            },
+          });
+        }
       }
     );
 
