@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { AdSlot } from '@/components/app/AdSlot';
-import { HeroLights } from '@/components/ui/HeroLights';
 
 export default function LandingPage() {
   return (
@@ -9,10 +8,15 @@ export default function LandingPage() {
 
       {/* ============ HERO ============ */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        {/* Animated background (Lottie replaces static image) */}
-        <div className="absolute inset-0">
-          <HeroLights />
-        </div>
+        {/* Background illustration */}
+        <Image
+          src="/hero-bg.jpg"
+          alt=""
+          fill
+          priority
+          className="object-cover"
+          aria-hidden="true"
+        />
         {/* Dark overlay for text readability */}
         <div className="absolute inset-0 z-[1] bg-gradient-to-b from-black/60 via-black/40 to-[#1a293d]" />
 
