@@ -385,6 +385,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       partnerId: null,
       roomDeleted: false,
       connectionState: 'disconnected',
+      isMuted: false,
+      isDeafened: false,
       isSpeaking: false,
       isPartnerSpeaking: false,
       incomingReaction: null,
