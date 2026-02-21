@@ -1,6 +1,8 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+
+const GIF_DURATION_MS = 4010;
 
 interface AnimatedLogoProps {
   size?: number;
@@ -9,40 +11,33 @@ interface AnimatedLogoProps {
 }
 
 export function AnimatedLogo({ size = 120, loop = false, onComplete }: AnimatedLogoProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const calledRef = useRef(false);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    if (loop || !onComplete) return;
 
-    const handleEnded = () => {
-      onComplete?.();
-    };
+    // GIF has no 'ended' event — fire onComplete after the known duration
+    const timer = setTimeout(() => {
+      if (!calledRef.current) {
+        calledRef.current = true;
+        onComplete();
+      }
+    }, GIF_DURATION_MS);
 
-    video.addEventListener('ended', handleEnded);
+    return () => clearTimeout(timer);
+  }, [loop, onComplete]);
 
-    // Auto-play (muted videos don't need user interaction)
-    video.play().catch(() => {
-      // If autoplay fails, call onComplete so we don't block
-      onComplete?.();
-    });
-
-    return () => {
-      video.removeEventListener('ended', handleEnded);
-    };
-  }, [onComplete]);
+  // For non-looping: load GIF with a cache-bust so it plays from frame 1 each mount.
+  // For looping: GIFs loop by default in browsers.
+  const src = loop ? '/duet-logo-animated.gif' : `/duet-logo-animated.gif?t=${Date.now()}`;
 
   return (
-    <video
-      ref={videoRef}
-      src="/duet-logo-animated.mp4"
+    <img
+      src={src}
+      alt="Duet"
       width={size}
       height={size}
-      muted
-      playsInline
-      loop={loop}
       className="object-contain"
-      style={{ background: 'transparent' }}
     />
   );
 }
