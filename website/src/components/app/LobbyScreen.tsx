@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -23,6 +23,15 @@ export function LobbyScreen() {
   const adContainerRef = useRef<HTMLDivElement | null>(null);
   const adVideoRef = useRef<HTMLVideoElement | null>(null);
   const adDisplayContainerRef = useRef<ImaAdDisplayContainer | null>(null);
+
+  // Play animated GIF once, then swap to static logo
+  const gifBust = useMemo(() => Date.now(), []);
+  const [logoSrc, setLogoSrc] = useState(`/duet-logo-animated.gif?t=${gifBust}`);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLogoSrc('/duet-logo.png'), 4200);
+    return () => clearTimeout(timer);
+  }, []);
 
   const { roomCode, initialize, createRoom, joinRoom } = useDuetStore();
   const userProfile = useAuthStore((s) => s.userProfile);
@@ -202,12 +211,12 @@ export function LobbyScreen() {
           </div>
         </div>
 
-        {/* Logo */}
+        {/* Logo — plays animated GIF once, then shows static logo */}
         <div className="text-center pt-6">
           <img
-            src="/duet-logo-animated.gif"
+            src={logoSrc}
             alt="Duet"
-            className="w-[80px] h-[60px] mx-auto object-contain"
+            className="w-[120px] h-[90px] mx-auto object-contain"
           />
         </div>
 
