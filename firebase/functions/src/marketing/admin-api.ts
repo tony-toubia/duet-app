@@ -340,6 +340,106 @@ export const marketingApi = onRequest(
         }
       }
 
+      // ── Assets ───────────────────────────────────────────────
+      if (path === 'assets' && method === 'GET') {
+        const snap = await db.ref('marketing/assets').once('value');
+        const assets: any[] = [];
+        snap.forEach((child) => {
+          assets.push({ id: child.key, ...child.val() });
+        });
+        json(res, 200, { assets });
+        return;
+      }
+
+      if (path === 'assets' && method === 'POST') {
+        const body = req.body;
+        if (!body.name || !body.url) {
+          json(res, 400, { error: 'Name and URL are required' });
+          return;
+        }
+        const now = Date.now();
+        const asset = {
+          name: body.name,
+          url: body.url,
+          tags: body.tags || [],
+          description: body.description || '',
+          contentType: body.contentType || 'image/unknown',
+          fileSize: body.fileSize || 0,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const ref = await db.ref('marketing/assets').push(asset);
+        json(res, 201, { id: ref.key, ...asset });
+        return;
+      }
+
+      // Asset usage endpoint
+      const assetUsageMatch = path.match(/^assets\/([^/]+)\/usage$/);
+      if (assetUsageMatch && method === 'GET') {
+        const assetId = assetUsageMatch[1];
+        const assetSnap = await db.ref(`marketing/assets/${assetId}`).once('value');
+        if (!assetSnap.exists()) { json(res, 404, { error: 'Not found' }); return; }
+        const assetUrl = assetSnap.val().url;
+
+        const usage: { type: string; id: string; name: string }[] = [];
+
+        // Scan campaigns
+        const campaignsSnap = await db.ref('marketing/campaigns').once('value');
+        campaignsSnap.forEach((child) => {
+          const c = child.val();
+          if (c.push?.imageUrl === assetUrl || (c.email?.body && c.email.body.includes(assetUrl))) {
+            usage.push({ type: 'campaign', id: child.key!, name: c.name });
+          }
+        });
+
+        // Scan journeys
+        const journeysSnap = await db.ref('marketing/journeys').once('value');
+        journeysSnap.forEach((child) => {
+          const j = child.val();
+          if (j.flow?.nodes) {
+            for (const node of j.flow.nodes) {
+              if (
+                node.data?.pushImageUrl === assetUrl ||
+                (node.data?.customBody && node.data.customBody.includes(assetUrl))
+              ) {
+                usage.push({ type: 'journey', id: child.key!, name: j.name });
+                break;
+              }
+            }
+          }
+        });
+
+        json(res, 200, { usage });
+        return;
+      }
+
+      const assetMatch = path.match(/^assets\/([^/]+)$/);
+      if (assetMatch) {
+        const assetId = assetMatch[1];
+
+        if (method === 'GET') {
+          const snap = await db.ref(`marketing/assets/${assetId}`).once('value');
+          if (!snap.exists()) { json(res, 404, { error: 'Not found' }); return; }
+          json(res, 200, { id: assetId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'PUT') {
+          const body = req.body;
+          body.updatedAt = Date.now();
+          await db.ref(`marketing/assets/${assetId}`).update(body);
+          const snap = await db.ref(`marketing/assets/${assetId}`).once('value');
+          json(res, 200, { id: assetId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'DELETE') {
+          await db.ref(`marketing/assets/${assetId}`).remove();
+          json(res, 200, { deleted: assetId });
+          return;
+        }
+      }
+
       // ── Stats ────────────────────────────────────────────────
       if (path === 'stats' && method === 'GET') {
         const [usersSnap, segmentsSnap, campaignsSnap] = await Promise.all([

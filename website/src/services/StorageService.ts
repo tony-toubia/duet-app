@@ -23,6 +23,24 @@ class StorageService {
   }
 
   /**
+   * Upload a marketing asset to Firebase Storage.
+   * Returns { url, contentType, fileSize }.
+   */
+  async uploadAsset(file: File): Promise<{ url: string; contentType: string; fileSize: number }> {
+    const user = firebaseAuth.currentUser;
+    if (!user) throw new Error('Must be signed in to upload assets.');
+
+    const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `assets/${Date.now()}_${sanitized}`;
+    const fileRef = storageRef(firebaseStorage, storagePath);
+
+    await uploadBytes(fileRef, file);
+    const url = await getDownloadURL(fileRef);
+
+    return { url, contentType: file.type, fileSize: file.size };
+  }
+
+  /**
    * Upload avatar image to Firebase Storage and update profile.
    */
   async uploadAvatar(file: File): Promise<string> {

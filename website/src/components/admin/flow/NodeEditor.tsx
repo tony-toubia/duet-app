@@ -334,6 +334,135 @@ export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProp
         </div>
       )}
 
+      {/* Random Split node */}
+      {node.type === 'randomSplit' && (() => {
+        const paths: { id: string; label: string; percentage: number }[] = d.paths || [];
+        const isEvenSplit = d.evenSplit !== false; // default true
+
+        const setEvenSplit = (even: boolean) => {
+          if (even) {
+            const pct = Math.floor(100 / paths.length);
+            const remainder = 100 - pct * paths.length;
+            const updated = paths.map((p: any, i: number) => ({
+              ...p,
+              percentage: pct + (i < remainder ? 1 : 0),
+            }));
+            update({ evenSplit: true, paths: updated });
+          } else {
+            update({ evenSplit: false });
+          }
+        };
+
+        const addPath = () => {
+          if (paths.length >= 10) return;
+          const idx = paths.length;
+          const newPath = { id: `split_${idx}`, label: `Path ${String.fromCharCode(65 + idx)}`, percentage: 0 };
+          const newPaths = [...paths, newPath];
+          if (isEvenSplit) {
+            const pct = Math.floor(100 / newPaths.length);
+            const remainder = 100 - pct * newPaths.length;
+            const balanced = newPaths.map((p, i) => ({ ...p, percentage: pct + (i < remainder ? 1 : 0) }));
+            update({ paths: balanced });
+          } else {
+            update({ paths: newPaths });
+          }
+        };
+
+        const removePath = (idx: number) => {
+          if (paths.length <= 2) return;
+          const removedId = paths[idx].id;
+          const newPaths = paths.filter((_: any, i: number) => i !== idx);
+          if (isEvenSplit) {
+            const pct = Math.floor(100 / newPaths.length);
+            const remainder = 100 - pct * newPaths.length;
+            const balanced = newPaths.map((p: any, i: number) => ({ ...p, percentage: pct + (i < remainder ? 1 : 0) }));
+            update({ paths: balanced, _removedHandles: [removedId] });
+          } else {
+            update({ paths: newPaths, _removedHandles: [removedId] });
+          }
+        };
+
+        const updatePathLabel = (idx: number, label: string) => {
+          const updated = paths.map((p: any, i: number) => i === idx ? { ...p, label } : p);
+          update({ paths: updated });
+        };
+
+        const updatePathPercentage = (idx: number, pct: number) => {
+          const updated = paths.map((p: any, i: number) => i === idx ? { ...p, percentage: pct } : p);
+          update({ paths: updated });
+        };
+
+        const total = paths.reduce((s: number, p: any) => s + p.percentage, 0);
+
+        return (
+          <>
+            <div>
+              <label className={labelClass}>Paths ({paths.length})</label>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isEvenSplit}
+                    onChange={(e) => setEvenSplit(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-xs text-text-muted">Even split</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {paths.map((p: any, i: number) => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={p.label}
+                    onChange={(e) => updatePathLabel(i, e.target.value)}
+                    className="flex-1 px-2 py-1.5 bg-glass border border-glass-border rounded-lg text-white text-xs focus:outline-none focus:border-primary"
+                    placeholder={`Path ${String.fromCharCode(65 + i)}`}
+                  />
+                  {isEvenSplit ? (
+                    <span className="text-xs text-text-muted w-12 text-right">{p.percentage}%</span>
+                  ) : (
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={p.percentage}
+                      onChange={(e) => updatePathPercentage(i, Number(e.target.value))}
+                      className="w-16 px-2 py-1.5 bg-glass border border-glass-border rounded-lg text-white text-xs text-right focus:outline-none focus:border-primary"
+                    />
+                  )}
+                  {paths.length > 2 && (
+                    <button
+                      onClick={() => removePath(i)}
+                      className="text-danger text-sm hover:text-danger/80 leading-none"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {!isEvenSplit && total !== 100 && (
+              <p className="text-xs text-danger">
+                Percentages must add up to 100% (currently {total}%)
+              </p>
+            )}
+
+            {paths.length < 10 && (
+              <button
+                onClick={addPath}
+                className="w-full px-3 py-1.5 bg-glass border border-glass-border text-text-muted rounded-lg text-xs hover:text-white hover:bg-glass-border transition-colors"
+              >
+                + Add Path
+              </button>
+            )}
+          </>
+        );
+      })()}
+
       {/* Exit node — no config needed */}
       {node.type === 'exit' && (
         <p className="text-xs text-text-muted">

@@ -133,3 +133,24 @@ export async function fetchJourneyStats(id: string) {
 export async function seedJourneys() {
   return api<{ journeys: any[] }>('journeys/seed', 'POST');
 }
+
+// Assets
+export async function fetchAssets() {
+  return api<{ assets: any[] }>('assets');
+}
+
+export async function createAsset(data: { name: string; url: string; tags?: string[]; description?: string; contentType?: string; fileSize?: number }) {
+  return api<any>('assets', 'POST', data);
+}
+
+export async function updateAsset(id: string, data: any) {
+  return api<any>(`assets/${id}`, 'PUT', data);
+}
+
+export async function deleteAsset(id: string) {
+  return api<{ deleted: string }>(`assets/${id}`, 'DELETE');
+}
+
+export async function fetchAssetUsage(id: string) {
+  return api<{ usage: { type: string; id: string; name: string }[] }>(`assets/${id}/usage`);
+}

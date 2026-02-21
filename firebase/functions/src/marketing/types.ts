@@ -92,9 +92,9 @@ export interface JourneyFlow {
 
 export interface FlowNode {
   id: string;
-  type: 'trigger' | 'action' | 'condition' | 'delay' | 'exit';
+  type: 'trigger' | 'action' | 'condition' | 'delay' | 'exit' | 'randomSplit';
   position: { x: number; y: number };
-  data: TriggerData | ActionData | ConditionData | DelayData | ExitData;
+  data: TriggerData | ActionData | ConditionData | DelayData | ExitData | RandomSplitData;
 }
 
 export interface FlowEdge {
@@ -138,6 +138,11 @@ export interface DelayData {
 
 export interface ExitData {
   label?: string;
+}
+
+export interface RandomSplitData {
+  label?: string;
+  paths: { id: string; label: string; percentage: number }[];
 }
 
 export interface FlowJourneyState {

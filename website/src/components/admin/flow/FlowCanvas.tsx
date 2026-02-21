@@ -24,12 +24,14 @@ import { ActionNode } from './ActionNode';
 import { ConditionNode } from './ConditionNode';
 import { DelayNode } from './DelayNode';
 import { ExitNode } from './ExitNode';
+import { RandomSplitNode } from './RandomSplitNode';
 import { NodeEditor } from './NodeEditor';
 
 const NODE_TYPE_PALETTE = [
   { type: 'action', label: 'Action', color: 'bg-primary' },
   { type: 'condition', label: 'Condition', color: 'bg-warning' },
   { type: 'delay', label: 'Delay', color: 'bg-text-muted' },
+  { type: 'randomSplit', label: 'Split', color: 'bg-violet-500' },
   { type: 'exit', label: 'Exit', color: 'bg-danger' },
 ];
 
@@ -37,6 +39,13 @@ const DEFAULT_DATA: Record<string, any> = {
   action: { channel: 'email', templateId: '' },
   condition: { conditionType: 'event_occurred', eventType: '', sinceTrigger: true },
   delay: { delayMs: 86400000 },
+  randomSplit: {
+    evenSplit: true,
+    paths: [
+      { id: 'split_0', label: 'Path A', percentage: 50 },
+      { id: 'split_1', label: 'Path B', percentage: 50 },
+    ],
+  },
   exit: {},
 };
 
@@ -70,6 +79,7 @@ export function FlowCanvas({
       condition: ConditionNode,
       delay: DelayNode,
       exit: ExitNode,
+      randomSplit: RandomSplitNode,
     }),
     []
   );
@@ -108,9 +118,23 @@ export function FlowCanvas({
   }, []);
 
   const handleNodeDataChange = useCallback((nodeId: string, data: any) => {
+    // If _removedHandles is present, clean up edges connected to those handles
+    const removedHandles: string[] | undefined = data._removedHandles;
+    const cleanData = { ...data };
+    delete cleanData._removedHandles;
+
     setNodes((nds) =>
-      nds.map((n) => (n.id === nodeId ? { ...n, data } : n))
+      nds.map((n) => (n.id === nodeId ? { ...n, data: cleanData } : n))
     );
+
+    if (removedHandles && removedHandles.length > 0) {
+      setEdges((eds) =>
+        eds.filter(
+          (e) =>
+            !(e.source === nodeId && removedHandles.includes(e.sourceHandle || ''))
+        )
+      );
+    }
   }, []);
 
   const handleDeleteNode = useCallback(
@@ -203,6 +227,7 @@ export function FlowCanvas({
                 case 'condition': return '#fbbf24';
                 case 'delay': return '#b0b8c8';
                 case 'exit': return '#ef4444';
+                case 'randomSplit': return '#a78bfa';
                 default: return '#ffffff';
               }
             }}

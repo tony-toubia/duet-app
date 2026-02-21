@@ -11,6 +11,7 @@ import type {
   ActionData,
   ConditionData,
   DelayData,
+  RandomSplitData,
 } from './types';
 import {
   welcomeEmailHtml,
@@ -608,6 +609,38 @@ export async function processJourneyFlows(
           const nextNodeId = getNextNodeId(adjacency, currentNode.id);
           if (nextNodeId) {
             await advanceFlowNode(db, userId, journey.id, nextNodeId, now, state.path);
+          } else {
+            await db.ref(`marketing/flowJourneyState/${userId}/${journey.id}`).update({
+              completed: true,
+              lastProcessedAt: now,
+            });
+          }
+          break;
+        }
+
+        case 'randomSplit': {
+          const splitData = currentNode.data as RandomSplitData;
+          const outEdges = adjacency.get(currentNode.id) || [];
+          const rand = Math.random() * 100;
+          let cumulative = 0;
+          let selectedEdge: FlowEdge | undefined;
+
+          for (const p of splitData.paths) {
+            cumulative += p.percentage;
+            if (rand < cumulative) {
+              selectedEdge = outEdges.find((e) => e.sourceHandle === p.id);
+              break;
+            }
+          }
+
+          // Fallback to last path if rounding means we didn't match
+          if (!selectedEdge && splitData.paths.length > 0) {
+            const lastPath = splitData.paths[splitData.paths.length - 1];
+            selectedEdge = outEdges.find((e) => e.sourceHandle === lastPath.id);
+          }
+
+          if (selectedEdge) {
+            await advanceFlowNode(db, userId, journey.id, selectedEdge.target, now, state.path);
           } else {
             await db.ref(`marketing/flowJourneyState/${userId}/${journey.id}`).update({
               completed: true,
