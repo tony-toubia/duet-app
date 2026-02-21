@@ -1,14 +1,57 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onValueWritten, onValueDeleted, onValueCreated } from 'firebase-functions/v2/database';
+import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
 import { getMessaging } from 'firebase-admin/messaging';
 import type { Message } from 'firebase-admin/messaging';
+import { Resend } from 'resend';
+
+// Marketing module imports
+import {
+  generateUnsubToken,
+  unsubscribePage,
+  welcomeEmailHtml,
+  tipsEmailHtml,
+  reengagementEmailHtml,
+} from './marketing/templates';
+import { computeAllSegments } from './marketing/segments';
+export { marketingApi } from './marketing/admin-api';
 
 initializeApp();
 
 const db = getDatabase();
 const messaging = getMessaging();
+const resendApiKey = defineSecret('RESEND_API_KEY');
+const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
+
+// ─── Email helpers ────────────────────────────────────────────────────
+
+async function sendEmail(
+  resend: Resend,
+  to: string,
+  subject: string,
+  html: string
+): Promise<boolean> {
+  try {
+    const { error } = await resend.emails.send({
+      from: 'Duet <hello@e.getduet.app>',
+      to,
+      subject,
+      html,
+    });
+    if (error) {
+      console.error('[Email] Resend error:', error);
+      return false;
+    }
+    console.log(`[Email] Sent "${subject}" to ${to}`);
+    return true;
+  } catch (err) {
+    console.error('[Email] Failed to send:', err);
+    return false;
+  }
+}
 
 /**
  * Clean up stale rooms older than 24 hours.
@@ -279,5 +322,267 @@ export const onInvitationCreated = onValueCreated(
     } catch (error) {
       console.error('Error sending room invitation notification:', error);
     }
+  }
+);
+
+// ─── Unsubscribe endpoint ─────────────────────────────────────────────
+
+/**
+ * HTTPS endpoint for email unsubscribe. Validates HMAC token to prevent abuse.
+ */
+export const unsubscribe = onRequest(
+  { region: 'us-central1', secrets: [unsubSecret] },
+  async (req, res) => {
+    const uid = req.query.uid as string | undefined;
+    const token = req.query.t as string | undefined;
+
+    if (!uid || !token) {
+      res.status(400).send(unsubscribePage('Invalid unsubscribe link.', false));
+      return;
+    }
+
+    const expected = generateUnsubToken(uid, unsubSecret.value());
+    if (token !== expected) {
+      res.status(403).send(unsubscribePage('Invalid unsubscribe link.', false));
+      return;
+    }
+
+    try {
+      await db.ref(`/emailState/${uid}/unsubscribed`).set(true);
+      console.log(`[Unsub] User ${uid} unsubscribed`);
+      res.status(200).send(unsubscribePage('You\'ve been unsubscribed from Duet promotional emails.', true));
+    } catch (error) {
+      console.error(`[Unsub] Error for ${uid}:`, error);
+      res.status(500).send(unsubscribePage('Something went wrong. Please try again.', false));
+    }
+  }
+);
+
+// ─── Scheduled segment computation ───────────────────────────────────
+
+/**
+ * Recompute all marketing segments every 6 hours.
+ */
+export const computeSegments = onSchedule('every 6 hours', async () => {
+  const counts = await computeAllSegments();
+  console.log('[Segments] Scheduled refresh complete:', JSON.stringify(counts));
+});
+
+// ─── Email welcome journey ───────────────────────────────────────────
+
+/**
+ * Send welcome email when a new user profile is created (non-anonymous).
+ */
+export const onUserProfileCreated = onValueCreated(
+  {
+    ref: '/users/{userId}/profile',
+    region: 'us-central1',
+    secrets: [resendApiKey],
+  },
+  async (event) => {
+    const userId = event.params.userId;
+    const profile = event.data.val();
+
+    if (profile.authProvider === 'anonymous') {
+      console.log(`[Email] Skipping anonymous user ${userId}`);
+      return;
+    }
+
+    if (!profile.email) {
+      console.log(`[Email] No email for user ${userId}, skipping`);
+      return;
+    }
+
+    // Dedup: check if welcome was already sent
+    const existingSnap = await db.ref(`/emailState/${userId}/welcomeSentAt`).once('value');
+    if (existingSnap.exists()) {
+      console.log(`[Email] Welcome already sent to ${userId}`);
+      return;
+    }
+
+    await db.ref(`/emailState/${userId}`).set({
+      welcomeSentAt: Date.now(),
+      hasCreatedRoom: false,
+      unsubscribed: false,
+    });
+
+    const resend = new Resend(resendApiKey.value());
+    const displayName = profile.displayName || 'there';
+    const sent = await sendEmail(
+      resend,
+      profile.email,
+      `Welcome to Duet, ${displayName}!`,
+      welcomeEmailHtml(displayName)
+    );
+
+    if (!sent) {
+      // Allow retry by removing the timestamp
+      await db.ref(`/emailState/${userId}/welcomeSentAt`).remove();
+    }
+  }
+);
+
+/**
+ * Send welcome email when a guest upgrades to an authenticated account.
+ */
+export const onAuthProviderUpgraded = onValueWritten(
+  {
+    ref: '/users/{userId}/profile/authProvider',
+    region: 'us-central1',
+    secrets: [resendApiKey],
+  },
+  async (event) => {
+    const userId = event.params.userId;
+    const before = event.data.before.val();
+    const after = event.data.after.val();
+
+    if (before !== 'anonymous' || after === 'anonymous') return;
+
+    console.log(`[Email] Auth upgrade for ${userId}: ${before} -> ${after}`);
+
+    const existingSnap = await db.ref(`/emailState/${userId}/welcomeSentAt`).once('value');
+    if (existingSnap.exists()) {
+      console.log(`[Email] Welcome already sent to ${userId}, skipping`);
+      return;
+    }
+
+    const profileSnap = await db.ref(`/users/${userId}/profile`).once('value');
+    const profile = profileSnap.val();
+
+    if (!profile?.email) {
+      console.log(`[Email] No email for upgraded user ${userId}`);
+      return;
+    }
+
+    await db.ref(`/emailState/${userId}`).set({
+      welcomeSentAt: Date.now(),
+      hasCreatedRoom: false,
+      unsubscribed: false,
+    });
+
+    const resend = new Resend(resendApiKey.value());
+    const displayName = profile.displayName || 'there';
+    const sent = await sendEmail(
+      resend,
+      profile.email,
+      `Welcome to Duet, ${displayName}!`,
+      welcomeEmailHtml(displayName)
+    );
+
+    if (!sent) {
+      await db.ref(`/emailState/${userId}/welcomeSentAt`).remove();
+    }
+  }
+);
+
+/**
+ * Track when a user creates their first room (for re-engagement email logic).
+ */
+export const onRoomCreatedTracker = onValueCreated(
+  { ref: '/rooms/{roomCode}', region: 'us-central1' },
+  async (event) => {
+    const createdBy = event.data.val()?.createdBy;
+    if (!createdBy) return;
+
+    try {
+      await db.ref(`/emailState/${createdBy}/hasCreatedRoom`).set(true);
+      console.log(`[Email] Marked hasCreatedRoom for ${createdBy}`);
+    } catch (error) {
+      console.error(`[Email] Failed to mark hasCreatedRoom for ${createdBy}:`, error);
+    }
+  }
+);
+
+/**
+ * Hourly job: send tips email (24h after signup) and re-engagement (7d, no room).
+ */
+export const processEmailQueue = onSchedule(
+  {
+    schedule: 'every 1 hours',
+    secrets: [resendApiKey, unsubSecret],
+  },
+  async () => {
+    const resend = new Resend(resendApiKey.value());
+    const now = Date.now();
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+
+    const snapshot = await db
+      .ref('emailState')
+      .orderByChild('welcomeSentAt')
+      .endAt(now - TWENTY_FOUR_HOURS)
+      .once('value');
+
+    if (!snapshot.exists()) {
+      console.log('[Email Queue] No candidates for follow-up emails');
+      return;
+    }
+
+    let tipsSent = 0;
+    let reengagementSent = 0;
+    const promises: Promise<void>[] = [];
+
+    snapshot.forEach((child) => {
+      const userId = child.key!;
+      const state = child.val();
+
+      if (state.unsubscribed) return;
+
+      // Tips email: 24h after welcome, not yet sent
+      if (!state.tipsSentAt && state.welcomeSentAt) {
+        promises.push(
+          (async () => {
+            const profileSnap = await db.ref(`/users/${userId}/profile`).once('value');
+            const profile = profileSnap.val();
+            if (!profile?.email) return;
+
+            const displayName = profile.displayName || 'there';
+            const sent = await sendEmail(
+              resend,
+              profile.email,
+              '3 ways to get the most out of Duet',
+              tipsEmailHtml(displayName, userId, unsubSecret.value())
+            );
+
+            if (sent) {
+              await db.ref(`/emailState/${userId}/tipsSentAt`).set(now);
+              tipsSent++;
+            }
+          })()
+        );
+      }
+
+      // Re-engagement: 7d after welcome, tips sent, no room created
+      if (
+        state.tipsSentAt &&
+        !state.reengagementSentAt &&
+        !state.hasCreatedRoom &&
+        state.welcomeSentAt <= now - SEVEN_DAYS
+      ) {
+        promises.push(
+          (async () => {
+            const profileSnap = await db.ref(`/users/${userId}/profile`).once('value');
+            const profile = profileSnap.val();
+            if (!profile?.email) return;
+
+            const displayName = profile.displayName || 'there';
+            const sent = await sendEmail(
+              resend,
+              profile.email,
+              `Still there, ${displayName}? Your friends are waiting`,
+              reengagementEmailHtml(displayName, userId, unsubSecret.value())
+            );
+
+            if (sent) {
+              await db.ref(`/emailState/${userId}/reengagementSentAt`).set(now);
+              reengagementSent++;
+            }
+          })()
+        );
+      }
+    });
+
+    await Promise.all(promises);
+    console.log(`[Email Queue] Done. Tips: ${tipsSent}, Re-engagement: ${reengagementSent}`);
   }
 );

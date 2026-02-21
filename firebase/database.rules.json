@@ -228,6 +228,67 @@
       }
     },
 
+    // Marketing platform — admin SDK only (no client access)
+    "marketing": {
+      ".read": false,
+      ".write": false,
+
+      "campaigns": {
+        "$campaignId": {
+          "status": { ".validate": "newData.isString()" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "sentAt": { ".validate": "newData.isNumber() || newData.val() == null" }
+        }
+      },
+
+      "segments": {
+        "$segmentId": {
+          "lastComputedAt": { ".validate": "newData.isNumber()" },
+          "memberCount": { ".validate": "newData.isNumber()" }
+        }
+      },
+
+      "journeys": {
+        "$journeyId": {
+          "enabled": { ".validate": "newData.isBoolean()" }
+        }
+      },
+
+      "journeyState": {
+        "$userId": {
+          "$journeyId": {
+            "startedAt": { ".validate": "newData.isNumber()" },
+            "currentStep": { ".validate": "newData.isNumber()" },
+            "lastStepAt": { ".validate": "newData.isNumber()" },
+            "completed": { ".validate": "newData.isBoolean()" }
+          }
+        }
+      },
+
+      "sendLog": {
+        ".indexOn": ["sentAt"],
+        "$logId": {
+          "sentAt": { ".validate": "newData.isNumber()" },
+          "success": { ".validate": "newData.isBoolean()" }
+        }
+      }
+    },
+
+    // Email journey state — admin SDK only (no client access)
+    "emailState": {
+      ".read": false,
+      ".write": false,
+      ".indexOn": ["welcomeSentAt"],
+      "$userId": {
+        "welcomeSentAt": { ".validate": "newData.isNumber()" },
+        "tipsSentAt": { ".validate": "newData.isNumber()" },
+        "reengagementSentAt": { ".validate": "newData.isNumber()" },
+        "hasCreatedRoom": { ".validate": "newData.isBoolean()" },
+        "unsubscribed": { ".validate": "newData.isBoolean()" }
+      }
+    },
+
     // Deny access to everything else
     "$other": {
       ".read": false,

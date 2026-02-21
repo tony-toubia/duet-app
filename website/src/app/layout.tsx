@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://getduet.app'),
   title: 'Duet - Always-On Voice Connection',
   description: 'Always-on voice for the people who matter most. One-tap rooms, peer-to-peer encrypted audio, free on iOS, Android, and the web.',
-  keywords: ['voice chat', 'always on', 'walkie talkie', 'couples app', 'voice call', 'peer to peer', 'encrypted audio'],
+  keywords: ['voice chat', 'always on', 'walkie talkie', 'couples app', 'voice call', 'peer to peer', 'encrypted audio', 'rideshare driver app', 'hands free voice chat', 'study together app', 'body double app', 'ambient voice', 'background voice call', 'coworking voice room', 'long distance couples'],
   icons: {
     icon: '/favicon.ico',
     apple: '/duet-logo.png',
