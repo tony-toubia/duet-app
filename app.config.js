@@ -98,10 +98,12 @@ module.exports = {
             targetSdkVersion: 35,
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
+            newArchEnabled: false,
           },
           ios: {
             deploymentTarget: "15.1",
-            useFrameworks: "static"
+            useFrameworks: "static",
+            newArchEnabled: false,
           }
         }
       ],
