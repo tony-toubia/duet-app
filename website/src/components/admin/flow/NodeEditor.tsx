@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import type { Node } from '@xyflow/react';
+import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
 
 const TRACKABLE_EVENTS = [
   { value: 'push_received', label: 'Push received' },
@@ -76,6 +78,7 @@ const labelClass = 'block text-xs text-text-muted mb-1';
 
 export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProps) {
   const d = node.data as any;
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
 
   const update = (patch: Record<string, any>) => {
     onChange(node.id, { ...d, ...patch });
@@ -198,13 +201,22 @@ export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProp
               </div>
               <div>
                 <label className={labelClass}>Image URL (optional)</label>
-                <input
-                  type="text"
-                  value={d.pushImageUrl || ''}
-                  onChange={(e) => update({ pushImageUrl: e.target.value })}
-                  placeholder="https://example.com/image.png"
-                  className={inputClass}
-                />
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={d.pushImageUrl || ''}
+                    onChange={(e) => update({ pushImageUrl: e.target.value })}
+                    placeholder="https://example.com/image.png"
+                    className={`${inputClass} flex-1`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAssetPicker(true)}
+                    className="px-2 py-2 bg-glass border border-glass-border rounded-lg text-[10px] text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
+                  >
+                    Browse
+                  </button>
+                </div>
               </div>
               <div>
                 <label className={labelClass}>Action URL (optional)</label>
@@ -480,6 +492,13 @@ export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProp
             Delete Node
           </button>
         </div>
+      )}
+
+      {showAssetPicker && (
+        <AssetPickerModal
+          onSelect={(url) => { update({ pushImageUrl: url }); setShowAssetPicker(false); }}
+          onClose={() => setShowAssetPicker(false)}
+        />
       )}
     </div>
   );

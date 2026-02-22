@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminStore } from '@/hooks/useAdminStore';
-import { previewEmail } from '@/services/AdminService';
+import { previewEmail, createAsset } from '@/services/AdminService';
 import { Spinner } from '@/components/ui/Spinner';
+import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
 
 export default function NewCampaignPage() {
   const router = useRouter();
@@ -23,6 +24,7 @@ export default function NewCampaignPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,13 +64,18 @@ export default function NewCampaignPage() {
     setIsCreating(true);
     setError(null);
     try {
+      const trimmedImageUrl = pushImageUrl.trim() || null;
       const id = await createCampaign({
         name,
         segmentId,
         channels,
         email: hasEmail ? { subject, body, includeUnsub } : null,
-        push: hasPush ? { title: pushTitle, body: pushBody, imageUrl: pushImageUrl.trim() || null, actionUrl: pushActionUrl.trim() || null, data: null } : null,
+        push: hasPush ? { title: pushTitle, body: pushBody, imageUrl: trimmedImageUrl, actionUrl: pushActionUrl.trim() || null, data: null } : null,
       });
+      // Auto-save image to asset library if it's an external URL
+      if (trimmedImageUrl && trimmedImageUrl.startsWith('http')) {
+        createAsset({ name: `${name} - push image`, url: trimmedImageUrl, tags: ['campaign', 'push'] }).catch(() => {});
+      }
       router.push(`/admin/campaigns/${id}`);
     } catch (err: any) {
       setError(err.message);
@@ -203,13 +210,22 @@ export default function NewCampaignPage() {
               </div>
               <div>
                 <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
-                <input
-                  type="text"
-                  value={pushImageUrl}
-                  onChange={(e) => setPushImageUrl(e.target.value)}
-                  placeholder="https://example.com/image.png"
-                  className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={pushImageUrl}
+                    onChange={(e) => setPushImageUrl(e.target.value)}
+                    placeholder="https://example.com/image.png"
+                    className="flex-1 px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAssetPicker(true)}
+                    className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
+                  >
+                    Browse
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
@@ -267,6 +283,13 @@ export default function NewCampaignPage() {
           ) : null}
         </div>
       </div>
+
+      {showAssetPicker && (
+        <AssetPickerModal
+          onSelect={(url) => { setPushImageUrl(url); setShowAssetPicker(false); }}
+          onClose={() => setShowAssetPicker(false)}
+        />
+      )}
     </div>
   );
 }

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fetchCampaign, sendCampaign, updateCampaign, previewEmail } from '@/services/AdminService';
+import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createAsset } from '@/services/AdminService';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
+import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-text-muted/20 text-text-muted',
@@ -29,6 +30,7 @@ export default function CampaignDetailPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -84,13 +86,18 @@ export default function CampaignDetailPage() {
     try {
       const hasEmail = editChannels.includes('email');
       const hasPush = editChannels.includes('push');
+      const trimmedImageUrl = editPushImageUrl.trim() || null;
       const updated = await updateCampaign(campaignId, {
         name: editName,
         segmentId: editSegmentId,
         channels: editChannels,
         email: hasEmail ? { subject: editSubject, body: editBody, includeUnsub: editIncludeUnsub } : null,
-        push: hasPush ? { title: editPushTitle, body: editPushBody, imageUrl: editPushImageUrl.trim() || null, actionUrl: editPushActionUrl.trim() || null, data: null } : null,
+        push: hasPush ? { title: editPushTitle, body: editPushBody, imageUrl: trimmedImageUrl, actionUrl: editPushActionUrl.trim() || null, data: null } : null,
       });
+      // Auto-save image to asset library if it's an external URL
+      if (trimmedImageUrl && trimmedImageUrl.startsWith('http')) {
+        createAsset({ name: `${editName} - push image`, url: trimmedImageUrl, tags: ['campaign', 'push'] }).catch(() => {});
+      }
       setCampaign(updated);
       setIsEditing(false);
       if (updated.email?.body) {
@@ -290,13 +297,22 @@ export default function CampaignDetailPage() {
                   </div>
                   <div>
                     <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
-                    <input
-                      type="text"
-                      value={editPushImageUrl}
-                      onChange={(e) => setEditPushImageUrl(e.target.value)}
-                      placeholder="https://example.com/image.png"
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={editPushImageUrl}
+                        onChange={(e) => setEditPushImageUrl(e.target.value)}
+                        placeholder="https://example.com/image.png"
+                        className="flex-1 px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAssetPicker(true)}
+                        className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
+                      >
+                        Browse
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
@@ -470,6 +486,13 @@ export default function CampaignDetailPage() {
           ) : null}
         </div>
       </div>
+
+      {showAssetPicker && (
+        <AssetPickerModal
+          onSelect={(url) => { setEditPushImageUrl(url); setShowAssetPicker(false); }}
+          onClose={() => setShowAssetPicker(false)}
+        />
+      )}
     </div>
   );
 }
