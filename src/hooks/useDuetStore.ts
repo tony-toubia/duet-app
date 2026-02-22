@@ -9,6 +9,12 @@ import { pushNotificationService } from '@/services/PushNotificationService';
 import { friendsService } from '@/services/FriendsService';
 import { eventTrackingService } from '@/services/EventTrackingService';
 
+export interface PendingAlert {
+  title: string;
+  message: string;
+  buttons: { text: string; onPress?: () => void; style?: 'default' | 'destructive' | 'cancel' }[];
+}
+
 interface DuetState {
   // Connection
   connectionState: ConnectionState;
@@ -25,6 +31,9 @@ interface DuetState {
 
   // Reactions
   incomingReaction: { emoji: string; id: number } | null;
+
+  // Alerts (surfaced from PushNotificationService)
+  pendingAlert: PendingAlert | null;
 
   // Settings
   duckLevel: number; // 0-100, percentage of original volume when ducking
@@ -46,6 +55,7 @@ interface DuetState {
   setVadSensitivity: (sensitivity: number) => void;
   setDuckingEnabled: (enabled: boolean) => void;
   sendReaction: (emoji: string) => void;
+  dismissAlert: () => void;
 }
 
 export const useDuetStore = create<DuetState>((set, get) => ({
@@ -62,6 +72,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   isPartnerSpeaking: false,
 
   incomingReaction: null,
+
+  pendingAlert: null,
 
   duckLevel: 30,
   vadSensitivity: 40, // Default: moderate-low, good for car/road noise environments
@@ -89,6 +101,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           if (state.roomCode === roomCode) {
             set({ partnerId: null, connectionState: 'disconnected' });
           }
+        },
+        onShowAlert: (alert) => {
+          set({ pendingAlert: alert });
         },
       });
 
@@ -434,6 +449,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   sendReaction: (emoji: string) => {
     const { webrtc } = get();
     webrtc?.sendReaction(emoji);
+  },
+
+  dismissAlert: () => {
+    set({ pendingAlert: null });
   },
 }));
 

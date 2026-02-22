@@ -20,6 +20,11 @@ export interface PushNotificationCallbacks {
   onFriendRequest?: (fromUid: string, fromDisplayName: string) => void;
   onRoomInvite?: (roomCode: string, fromUid: string, fromDisplayName: string) => void;
   onTokenRefresh?: (token: string) => void;
+  onShowAlert?: (alert: {
+    title: string;
+    message: string;
+    buttons: { text: string; onPress?: () => void; style?: 'default' | 'destructive' | 'cancel' }[];
+  }) => void;
 }
 
 class PushNotificationService {
@@ -273,22 +278,22 @@ class PushNotificationService {
     switch (data?.type) {
       case 'partner_left':
         if (isForeground) {
-          Alert.alert(
-            'Partner Disconnected',
-            'Your duet partner has left the room.',
-            [{ text: 'OK' }]
-          );
+          this.callbacks.onShowAlert?.({
+            title: 'Partner Disconnected',
+            message: 'Your duet partner has left the room.',
+            buttons: [{ text: 'OK' }],
+          });
         }
         this.callbacks.onPartnerLeft?.(data.roomCode as string);
         break;
 
       case 'friend_request':
         if (isForeground) {
-          Alert.alert(
-            'Friend Request',
-            `${data.fromDisplayName || 'Someone'} wants to be your friend!`,
-            [{ text: 'OK' }]
-          );
+          this.callbacks.onShowAlert?.({
+            title: 'Friend Request',
+            message: `${data.fromDisplayName || 'Someone'} wants to be your friend!`,
+            buttons: [{ text: 'OK' }],
+          });
         }
         this.callbacks.onFriendRequest?.(
           data.fromUid as string,
@@ -298,11 +303,10 @@ class PushNotificationService {
 
       case 'room_invite':
         if (isForeground) {
-          Alert.alert(
-            'Room Invitation',
-            `${data.fromDisplayName || 'Someone'} invited you to join their room!`,
-            [
-              { text: 'Decline', style: 'cancel' },
+          this.callbacks.onShowAlert?.({
+            title: 'Room Invitation',
+            message: `${data.fromDisplayName || 'Someone'} invited you to join their room!`,
+            buttons: [
               {
                 text: 'Join',
                 onPress: () => {
@@ -313,8 +317,9 @@ class PushNotificationService {
                   );
                 },
               },
-            ]
-          );
+              { text: 'Decline', style: 'cancel' },
+            ],
+          });
         } else {
           // Tapped notification — auto-join
           this.callbacks.onRoomInvite?.(

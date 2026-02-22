@@ -7,8 +7,10 @@ import { RoomScreen } from '@/screens/RoomScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { FriendsScreen } from '@/screens/FriendsScreen';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
 import { presenceService } from '@/services/PresenceService';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import { RootStackParamList } from './types';
 import { parseDeepLink } from './deepLinkParser';
@@ -32,6 +34,8 @@ function navigateFromDeepLink(action: { screen: string; params?: any }) {
 
 export const RootNavigator = () => {
   const { user, isLoading, initializeAuth } = useAuthStore();
+  const pendingAlert = useDuetStore((s) => s.pendingAlert);
+  const dismissAlert = useDuetStore((s) => s.dismissAlert);
 
   useEffect(() => {
     const unsubscribe = initializeAuth();
@@ -120,17 +124,34 @@ export const RootNavigator = () => {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {user ? (
-        <>
-          <Stack.Screen name="Lobby" component={LobbyScreen} />
-          <Stack.Screen name="Room" component={RoomScreen} />
-          <Stack.Screen name="Profile" component={ProfileScreen} />
-          <Stack.Screen name="Friends" component={FriendsScreen} />
-        </>
-      ) : (
-        <Stack.Screen name="Auth" component={AuthScreen} />
+    <>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {user ? (
+          <>
+            <Stack.Screen name="Lobby" component={LobbyScreen} />
+            <Stack.Screen name="Room" component={RoomScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="Friends" component={FriendsScreen} />
+          </>
+        ) : (
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        )}
+      </Stack.Navigator>
+      {pendingAlert && (
+        <ConfirmModal
+          visible={true}
+          title={pendingAlert.title}
+          message={pendingAlert.message}
+          buttons={pendingAlert.buttons.map((btn) => ({
+            ...btn,
+            onPress: () => {
+              btn.onPress?.();
+              dismissAlert();
+            },
+          }))}
+          onClose={dismissAlert}
+        />
       )}
-    </Stack.Navigator>
+    </>
   );
 };

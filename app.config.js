@@ -19,7 +19,8 @@ module.exports = {
       buildNumber: "17",
       googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
       associatedDomains: [
-        "applinks:duet-33cf5.firebaseapp.com"
+        "applinks:duet-33cf5.firebaseapp.com",
+        "applinks:getduet.app"
       ],
       entitlements: {
         "aps-environment": "production"
@@ -55,6 +56,18 @@ module.exports = {
               scheme: "https",
               host: "duet-33cf5.firebaseapp.com",
               pathPrefix: "/__/auth/links"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "getduet.app",
+              pathPrefix: "/app"
             }
           ],
           category: ["BROWSABLE", "DEFAULT"]

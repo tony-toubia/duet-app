@@ -298,6 +298,25 @@
       }
     },
 
+    // Event tracking — users can write their own events, admin SDK can read all
+    "events": {
+      ".read": false,
+      "$userId": {
+        ".read": "$userId == auth.uid",
+        ".write": "$userId == auth.uid",
+        "$eventType": {
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'timestamp'])",
+            "type": { ".validate": "newData.isString()" },
+            "timestamp": { ".validate": "newData.isNumber()" },
+            "metadata": {
+              "$key": { ".validate": "newData.isString()" }
+            }
+          }
+        }
+      }
+    },
+
     // Deny access to everything else
     "$other": {
       ".read": false,

@@ -16,6 +16,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useDuetStore } from '@/hooks/useDuetStore';
+import { invitationService } from '@/services/InvitationService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { FriendsScreenProps } from '@/navigation/types';
@@ -27,6 +29,8 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
   const [emailQuery, setEmailQuery] = useState('');
   const [codeQuery, setCodeQuery] = useState('');
   const [removeTarget, setRemoveTarget] = useState<{ uid: string; name: string } | null>(null);
+  const [inviteTarget, setInviteTarget] = useState<{ uid: string; name: string } | null>(null);
+  const [isInviting, setIsInviting] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const insets = useSafeAreaInsets();
@@ -123,11 +127,33 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
     setTimeout(() => setCodeCopied(false), 2000);
   };
 
+  const handleInviteFriend = async () => {
+    if (!inviteTarget || isInviting) return;
+    setIsInviting(true);
+    try {
+      const { roomCode, createRoom } = useDuetStore.getState();
+      let code = roomCode;
+      if (!code) {
+        code = await createRoom();
+      }
+      await invitationService.sendInvitation(inviteTarget.uid, code);
+      setInviteTarget(null);
+      if (!roomCode) {
+        // We just created a room, navigate to it
+        navigation.navigate('Lobby');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Failed to send invitation.');
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
   const handleShareInvite = async () => {
     if (!friendCode) return;
     try {
       await Share.share({
-        message: `Add me as a friend on Duet! My friend code: ${friendCode}`,
+        message: `Add me as a friend on Duet!\nhttps://getduet.app/app/friends?code=${friendCode}`,
       });
     } catch {}
   };
@@ -333,6 +359,7 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
                   <TouchableOpacity
                     key={friend.uid}
                     style={styles.friendRow}
+                    onPress={() => setInviteTarget({ uid: friend.uid, name: friend.displayName })}
                     onLongPress={() => handleRemove(friend.uid, friend.displayName)}
                   >
                     {renderAvatar(friend.displayName, friend.avatarUrl, isOnline)}
@@ -358,6 +385,22 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
           { text: 'Cancel', style: 'cancel', onPress: () => setRemoveTarget(null) },
         ]}
         onClose={() => setRemoveTarget(null)}
+      />
+      <ConfirmModal
+        visible={!!inviteTarget}
+        title={inviteTarget ? `Invite ${inviteTarget.name}` : ''}
+        message={
+          inviteTarget
+            ? useDuetStore.getState().roomCode
+              ? `Send ${inviteTarget.name} an invitation to join your room?`
+              : `Create a room and send ${inviteTarget.name} an invitation?`
+            : ''
+        }
+        buttons={[
+          { text: isInviting ? 'Inviting...' : 'Invite', onPress: handleInviteFriend },
+          { text: 'Cancel', style: 'cancel', onPress: () => setInviteTarget(null) },
+        ]}
+        onClose={() => setInviteTarget(null)}
       />
     </View>
   );
