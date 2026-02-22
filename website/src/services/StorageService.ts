@@ -29,6 +29,9 @@ class StorageService {
   async uploadAsset(file: File): Promise<{ url: string; contentType: string; fileSize: number }> {
     const user = firebaseAuth.currentUser;
     if (!user) throw new Error('Must be signed in to upload assets.');
+    if (!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
+      throw new Error('Firebase Storage is not configured. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your environment variables.');
+    }
 
     const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storagePath = `assets/${Date.now()}_${sanitized}`;
