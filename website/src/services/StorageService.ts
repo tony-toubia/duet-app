@@ -1,6 +1,6 @@
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ref as dbRef, update } from 'firebase/database';
-import { firebaseAuth, firebaseDb, firebaseStorage } from './firebase';
+import { firebaseAuth, firebaseDb, getFirebaseStorage } from './firebase';
 
 class StorageService {
   /**
@@ -33,9 +33,10 @@ class StorageService {
       throw new Error('Firebase Storage is not configured. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your environment variables.');
     }
 
+    const storage = getFirebaseStorage();
     const sanitized = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storagePath = `assets/${Date.now()}_${sanitized}`;
-    const fileRef = storageRef(firebaseStorage, storagePath);
+    const fileRef = storageRef(storage, storagePath);
 
     await uploadBytes(fileRef, file);
     const url = await getDownloadURL(fileRef);
@@ -50,8 +51,9 @@ class StorageService {
     const user = firebaseAuth.currentUser;
     if (!user) throw new Error('Must be signed in to upload avatar.');
 
+    const storage = getFirebaseStorage();
     const storagePath = `avatars/${user.uid}.jpg`;
-    const fileRef = storageRef(firebaseStorage, storagePath);
+    const fileRef = storageRef(storage, storagePath);
 
     await uploadBytes(fileRef, file);
     const downloadUrl = await getDownloadURL(fileRef);

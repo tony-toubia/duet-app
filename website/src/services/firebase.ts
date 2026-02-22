@@ -43,17 +43,15 @@ export const firebaseDb: Database = new Proxy({} as Database, {
   },
 });
 
-export const firebaseStorage: FirebaseStorage = new Proxy({} as FirebaseStorage, {
-  get(_, prop) {
-    if (!_storage) {
-      const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-      _storage = bucket
-        ? getStorage(getApp(), `gs://${bucket}`)
-        : getStorage(getApp());
-    }
-    return (_storage as any)[prop];
-  },
-});
+export function getFirebaseStorage(): FirebaseStorage {
+  if (!_storage) {
+    const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+    _storage = bucket
+      ? getStorage(getApp(), `gs://${bucket}`)
+      : getStorage(getApp());
+  }
+  return _storage;
+}
 
 export function getFirebaseAnalytics(): Analytics | null {
   if (typeof window === 'undefined') return null;
