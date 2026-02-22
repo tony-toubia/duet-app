@@ -21,6 +21,18 @@ export async function executeCampaign(
     throw new Error(`Campaign ${campaignId} is ${campaign.status}, not sendable`);
   }
 
+  // Resolve message references
+  if (campaign.emailMessageId && !campaign.email) {
+    const msgSnap = await db.ref(`marketing/messages/${campaign.emailMessageId}`).once('value');
+    const msg = msgSnap.val();
+    if (msg?.email) campaign.email = msg.email;
+  }
+  if (campaign.pushMessageId && !campaign.push) {
+    const msgSnap = await db.ref(`marketing/messages/${campaign.pushMessageId}`).once('value');
+    const msg = msgSnap.val();
+    if (msg?.push) campaign.push = msg.push;
+  }
+
   await campaignRef.update({ status: 'sending' });
 
   const segmentSnap = await db.ref(`marketing/segments/${campaign.segmentId}/members`).once('value');

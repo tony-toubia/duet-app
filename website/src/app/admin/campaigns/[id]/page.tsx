@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createAsset } from '@/services/AdminService';
+import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createAsset, createMessage } from '@/services/AdminService';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
 import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
+import { MessagePicker } from '@/components/admin/MessagePicker';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-text-muted/20 text-text-muted',
@@ -36,6 +37,10 @@ export default function CampaignDetailPage() {
   const [editName, setEditName] = useState('');
   const [editSegmentId, setEditSegmentId] = useState('');
   const [editChannels, setEditChannels] = useState<string[]>([]);
+  const [editEmailSource, setEditEmailSource] = useState<'inline' | 'saved'>('inline');
+  const [editPushSource, setEditPushSource] = useState<'inline' | 'saved'>('inline');
+  const [editEmailMessageId, setEditEmailMessageId] = useState<string | null>(null);
+  const [editPushMessageId, setEditPushMessageId] = useState<string | null>(null);
   const [editSubject, setEditSubject] = useState('');
   const [editBody, setEditBody] = useState('');
   const [editIncludeUnsub, setEditIncludeUnsub] = useState(true);
@@ -70,6 +75,21 @@ export default function CampaignDetailPage() {
     setEditName(campaign.name || '');
     setEditSegmentId(campaign.segmentId || 'has_email_subscribed');
     setEditChannels(campaign.channels || ['email']);
+    // Determine source mode from campaign data
+    if (campaign.emailMessageId && !campaign.email) {
+      setEditEmailSource('saved');
+      setEditEmailMessageId(campaign.emailMessageId);
+    } else {
+      setEditEmailSource('inline');
+      setEditEmailMessageId(campaign.emailMessageId || null);
+    }
+    if (campaign.pushMessageId && !campaign.push) {
+      setEditPushSource('saved');
+      setEditPushMessageId(campaign.pushMessageId);
+    } else {
+      setEditPushSource('inline');
+      setEditPushMessageId(campaign.pushMessageId || null);
+    }
     setEditSubject(campaign.email?.subject || '');
     setEditBody(campaign.email?.body || '');
     setEditIncludeUnsub(campaign.email?.includeUnsub ?? true);
@@ -87,14 +107,41 @@ export default function CampaignDetailPage() {
       const hasEmail = editChannels.includes('email');
       const hasPush = editChannels.includes('push');
       const trimmedImageUrl = editPushImageUrl.trim() || null;
+
+      let resolvedEmailMessageId = editEmailMessageId;
+      let resolvedPushMessageId = editPushMessageId;
+
+      // Auto-save inline content as a message
+      if (hasEmail && editEmailSource === 'inline' && editSubject.trim() && editBody.trim()) {
+        const msg = await createMessage({
+          name: `${editName} — email`,
+          channel: 'email',
+          email: { subject: editSubject, body: editBody, includeUnsub: editIncludeUnsub },
+        });
+        resolvedEmailMessageId = msg.id;
+      }
+      if (hasPush && editPushSource === 'inline' && editPushTitle.trim() && editPushBody.trim()) {
+        const msg = await createMessage({
+          name: `${editName} — push`,
+          channel: 'push',
+          push: { title: editPushTitle, body: editPushBody, imageUrl: trimmedImageUrl, actionUrl: editPushActionUrl.trim() || null },
+        });
+        resolvedPushMessageId = msg.id;
+      }
+
       const updated = await updateCampaign(campaignId, {
         name: editName,
         segmentId: editSegmentId,
         channels: editChannels,
-        email: hasEmail ? { subject: editSubject, body: editBody, includeUnsub: editIncludeUnsub } : null,
-        push: hasPush ? { title: editPushTitle, body: editPushBody, imageUrl: trimmedImageUrl, actionUrl: editPushActionUrl.trim() || null, data: null } : null,
+        email: hasEmail && editEmailSource === 'inline' ? { subject: editSubject, body: editBody, includeUnsub: editIncludeUnsub } : null,
+        push: hasPush && editPushSource === 'inline'
+          ? { title: editPushTitle, body: editPushBody, imageUrl: trimmedImageUrl, actionUrl: editPushActionUrl.trim() || null, data: null }
+          : null,
+        emailMessageId: hasEmail ? resolvedEmailMessageId : null,
+        pushMessageId: hasPush ? resolvedPushMessageId : null,
       });
-      // Auto-save image to asset library if it's an external URL
+
+      // Auto-save image to asset library
       if (trimmedImageUrl && trimmedImageUrl.startsWith('http')) {
         createAsset({ name: `${editName} - push image`, url: trimmedImageUrl, tags: ['campaign', 'push'] }).catch(() => {});
       }
@@ -141,6 +188,30 @@ export default function CampaignDetailPage() {
       prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]
     );
   };
+
+  const inputClass =
+    'w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary';
+
+  const sourceToggle = (
+    source: 'inline' | 'saved',
+    setSource: (s: 'inline' | 'saved') => void
+  ) => (
+    <div className="flex gap-1 mb-3">
+      {(['inline', 'saved'] as const).map((s) => (
+        <button
+          key={s}
+          onClick={() => setSource(s)}
+          className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+            source === s
+              ? 'bg-primary/20 text-primary'
+              : 'text-text-muted hover:text-white'
+          }`}
+        >
+          {s === 'inline' ? 'Compose inline' : 'Use saved message'}
+        </button>
+      ))}
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -195,7 +266,7 @@ export default function CampaignDetailPage() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary"
+                  className={inputClass}
                 />
               </div>
 
@@ -204,7 +275,7 @@ export default function CampaignDetailPage() {
                 <select
                   value={editSegmentId}
                   onChange={(e) => setEditSegmentId(e.target.value)}
-                  className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary"
+                  className={inputClass}
                 >
                   {segments.length === 0 && (
                     <option value={editSegmentId}>{editSegmentId}</option>
@@ -236,95 +307,123 @@ export default function CampaignDetailPage() {
                 </div>
               </div>
 
+              {/* Email section */}
               {editChannels.includes('email') && (
-                <>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Subject Line</label>
-                    <input
-                      type="text"
-                      value={editSubject}
-                      onChange={(e) => setEditSubject(e.target.value)}
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary"
+                <div className="p-3 bg-surface rounded-xl border border-glass-border space-y-3">
+                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider">Email Content</label>
+                  {sourceToggle(editEmailSource, setEditEmailSource)}
+
+                  {editEmailSource === 'saved' ? (
+                    <MessagePicker
+                      channel="email"
+                      value={editEmailMessageId}
+                      onChange={setEditEmailMessageId}
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Email Body (HTML)</label>
-                    <textarea
-                      value={editBody}
-                      onChange={(e) => setEditBody(e.target.value)}
-                      rows={8}
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm font-mono focus:outline-none focus:border-primary resize-y"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editIncludeUnsub}
-                      onChange={(e) => setEditIncludeUnsub(e.target.checked)}
-                      className="rounded"
-                    />
-                    <span className="text-sm text-text-muted">Include unsubscribe link</span>
-                  </label>
-                  <button
-                    onClick={handlePreview}
-                    disabled={!editBody.trim()}
-                    className="px-3 py-1.5 bg-glass border border-glass-border text-white rounded-lg text-sm hover:bg-glass-border transition-colors disabled:opacity-50"
-                  >
-                    Preview Email
-                  </button>
-                </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Subject Line</label>
+                        <input
+                          type="text"
+                          value={editSubject}
+                          onChange={(e) => setEditSubject(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Email Body (HTML)</label>
+                        <textarea
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                          rows={8}
+                          className={`${inputClass} font-mono resize-y`}
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editIncludeUnsub}
+                          onChange={(e) => setEditIncludeUnsub(e.target.checked)}
+                          className="rounded"
+                        />
+                        <span className="text-sm text-text-muted">Include unsubscribe link</span>
+                      </label>
+                      <button
+                        onClick={handlePreview}
+                        disabled={!editBody.trim()}
+                        className="px-3 py-1.5 bg-glass border border-glass-border text-white rounded-lg text-sm hover:bg-glass-border transition-colors disabled:opacity-50"
+                      >
+                        Preview Email
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
 
+              {/* Push section */}
               {editChannels.includes('push') && (
-                <>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Push Title</label>
-                    <input
-                      type="text"
-                      value={editPushTitle}
-                      onChange={(e) => setEditPushTitle(e.target.value)}
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary"
+                <div className="p-3 bg-surface rounded-xl border border-glass-border space-y-3">
+                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider">Push Content</label>
+                  {sourceToggle(editPushSource, setEditPushSource)}
+
+                  {editPushSource === 'saved' ? (
+                    <MessagePicker
+                      channel="push"
+                      value={editPushMessageId}
+                      onChange={setEditPushMessageId}
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Push Body</label>
-                    <textarea
-                      value={editPushBody}
-                      onChange={(e) => setEditPushBody(e.target.value)}
-                      rows={3}
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm focus:outline-none focus:border-primary resize-y"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={editPushImageUrl}
-                        onChange={(e) => setEditPushImageUrl(e.target.value)}
-                        placeholder="https://example.com/image.png"
-                        className="flex-1 px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAssetPicker(true)}
-                        className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
-                      >
-                        Browse
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
-                    <input
-                      type="text"
-                      value={editPushActionUrl}
-                      onChange={(e) => setEditPushActionUrl(e.target.value)}
-                      placeholder="https://getduet.app or duet://room/ABC123"
-                      className="w-full px-3 py-2 bg-glass border border-glass-border rounded-lg text-white text-sm placeholder:text-text-muted/50 focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Push Title</label>
+                        <input
+                          type="text"
+                          value={editPushTitle}
+                          onChange={(e) => setEditPushTitle(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Push Body</label>
+                        <textarea
+                          value={editPushBody}
+                          onChange={(e) => setEditPushBody(e.target.value)}
+                          rows={3}
+                          className={`${inputClass} resize-y`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={editPushImageUrl}
+                            onChange={(e) => setEditPushImageUrl(e.target.value)}
+                            placeholder="https://example.com/image.png"
+                            className={`flex-1 ${inputClass}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowAssetPicker(true)}
+                            className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
+                          >
+                            Browse
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
+                        <input
+                          type="text"
+                          value={editPushActionUrl}
+                          onChange={(e) => setEditPushActionUrl(e.target.value)}
+                          placeholder="https://getduet.app or duet://room/ABC123"
+                          className={inputClass}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
 
               {error && <p className="text-sm text-danger">{error}</p>}
@@ -370,6 +469,20 @@ export default function CampaignDetailPage() {
                   <p className="text-xs text-text-muted">
                     Unsubscribe link: {campaign.email.includeUnsub ? 'Yes' : 'No'}
                   </p>
+                  {campaign.emailMessageId && (
+                    <Link href={`/admin/messages/${campaign.emailMessageId}`} className="text-primary text-xs hover:underline mt-1 inline-block">
+                      View linked message
+                    </Link>
+                  )}
+                </div>
+              )}
+
+              {!campaign?.email && campaign?.emailMessageId && (
+                <div className="bg-surface rounded-xl border border-glass-border p-4">
+                  <h3 className="text-sm font-medium text-text-muted mb-2">Email</h3>
+                  <Link href={`/admin/messages/${campaign.emailMessageId}`} className="text-primary text-sm hover:underline">
+                    Using saved message
+                  </Link>
                 </div>
               )}
 
@@ -384,6 +497,20 @@ export default function CampaignDetailPage() {
                   {campaign.push.actionUrl && (
                     <p className="text-xs text-text-muted mt-1">Action: {campaign.push.actionUrl}</p>
                   )}
+                  {campaign.pushMessageId && (
+                    <Link href={`/admin/messages/${campaign.pushMessageId}`} className="text-primary text-xs hover:underline mt-1 inline-block">
+                      View linked message
+                    </Link>
+                  )}
+                </div>
+              )}
+
+              {!campaign?.push && campaign?.pushMessageId && (
+                <div className="bg-surface rounded-xl border border-glass-border p-4">
+                  <h3 className="text-sm font-medium text-text-muted mb-2">Push Notification</h3>
+                  <Link href={`/admin/messages/${campaign.pushMessageId}`} className="text-primary text-sm hover:underline">
+                    Using saved message
+                  </Link>
                 </div>
               )}
 
@@ -461,7 +588,7 @@ export default function CampaignDetailPage() {
                 title="Email preview"
               />
             </div>
-          ) : (campaign?.push || (isEditing && editChannels.includes('push'))) ? (
+          ) : (campaign?.push || (isEditing && editChannels.includes('push') && editPushSource === 'inline')) ? (
             <div className="sticky top-6">
               <h2 className="text-sm font-medium text-text-muted mb-2">Push Preview</h2>
               <div className="bg-surface rounded-xl border border-glass-border p-6">

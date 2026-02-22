@@ -5,7 +5,7 @@ import { getDatabase } from 'firebase-admin/database';
 import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
-import type { Campaign, SegmentContext } from './types';
+import type { Campaign, Message, SegmentContext } from './types';
 
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
@@ -340,6 +340,65 @@ export const marketingApi = onRequest(
         }
       }
 
+      // ── Messages ──────────────────────────────────────────────
+      if (path === 'messages' && method === 'GET') {
+        const snap = await db.ref('marketing/messages').orderByChild('createdAt').once('value');
+        const messages: any[] = [];
+        snap.forEach((child) => {
+          messages.push({ id: child.key, ...child.val() });
+        });
+        messages.reverse();
+        json(res, 200, { messages });
+        return;
+      }
+
+      if (path === 'messages' && method === 'POST') {
+        const body = req.body;
+        if (!body.name || !body.channel) {
+          json(res, 400, { error: 'Name and channel are required' });
+          return;
+        }
+        const now = Date.now();
+        const message: Message = {
+          name: body.name,
+          channel: body.channel,
+          email: body.email || null,
+          push: body.push || null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const ref = await db.ref('marketing/messages').push(message);
+        json(res, 201, { id: ref.key, ...message });
+        return;
+      }
+
+      const messageMatch = path.match(/^messages\/([^/]+)$/);
+      if (messageMatch) {
+        const messageId = messageMatch[1];
+
+        if (method === 'GET') {
+          const snap = await db.ref(`marketing/messages/${messageId}`).once('value');
+          if (!snap.exists()) { json(res, 404, { error: 'Not found' }); return; }
+          json(res, 200, { id: messageId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'PUT') {
+          const body = req.body;
+          body.updatedAt = Date.now();
+          await db.ref(`marketing/messages/${messageId}`).update(body);
+          const snap = await db.ref(`marketing/messages/${messageId}`).once('value');
+          json(res, 200, { id: messageId, ...snap.val() });
+          return;
+        }
+
+        if (method === 'DELETE') {
+          await db.ref(`marketing/messages/${messageId}`).remove();
+          json(res, 200, { deleted: messageId });
+          return;
+        }
+      }
+
       // ── Assets ───────────────────────────────────────────────
       if (path === 'assets' && method === 'GET') {
         const snap = await db.ref('marketing/assets').once('value');
@@ -406,6 +465,18 @@ export const marketingApi = onRequest(
                 break;
               }
             }
+          }
+        });
+
+        // Scan messages
+        const messagesSnap = await db.ref('marketing/messages').once('value');
+        messagesSnap.forEach((child) => {
+          const m = child.val();
+          if (
+            m.push?.imageUrl === assetUrl ||
+            (m.email?.body && m.email.body.includes(assetUrl))
+          ) {
+            usage.push({ type: 'message', id: child.key!, name: m.name });
           }
         });
 

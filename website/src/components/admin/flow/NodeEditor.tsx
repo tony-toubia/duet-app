@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { Node } from '@xyflow/react';
+import { fetchMessages } from '@/services/AdminService';
 import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
 
 const TRACKABLE_EVENTS = [
@@ -79,6 +81,15 @@ const labelClass = 'block text-xs text-text-muted mb-1';
 export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProps) {
   const d = node.data as any;
   const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [savedMessages, setSavedMessages] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (node.type === 'action') {
+      fetchMessages()
+        .then((data) => setSavedMessages(data.messages || []))
+        .catch(() => {});
+    }
+  }, [node.type]);
 
   const update = (patch: Record<string, any>) => {
     onChange(node.id, { ...d, ...patch });
@@ -115,123 +126,180 @@ export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProp
       )}
 
       {/* Action node */}
-      {node.type === 'action' && (
-        <>
-          <div>
-            <label className={labelClass}>Channel</label>
-            <div className="flex gap-2">
-              {['email', 'push'].map((ch) => (
-                <button
-                  key={ch}
-                  onClick={() => update({ channel: ch, templateId: '', customSubject: '', customBody: '', customTitle: '' })}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    d.channel === ch
-                      ? 'bg-primary text-white'
-                      : 'bg-glass border border-glass-border text-text-muted'
-                  }`}
-                >
-                  {ch === 'email' ? 'Email' : 'Push'}
-                </button>
-              ))}
+      {node.type === 'action' && (() => {
+        const channelMessages = savedMessages.filter((m) => m.channel === d.channel);
+        const isSavedMessage = d.templateId === 'saved' && d.messageId;
+        const selectedMessage = isSavedMessage
+          ? savedMessages.find((m) => m.id === d.messageId)
+          : null;
+
+        const handleTemplateChange = (value: string) => {
+          if (value.startsWith('msg:')) {
+            const msgId = value.slice(4);
+            update({ templateId: 'saved', messageId: msgId, customSubject: '', customBody: '', customTitle: '' });
+          } else {
+            update({ templateId: value, messageId: null });
+          }
+        };
+
+        const selectValue = isSavedMessage ? `msg:${d.messageId}` : (d.templateId || '');
+
+        return (
+          <>
+            <div>
+              <label className={labelClass}>Channel</label>
+              <div className="flex gap-2">
+                {['email', 'push'].map((ch) => (
+                  <button
+                    key={ch}
+                    onClick={() => update({ channel: ch, templateId: '', messageId: null, customSubject: '', customBody: '', customTitle: '' })}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      d.channel === ch
+                        ? 'bg-primary text-white'
+                        : 'bg-glass border border-glass-border text-text-muted'
+                    }`}
+                  >
+                    {ch === 'email' ? 'Email' : 'Push'}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className={labelClass}>Template</label>
-            <select
-              value={d.templateId || ''}
-              onChange={(e) => update({ templateId: e.target.value })}
-              className={inputClass}
-            >
-              <option value="">Select...</option>
-              {(d.channel === 'email' ? EMAIL_TEMPLATES : PUSH_TEMPLATES).map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
+            <div>
+              <label className={labelClass}>Content Source</label>
+              <select
+                value={selectValue}
+                onChange={(e) => handleTemplateChange(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Select...</option>
+                <optgroup label="Built-in Templates">
+                  {(d.channel === 'email' ? EMAIL_TEMPLATES : PUSH_TEMPLATES).map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+                {channelMessages.length > 0 && (
+                  <optgroup label="Saved Messages">
+                    {channelMessages.map((m: any) => (
+                      <option key={m.id} value={`msg:${m.id}`}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
 
-          {d.templateId === 'custom' && d.channel === 'email' && (
-            <>
-              <div>
-                <label className={labelClass}>Subject</label>
-                <input
-                  type="text"
-                  value={d.customSubject || ''}
-                  onChange={(e) => update({ customSubject: e.target.value })}
-                  placeholder="Email subject"
-                  className={inputClass}
-                />
+            {/* Saved message preview */}
+            {isSavedMessage && selectedMessage && (
+              <div className="p-2.5 bg-glass border border-glass-border rounded-lg space-y-1">
+                {d.channel === 'email' && selectedMessage.email && (
+                  <>
+                    <p className="text-xs text-text-muted">Subject: <span className="text-white">{selectedMessage.email.subject}</span></p>
+                    <pre className="text-[10px] text-text-muted font-mono whitespace-pre-wrap overflow-auto max-h-20 bg-surface rounded p-1.5">
+                      {selectedMessage.email.body?.substring(0, 200)}{selectedMessage.email.body?.length > 200 ? '...' : ''}
+                    </pre>
+                  </>
+                )}
+                {d.channel === 'push' && selectedMessage.push && (
+                  <>
+                    <p className="text-xs text-text-muted">Title: <span className="text-white">{selectedMessage.push.title}</span></p>
+                    <p className="text-xs text-text-muted">Body: <span className="text-white">{selectedMessage.push.body}</span></p>
+                  </>
+                )}
+                <Link
+                  href={`/admin/messages/${selectedMessage.id}`}
+                  className="text-primary text-[10px] hover:underline inline-block"
+                  target="_blank"
+                >
+                  Edit in Messages
+                </Link>
               </div>
-              <div>
-                <label className={labelClass}>Body (HTML)</label>
-                <textarea
-                  value={d.customBody || ''}
-                  onChange={(e) => update({ customBody: e.target.value })}
-                  rows={6}
-                  placeholder="<p>Hello {{name}}!</p>"
-                  className={`${inputClass} font-mono resize-y`}
-                />
-              </div>
-            </>
-          )}
+            )}
 
-          {d.templateId === 'custom' && d.channel === 'push' && (
-            <>
-              <div>
-                <label className={labelClass}>Title</label>
-                <input
-                  type="text"
-                  value={d.customTitle || ''}
-                  onChange={(e) => update({ customTitle: e.target.value })}
-                  placeholder="Notification title"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Body</label>
-                <textarea
-                  value={d.customBody || ''}
-                  onChange={(e) => update({ customBody: e.target.value })}
-                  rows={3}
-                  placeholder="Notification message"
-                  className={`${inputClass} resize-y`}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Image URL (optional)</label>
-                <div className="flex gap-1.5">
+            {d.templateId === 'custom' && d.channel === 'email' && (
+              <>
+                <div>
+                  <label className={labelClass}>Subject</label>
                   <input
                     type="text"
-                    value={d.pushImageUrl || ''}
-                    onChange={(e) => update({ pushImageUrl: e.target.value })}
-                    placeholder="https://example.com/image.png"
-                    className={`${inputClass} flex-1`}
+                    value={d.customSubject || ''}
+                    onChange={(e) => update({ customSubject: e.target.value })}
+                    placeholder="Email subject"
+                    className={inputClass}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowAssetPicker(true)}
-                    className="px-2 py-2 bg-glass border border-glass-border rounded-lg text-[10px] text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
-                  >
-                    Browse
-                  </button>
                 </div>
-              </div>
-              <div>
-                <label className={labelClass}>Action URL (optional)</label>
-                <input
-                  type="text"
-                  value={d.pushActionUrl || ''}
-                  onChange={(e) => update({ pushActionUrl: e.target.value })}
-                  placeholder="https://getduet.app"
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
-        </>
-      )}
+                <div>
+                  <label className={labelClass}>Body (HTML)</label>
+                  <textarea
+                    value={d.customBody || ''}
+                    onChange={(e) => update({ customBody: e.target.value })}
+                    rows={6}
+                    placeholder="<p>Hello {{name}}!</p>"
+                    className={`${inputClass} font-mono resize-y`}
+                  />
+                </div>
+              </>
+            )}
+
+            {d.templateId === 'custom' && d.channel === 'push' && (
+              <>
+                <div>
+                  <label className={labelClass}>Title</label>
+                  <input
+                    type="text"
+                    value={d.customTitle || ''}
+                    onChange={(e) => update({ customTitle: e.target.value })}
+                    placeholder="Notification title"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Body</label>
+                  <textarea
+                    value={d.customBody || ''}
+                    onChange={(e) => update({ customBody: e.target.value })}
+                    rows={3}
+                    placeholder="Notification message"
+                    className={`${inputClass} resize-y`}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Image URL (optional)</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={d.pushImageUrl || ''}
+                      onChange={(e) => update({ pushImageUrl: e.target.value })}
+                      placeholder="https://example.com/image.png"
+                      className={`${inputClass} flex-1`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAssetPicker(true)}
+                      className="px-2 py-2 bg-glass border border-glass-border rounded-lg text-[10px] text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
+                    >
+                      Browse
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Action URL (optional)</label>
+                  <input
+                    type="text"
+                    value={d.pushActionUrl || ''}
+                    onChange={(e) => update({ pushActionUrl: e.target.value })}
+                    placeholder="https://getduet.app"
+                    className={inputClass}
+                  />
+                </div>
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Condition node */}
       {node.type === 'condition' && (

@@ -548,7 +548,20 @@ export async function processJourneyFlows(
         }
 
         case 'action': {
-          const actionData = currentNode.data as ActionData;
+          let actionData = currentNode.data as ActionData;
+
+          // Resolve saved message reference
+          if (actionData.messageId) {
+            const msgSnap = await db.ref(`marketing/messages/${actionData.messageId}`).once('value');
+            const msg = msgSnap.val();
+            if (msg) {
+              if (actionData.channel === 'email' && msg.email) {
+                actionData = { ...actionData, customSubject: msg.email.subject, customBody: msg.email.body };
+              } else if (actionData.channel === 'push' && msg.push) {
+                actionData = { ...actionData, customTitle: msg.push.title, customBody: msg.push.body, pushImageUrl: msg.push.imageUrl, pushActionUrl: msg.push.actionUrl };
+              }
+            }
+          }
 
           // Check unsubscribed for email
           if (actionData.channel === 'email' && emailState?.unsubscribed) {

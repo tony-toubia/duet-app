@@ -134,6 +134,27 @@ export async function seedJourneys() {
   return api<{ journeys: any[] }>('journeys/seed', 'POST');
 }
 
+// Messages
+export async function fetchMessages() {
+  return api<{ messages: any[] }>('messages');
+}
+
+export async function fetchMessage(id: string) {
+  return api<any>(`messages/${id}`);
+}
+
+export async function createMessage(data: any) {
+  return api<any>('messages', 'POST', data);
+}
+
+export async function updateMessage(id: string, data: any) {
+  return api<any>(`messages/${id}`, 'PUT', data);
+}
+
+export async function deleteMessage(id: string) {
+  return api<{ deleted: string }>(`messages/${id}`, 'DELETE');
+}
+
 // Assets
 export async function fetchAssets() {
   return api<{ assets: any[] }>('assets');

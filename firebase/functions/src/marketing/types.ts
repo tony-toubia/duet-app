@@ -15,6 +15,8 @@ export interface Campaign {
     actionUrl: string | null;
     data: Record<string, string> | null;
   } | null;
+  emailMessageId?: string | null;
+  pushMessageId?: string | null;
   createdAt: number;
   updatedAt: number;
   sentAt: number | null;
@@ -25,6 +27,24 @@ export interface Campaign {
     pushSent: number;
     pushFailed: number;
   } | null;
+}
+
+export interface Message {
+  name: string;
+  channel: 'email' | 'push';
+  email: {
+    subject: string;
+    body: string;
+    includeUnsub: boolean;
+  } | null;
+  push: {
+    title: string;
+    body: string;
+    imageUrl: string | null;
+    actionUrl: string | null;
+  } | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Segment {
@@ -113,6 +133,7 @@ export interface ActionData {
   label?: string;
   channel: 'email' | 'push';
   templateId: string;
+  messageId?: string | null;
   customSubject?: string;
   customBody?: string;
   customTitle?: string;

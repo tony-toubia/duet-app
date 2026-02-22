@@ -13,12 +13,14 @@ interface AdminState {
   segments: any[];
   campaigns: any[];
   journeys: any[];
+  messages: any[];
 
   // Loading states
   isLoadingStats: boolean;
   isLoadingSegments: boolean;
   isLoadingCampaigns: boolean;
   isLoadingJourneys: boolean;
+  isLoadingMessages: boolean;
   isRefreshingSegments: boolean;
 
   // Actions
@@ -26,12 +28,16 @@ interface AdminState {
   loadSegments: () => Promise<void>;
   loadCampaigns: () => Promise<void>;
   loadJourneys: () => Promise<void>;
+  loadMessages: () => Promise<void>;
   refreshSegments: () => Promise<void>;
   createCampaign: (data: any) => Promise<string>;
   sendCampaign: (id: string) => Promise<void>;
   createJourney: (data: any) => Promise<string>;
   updateJourney: (id: string, data: any) => Promise<void>;
   deleteJourney: (id: string) => Promise<void>;
+  createMessage: (data: any) => Promise<string>;
+  updateMessage: (id: string, data: any) => Promise<void>;
+  deleteMessage: (id: string) => Promise<void>;
   deleteCustomSegment: (id: string) => Promise<void>;
 }
 
@@ -40,10 +46,12 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   segments: [],
   campaigns: [],
   journeys: [],
+  messages: [],
   isLoadingStats: false,
   isLoadingSegments: false,
   isLoadingCampaigns: false,
   isLoadingJourneys: false,
+  isLoadingMessages: false,
   isRefreshingSegments: false,
 
   loadStats: async () => {
@@ -122,6 +130,32 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   deleteJourney: async (id) => {
     await admin.deleteJourney(id);
     await get().loadJourneys();
+  },
+
+  loadMessages: async () => {
+    set({ isLoadingMessages: true });
+    try {
+      const { messages } = await admin.fetchMessages();
+      set({ messages });
+    } finally {
+      set({ isLoadingMessages: false });
+    }
+  },
+
+  createMessage: async (data) => {
+    const result = await admin.createMessage(data);
+    await get().loadMessages();
+    return result.id;
+  },
+
+  updateMessage: async (id, data) => {
+    await admin.updateMessage(id, data);
+    await get().loadMessages();
+  },
+
+  deleteMessage: async (id) => {
+    await admin.deleteMessage(id);
+    await get().loadMessages();
   },
 
   deleteCustomSegment: async (id) => {

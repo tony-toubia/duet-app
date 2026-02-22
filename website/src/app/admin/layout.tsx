@@ -12,7 +12,8 @@ const ADMIN_UIDS = (process.env.NEXT_PUBLIC_ADMIN_UIDS || '').split(',').filter(
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: '📊' },
-  { href: '/admin/campaigns', label: 'Campaigns', icon: '📨' },
+  { href: '/admin/campaigns', label: 'Batch Campaigns', icon: '📨' },
+  { href: '/admin/messages', label: 'Messages', icon: '💬' },
   { href: '/admin/segments', label: 'Segments', icon: '👥' },
   { href: '/admin/journeys', label: 'Journeys', icon: '🔄' },
   { href: '/admin/assets', label: 'Assets', icon: '🖼️' },
