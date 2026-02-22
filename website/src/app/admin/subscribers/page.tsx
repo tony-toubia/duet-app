@@ -370,6 +370,34 @@ function OverviewTab({ data }: { data: SubscriberDetail }) {
   );
 }
 
+function engagementBadges(engagement: any[] | undefined, channel: string) {
+  if (!engagement || engagement.length === 0) {
+    return <span className="text-text-muted">—</span>;
+  }
+  const types = new Set(engagement.map((e: any) => e.type));
+  const badges: { label: string; color: string }[] = [];
+
+  if (channel === 'email' || channel === 'both') {
+    if (types.has('email_opened')) badges.push({ label: 'Opened', color: 'bg-blue-400/15 text-blue-400' });
+    if (types.has('email_clicked')) badges.push({ label: 'Clicked', color: 'bg-green-400/15 text-green-400' });
+  }
+  if (channel === 'push' || channel === 'both') {
+    if (types.has('push_opened')) badges.push({ label: 'Opened', color: 'bg-blue-400/15 text-blue-400' });
+  }
+
+  if (badges.length === 0) return <span className="text-text-muted">—</span>;
+
+  return (
+    <div className="flex gap-1">
+      {badges.map((b) => (
+        <span key={b.label} className={`px-1.5 py-0.5 rounded text-xs ${b.color}`}>
+          {b.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function SendsTab({ data }: { data: SubscriberDetail }) {
   if (data.sendHistory.length === 0) {
     return <div className="text-center py-12 text-text-muted">No send history</div>;
@@ -385,6 +413,7 @@ function SendsTab({ data }: { data: SubscriberDetail }) {
             <th className="px-4 py-3 text-text-muted font-medium">Source</th>
             <th className="px-4 py-3 text-text-muted font-medium">Source ID</th>
             <th className="px-4 py-3 text-text-muted font-medium">Status</th>
+            <th className="px-4 py-3 text-text-muted font-medium">Engagement</th>
           </tr>
         </thead>
         <tbody>
@@ -404,6 +433,9 @@ function SendsTab({ data }: { data: SubscriberDetail }) {
                 ) : (
                   <span className="text-red-400">{entry.error || 'Failed'}</span>
                 )}
+              </td>
+              <td className="px-4 py-3">
+                {engagementBadges(entry.engagement, entry.channel)}
               </td>
             </tr>
           ))}

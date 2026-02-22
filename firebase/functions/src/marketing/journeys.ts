@@ -17,6 +17,9 @@ import {
   welcomeEmailHtml,
   tipsEmailHtml,
   reengagementEmailHtml,
+  wrapLinksWithClickTracking,
+  openTrackPixel,
+  baseEmailLayout,
 } from './templates';
 import { logEvent, hasEventSince } from './events';
 
@@ -146,7 +149,9 @@ async function sendEmail(
   templateId: string,
   unsubSecret: string,
   customSubject?: string,
-  customBody?: string
+  customBody?: string,
+  source?: string,
+  sourceId?: string
 ): Promise<boolean> {
   if (!user.profile?.email) return false;
 
@@ -156,13 +161,25 @@ async function sendEmail(
 
   if (customSubject && customBody) {
     subject = customSubject;
-    html = customBody;
+    // Wrap custom body with click/open tracking and base layout
+    let content = customBody;
+    if (source && sourceId) {
+      content = wrapLinksWithClickTracking(content, userId, source, sourceId, unsubSecret);
+      content += openTrackPixel(userId, source, sourceId, unsubSecret);
+    }
+    html = baseEmailLayout(content);
   } else {
     const template = EMAIL_TEMPLATES[templateId];
     if (!template) return false;
     const result = template(displayName, userId, unsubSecret);
     subject = result.subject;
     html = result.html;
+    // Wrap template HTML links with click/open tracking
+    if (source && sourceId) {
+      html = wrapLinksWithClickTracking(html, userId, source, sourceId, unsubSecret);
+      // Insert open tracking pixel before closing body tag
+      html = html.replace('</body>', `${openTrackPixel(userId, source, sourceId, unsubSecret)}</body>`);
+    }
   }
 
   try {
@@ -339,7 +356,7 @@ export async function processLegacyJourneys(
 
       let success = false;
       if (step.channel === 'email') {
-        success = await sendEmail(resend, userId, user, step.templateId, unsubSecret);
+        success = await sendEmail(resend, userId, user, step.templateId, unsubSecret, undefined, undefined, 'journey', journey.id);
         if (success) await logEvent(userId, 'email_sent', { source: 'journey', sourceId: journey.id });
       } else if (step.channel === 'push') {
         success = await sendPush(messaging, db, userId, user, step.templateId);
@@ -587,7 +604,9 @@ export async function processJourneyFlows(
               actionData.templateId,
               unsubSecret,
               actionData.customSubject,
-              actionData.customBody
+              actionData.customBody,
+              'journey',
+              journey.id
             );
             if (success) await logEvent(userId, 'email_sent', { source: 'journey', sourceId: journey.id });
           } else if (actionData.channel === 'push') {

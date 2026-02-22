@@ -1,9 +1,40 @@
 import { createHmac } from 'crypto';
 
-// ─── Unsubscribe helpers ─────────────────────────────────────────────
+// ─── HMAC helpers ────────────────────────────────────────────────────
 
 export function generateUnsubToken(userId: string, secret: string): string {
   return createHmac('sha256', secret).update(userId).digest('hex').slice(0, 16);
+}
+
+export function generateClickToken(userId: string, url: string, secret: string): string {
+  return createHmac('sha256', secret).update(`${userId}:${url}`).digest('hex').slice(0, 16);
+}
+
+export function generateOpenToken(userId: string, sourceId: string, secret: string): string {
+  return createHmac('sha256', secret).update(`open:${userId}:${sourceId}`).digest('hex').slice(0, 16);
+}
+
+export function clickTrackUrl(
+  userId: string,
+  destination: string,
+  source: string,
+  sourceId: string,
+  secret: string
+): string {
+  const token = generateClickToken(userId, destination, secret);
+  const params = new URLSearchParams({ uid: userId, url: destination, src: source, sid: sourceId, t: token });
+  return `https://us-central1-duet-33cf5.cloudfunctions.net/emailClick?${params.toString()}`;
+}
+
+export function openTrackPixel(
+  userId: string,
+  source: string,
+  sourceId: string,
+  secret: string
+): string {
+  const token = generateOpenToken(userId, sourceId, secret);
+  const params = new URLSearchParams({ uid: userId, src: source, sid: sourceId, t: token });
+  return `<img src="https://us-central1-duet-33cf5.cloudfunctions.net/emailOpen?${params.toString()}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;" />`;
 }
 
 export function unsubscribeUrl(userId: string, secret: string): string {
@@ -106,16 +137,45 @@ ${ctaButton('Create a Room Now', 'https://getduet.app/app')}
 ${unsubscribeFooter(userId, secret)}`);
 }
 
+// ─── Link wrapping for click tracking ────────────────────────────────
+
+export function wrapLinksWithClickTracking(
+  html: string,
+  userId: string,
+  source: string,
+  sourceId: string,
+  secret: string
+): string {
+  const unsubDomain = 'cloudfunctions.net/unsubscribe';
+  return html.replace(
+    /href="(https?:\/\/[^"]+)"/gi,
+    (_match, url: string) => {
+      // Don't wrap unsubscribe links or click track links (avoid double-wrapping)
+      if (url.includes(unsubDomain) || url.includes('emailClick')) return `href="${url}"`;
+      const tracked = clickTrackUrl(userId, url, source, sourceId, secret);
+      return `href="${tracked}"`;
+    }
+  );
+}
+
 // ─── Campaign email wrapper ──────────────────────────────────────────
 
 export function campaignEmailHtml(
   bodyHtml: string,
   userId: string,
   secret: string,
-  includeUnsub: boolean
+  includeUnsub: boolean,
+  source?: string,
+  sourceId?: string
 ): string {
   const unsub = includeUnsub ? unsubscribeFooter(userId, secret) : '';
-  return baseEmailLayout(`${bodyHtml}${unsub}`);
+  let content = `${bodyHtml}${unsub}`;
+  // Wrap links with click tracking and add open tracking pixel when source info is provided
+  if (source && sourceId) {
+    content = wrapLinksWithClickTracking(content, userId, source, sourceId, secret);
+    content += openTrackPixel(userId, source, sourceId, secret);
+  }
+  return baseEmailLayout(content);
 }
 
 // ─── Unsubscribe confirmation page ───────────────────────────────────

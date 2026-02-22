@@ -11,11 +11,14 @@ import { Resend } from 'resend';
 // Marketing module imports
 import {
   generateUnsubToken,
+  generateClickToken,
+  generateOpenToken,
   unsubscribePage,
   welcomeEmailHtml,
   tipsEmailHtml,
   reengagementEmailHtml,
 } from './marketing/templates';
+import { logEvent } from './marketing/events';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
@@ -356,6 +359,84 @@ export const unsubscribe = onRequest(
       console.error(`[Unsub] Error for ${uid}:`, error);
       res.status(500).send(unsubscribePage('Something went wrong. Please try again.', false));
     }
+  }
+);
+
+// ─── Email click tracking endpoint ───────────────────────────────────
+
+/**
+ * HTTPS endpoint for email click tracking. Validates HMAC, logs the click event,
+ * and redirects to the destination URL.
+ */
+export const emailClick = onRequest(
+  { region: 'us-central1', secrets: [unsubSecret] },
+  async (req, res) => {
+    const uid = req.query.uid as string | undefined;
+    const url = req.query.url as string | undefined;
+    const source = req.query.src as string | undefined;
+    const sourceId = req.query.sid as string | undefined;
+    const token = req.query.t as string | undefined;
+
+    if (!uid || !url || !token) {
+      res.status(400).send('Invalid link');
+      return;
+    }
+
+    const expected = generateClickToken(uid, url, unsubSecret.value());
+    if (token !== expected) {
+      // Still redirect even if token is invalid — don't break the user experience
+      res.redirect(302, url);
+      return;
+    }
+
+    // Log click event asynchronously — don't block the redirect
+    logEvent(uid, 'email_clicked', {
+      ...(source ? { source } : {}),
+      ...(sourceId ? { sourceId } : {}),
+      url,
+    }).catch((err) => console.error(`[EmailClick] Failed to log for ${uid}:`, err));
+
+    res.redirect(302, url);
+  }
+);
+
+// ─── Email open tracking endpoint ────────────────────────────────────
+
+// Transparent 1x1 GIF
+const TRACKING_PIXEL = Buffer.from(
+  'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+  'base64'
+);
+
+/**
+ * HTTPS endpoint for email open tracking. Returns a 1x1 transparent GIF
+ * and logs the open event.
+ */
+export const emailOpen = onRequest(
+  { region: 'us-central1', secrets: [unsubSecret] },
+  async (req, res) => {
+    // Always return the pixel — even if params are invalid
+    res.set('Content-Type', 'image/gif');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
+    const uid = req.query.uid as string | undefined;
+    const source = req.query.src as string | undefined;
+    const sourceId = req.query.sid as string | undefined;
+    const token = req.query.t as string | undefined;
+
+    if (uid && sourceId && token) {
+      const expected = generateOpenToken(uid, sourceId, unsubSecret.value());
+      if (token === expected) {
+        logEvent(uid, 'email_opened', {
+          ...(source ? { source } : {}),
+          ...(sourceId ? { sourceId } : {}),
+        }).catch((err) => console.error(`[EmailOpen] Failed to log for ${uid}:`, err));
+      }
+    }
+
+    res.status(200).send(TRACKING_PIXEL);
   }
 );
 

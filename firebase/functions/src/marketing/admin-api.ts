@@ -630,13 +630,20 @@ export const marketingApi = onRequest(
         const emailState = emailStateSnap.val() || {};
         const status = statusSnap.val() || {};
 
-        // Events — flatten by type
+        // Events — flatten by type, separate send-related from general events
+        const SEND_EVENT_TYPES = new Set(['email_sent', 'push_received', 'push_opened', 'email_opened', 'email_clicked']);
         const rawEvents = eventsSnap.val() || {};
         const events: any[] = [];
+        const engagementEvents: any[] = [];
         for (const [eventType, entries] of Object.entries(rawEvents) as [string, any][]) {
           if (typeof entries === 'object' && entries !== null) {
             for (const [, evt] of Object.entries(entries) as [string, any][]) {
-              events.push({ type: eventType, ...evt });
+              const event = { type: eventType, ...evt };
+              if (SEND_EVENT_TYPES.has(eventType)) {
+                engagementEvents.push(event);
+              } else {
+                events.push(event);
+              }
             }
           }
         }
@@ -651,11 +658,23 @@ export const marketingApi = onRequest(
           }
         }
 
-        // Send log
+        // Send log — merge with engagement events (push_opened, email_clicked)
         const sendHistory: any[] = [];
         sendLogSnap.forEach((child) => {
           sendHistory.push({ id: child.key, ...child.val() });
         });
+        // Attach engagement data to each send entry by matching source+sourceId
+        for (const entry of sendHistory) {
+          const sourceId = entry.sourceId;
+          const source = entry.source;
+          entry.engagement = [];
+          for (const evt of engagementEvents) {
+            if (evt.metadata?.sourceId === sourceId && evt.metadata?.source === source) {
+              entry.engagement.push({ type: evt.type, timestamp: evt.timestamp });
+            }
+          }
+          entry.engagement.sort((a: any, b: any) => a.timestamp - b.timestamp);
+        }
         sendHistory.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
 
         json(res, 200, {

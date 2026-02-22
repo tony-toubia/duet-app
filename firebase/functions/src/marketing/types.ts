@@ -82,6 +82,8 @@ export type TrackableEvent =
   | 'push_received'
   | 'push_opened'
   | 'email_sent'
+  | 'email_opened'
+  | 'email_clicked'
   | 'room_created'
   | 'room_joined'
   | 'login'

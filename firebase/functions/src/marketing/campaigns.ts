@@ -79,7 +79,9 @@ export async function executeCampaign(
               campaign.email.body,
               userId,
               unsubSecret,
-              campaign.email.includeUnsub
+              campaign.email.includeUnsub,
+              'campaign',
+              campaignId
             );
             const { error } = await resend.emails.send({
               from: 'Duet <hello@e.getduet.app>',
