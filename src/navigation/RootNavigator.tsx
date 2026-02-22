@@ -11,8 +11,24 @@ import { authService } from '@/services/AuthService';
 import { presenceService } from '@/services/PresenceService';
 import { colors } from '@/theme';
 import { RootStackParamList } from './types';
+import { parseDeepLink } from './deepLinkParser';
+import { navigationRef } from './navigationRef';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function navigateFromDeepLink(action: { screen: string; params?: any }) {
+  if (navigationRef.isReady()) {
+    navigationRef.navigate(action.screen as any, action.params);
+  } else {
+    const check = setInterval(() => {
+      if (navigationRef.isReady()) {
+        clearInterval(check);
+        navigationRef.navigate(action.screen as any, action.params);
+      }
+    }, 100);
+    setTimeout(() => clearInterval(check), 5000);
+  }
+}
 
 export const RootNavigator = () => {
   const { user, isLoading, initializeAuth } = useAuthStore();
@@ -30,11 +46,12 @@ export const RootNavigator = () => {
     }
   }, [user]);
 
-  // Handle deep links for email link sign-in
+  // Handle deep links
   useEffect(() => {
     const { completeSignInWithEmailLink } = useAuthStore.getState();
 
     const handleUrl = async (url: string) => {
+      // 1. Check for Firebase email sign-in link first
       if (await authService.isSignInWithEmailLink(url)) {
         try {
           await completeSignInWithEmailLink(url);
@@ -64,7 +81,19 @@ export const RootNavigator = () => {
             Alert.alert('Sign In Failed', error?.message || 'Could not complete sign-in.');
           }
         }
+        return;
       }
+
+      // 2. Parse as a deep link (duet:// or http(s)://)
+      const action = parseDeepLink(url);
+      if (!action) return;
+
+      if ('type' in action && action.type === 'external') {
+        Linking.openURL(action.url);
+        return;
+      }
+
+      navigateFromDeepLink(action);
     };
 
     // Cold start: app opened from a link

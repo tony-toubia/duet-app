@@ -6,6 +6,7 @@ import { useAdminStore } from '@/hooks/useAdminStore';
 import { previewEmail } from '@/services/AdminService';
 import { Spinner } from '@/components/ui/Spinner';
 import { ImageUploadField } from '@/components/admin/ImageUploadField';
+import { DeepLinkField } from '@/components/admin/DeepLinkField';
 
 export default function NewMessagePage() {
   const router = useRouter();
@@ -177,18 +178,7 @@ export default function NewMessagePage() {
                 value={pushImageUrl}
                 onChange={setPushImageUrl}
               />
-              <div>
-                <label className="block text-sm text-text-muted mb-1">
-                  Action URL <span className="opacity-50">(optional — opens on tap)</span>
-                </label>
-                <input
-                  type="text"
-                  value={pushActionUrl}
-                  onChange={(e) => setPushActionUrl(e.target.value)}
-                  placeholder="https://getduet.app or duet://room/ABC123"
-                  className={inputClass}
-                />
-              </div>
+              <DeepLinkField value={pushActionUrl} onChange={setPushActionUrl} />
             </>
           )}
 

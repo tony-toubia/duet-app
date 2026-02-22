@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { Node } from '@xyflow/react';
 import { fetchMessages } from '@/services/AdminService';
 import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
+import { DeepLinkField } from '@/components/admin/DeepLinkField';
 
 const TRACKABLE_EVENTS = [
   { value: 'push_received', label: 'Push received' },
@@ -285,16 +286,10 @@ export function NodeEditor({ node, onChange, onDelete, onClose }: NodeEditorProp
                     </button>
                   </div>
                 </div>
-                <div>
-                  <label className={labelClass}>Action URL (optional)</label>
-                  <input
-                    type="text"
-                    value={d.pushActionUrl || ''}
-                    onChange={(e) => update({ pushActionUrl: e.target.value })}
-                    placeholder="https://getduet.app"
-                    className={inputClass}
-                  />
-                </div>
+                <DeepLinkField
+                  value={d.pushActionUrl || ''}
+                  onChange={(url) => update({ pushActionUrl: url })}
+                />
               </>
             )}
           </>

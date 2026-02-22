@@ -12,6 +12,8 @@ import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native'
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import { eventTrackingService } from './EventTrackingService';
+import { parseDeepLink } from '@/navigation/deepLinkParser';
+import { navigationRef } from '@/navigation/navigationRef';
 
 export interface PushNotificationCallbacks {
   onPartnerLeft?: (roomCode: string) => void;
@@ -248,11 +250,12 @@ class PushNotificationService {
         // Campaign/journey notification with optional action URL
         if (data?.actionUrl) {
           const url = data.actionUrl as string;
-          if (url.startsWith('http')) {
-            Linking.openURL(url);
-          } else if (url.startsWith('duet://room/')) {
-            const roomCode = url.replace('duet://room/', '');
-            this.callbacks.onRoomInvite?.(roomCode, '', '');
+          const action = parseDeepLink(url);
+          if (!action) break;
+          if ('type' in action && action.type === 'external') {
+            Linking.openURL(action.url);
+          } else if (navigationRef.isReady()) {
+            navigationRef.navigate(action.screen as any, action.params as any);
           }
         }
         break;

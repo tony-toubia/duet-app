@@ -2,6 +2,7 @@ module.exports = {
   expo: {
     name: "Duet",
     slug: "duet",
+    scheme: "duet",
     version: "0.2.1",
     orientation: "portrait",
     icon: "./assets/icon.png",

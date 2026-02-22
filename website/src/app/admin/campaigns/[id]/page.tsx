@@ -7,6 +7,7 @@ import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createMessag
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
 import { ImageUploadField } from '@/components/admin/ImageUploadField';
+import { DeepLinkField } from '@/components/admin/DeepLinkField';
 import { MessagePicker } from '@/components/admin/MessagePicker';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -391,16 +392,7 @@ export default function CampaignDetailPage() {
                         value={editPushImageUrl}
                         onChange={setEditPushImageUrl}
                       />
-                      <div>
-                        <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
-                        <input
-                          type="text"
-                          value={editPushActionUrl}
-                          onChange={(e) => setEditPushActionUrl(e.target.value)}
-                          placeholder="https://getduet.app or duet://room/ABC123"
-                          className={inputClass}
-                        />
-                      </div>
+                      <DeepLinkField value={editPushActionUrl} onChange={setEditPushActionUrl} />
                     </>
                   )}
                 </div>

@@ -6,6 +6,7 @@ import { fetchMessage, previewEmail } from '@/services/AdminService';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
 import { ImageUploadField } from '@/components/admin/ImageUploadField';
+import { DeepLinkField } from '@/components/admin/DeepLinkField';
 
 export default function MessageDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -211,10 +212,7 @@ export default function MessageDetailPage() {
                     value={pushImageUrl}
                     onChange={setPushImageUrl}
                   />
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional)</span></label>
-                    <input type="text" value={pushActionUrl} onChange={(e) => setPushActionUrl(e.target.value)} className={inputClass} />
-                  </div>
+                  <DeepLinkField value={pushActionUrl} onChange={setPushActionUrl} />
                 </>
               )}
 
