@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createAsset, createMessage } from '@/services/AdminService';
+import { fetchCampaign, sendCampaign, updateCampaign, previewEmail, createMessage } from '@/services/AdminService';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
-import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
+import { ImageUploadField } from '@/components/admin/ImageUploadField';
 import { MessagePicker } from '@/components/admin/MessagePicker';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -31,7 +31,6 @@ export default function CampaignDetailPage() {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showAssetPicker, setShowAssetPicker] = useState(false);
 
   // Edit form state
   const [editName, setEditName] = useState('');
@@ -141,10 +140,6 @@ export default function CampaignDetailPage() {
         pushMessageId: hasPush ? resolvedPushMessageId : null,
       });
 
-      // Auto-save image to asset library
-      if (trimmedImageUrl && trimmedImageUrl.startsWith('http')) {
-        createAsset({ name: `${editName} - push image`, url: trimmedImageUrl, tags: ['campaign', 'push'] }).catch(() => {});
-      }
       setCampaign(updated);
       setIsEditing(false);
       if (updated.email?.body) {
@@ -392,25 +387,10 @@ export default function CampaignDetailPage() {
                           className={`${inputClass} resize-y`}
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={editPushImageUrl}
-                            onChange={(e) => setEditPushImageUrl(e.target.value)}
-                            placeholder="https://example.com/image.png"
-                            className={`flex-1 ${inputClass}`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowAssetPicker(true)}
-                            className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
-                          >
-                            Browse
-                          </button>
-                        </div>
-                      </div>
+                      <ImageUploadField
+                        value={editPushImageUrl}
+                        onChange={setEditPushImageUrl}
+                      />
                       <div>
                         <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional — opens on tap)</span></label>
                         <input
@@ -613,13 +593,6 @@ export default function CampaignDetailPage() {
           ) : null}
         </div>
       </div>
-
-      {showAssetPicker && (
-        <AssetPickerModal
-          onSelect={(url) => { setEditPushImageUrl(url); setShowAssetPicker(false); }}
-          onClose={() => setShowAssetPicker(false)}
-        />
-      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { fetchMessage, previewEmail } from '@/services/AdminService';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
-import { AssetPickerModal } from '@/components/admin/AssetPickerModal';
+import { ImageUploadField } from '@/components/admin/ImageUploadField';
 
 export default function MessageDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,7 +30,6 @@ export default function MessageDetailPage() {
 
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -208,19 +207,10 @@ export default function MessageDetailPage() {
                     <label className="block text-sm text-text-muted mb-1">Push Body</label>
                     <textarea value={pushBody} onChange={(e) => setPushBody(e.target.value)} rows={3} className={`${inputClass} resize-y`} />
                   </div>
-                  <div>
-                    <label className="block text-sm text-text-muted mb-1">Image URL <span className="opacity-50">(optional)</span></label>
-                    <div className="flex gap-2">
-                      <input type="text" value={pushImageUrl} onChange={(e) => setPushImageUrl(e.target.value)} className={`${inputClass} flex-1`} />
-                      <button
-                        type="button"
-                        onClick={() => setShowAssetPicker(true)}
-                        className="px-3 py-2 bg-glass border border-glass-border rounded-lg text-xs text-text-muted hover:text-white hover:bg-glass-border transition-colors whitespace-nowrap"
-                      >
-                        Browse
-                      </button>
-                    </div>
-                  </div>
+                  <ImageUploadField
+                    value={pushImageUrl}
+                    onChange={setPushImageUrl}
+                  />
                   <div>
                     <label className="block text-sm text-text-muted mb-1">Action URL <span className="opacity-50">(optional)</span></label>
                     <input type="text" value={pushActionUrl} onChange={(e) => setPushActionUrl(e.target.value)} className={inputClass} />
@@ -332,13 +322,6 @@ export default function MessageDetailPage() {
           ) : null}
         </div>
       </div>
-
-      {showAssetPicker && (
-        <AssetPickerModal
-          onSelect={(url) => { setPushImageUrl(url); setShowAssetPicker(false); }}
-          onClose={() => setShowAssetPicker(false)}
-        />
-      )}
     </div>
   );
 }
