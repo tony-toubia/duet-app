@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 export default function AdminDashboard() {
   const { stats, isLoadingStats, loadStats } = useAdminStore();
@@ -22,7 +23,10 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">Dashboard</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <AnimatedPageIcon name="dashboard" />
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+      </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 export default function MessagesPage() {
   const { messages, isLoadingMessages, loadMessages } = useAdminStore();
@@ -41,7 +42,10 @@ export default function MessagesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-white">Messages</h1>
+        <div className="flex items-center gap-3">
+          <AnimatedPageIcon name="messages" />
+          <h1 className="text-xl font-bold text-white">Messages</h1>
+        </div>
         <Link
           href="/admin/messages/new"
           className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-light transition-colors"

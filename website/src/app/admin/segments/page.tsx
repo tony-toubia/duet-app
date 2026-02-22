@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdminStore } from '@/hooks/useAdminStore';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 export default function SegmentsPage() {
   const router = useRouter();
@@ -34,7 +35,10 @@ export default function SegmentsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Segments</h1>
+        <div className="flex items-center gap-3">
+          <AnimatedPageIcon name="segments" />
+          <h1 className="text-2xl font-bold text-white">Segments</h1>
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/admin/segments/new')}

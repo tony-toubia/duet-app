@@ -5,6 +5,7 @@ import { fetchAssets } from '@/services/AdminService';
 import { Spinner } from '@/components/ui/Spinner';
 import { AssetUploadModal } from '@/components/admin/AssetUploadModal';
 import { AssetDetailModal } from '@/components/admin/AssetDetailModal';
+import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -49,7 +50,10 @@ export default function AssetsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-white">Assets</h1>
+        <div className="flex items-center gap-3">
+          <AnimatedPageIcon name="assets" />
+          <h1 className="text-xl font-bold text-white">Assets</h1>
+        </div>
         <button
           onClick={() => setShowUpload(true)}
           className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-light transition-colors"

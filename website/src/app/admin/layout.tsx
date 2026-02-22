@@ -81,19 +81,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     : 'text-text-muted hover:bg-glass hover:text-white'
                 )}
               >
-                <span className={cn(
-                  'flex-shrink-0 w-6 h-6 rounded-md overflow-hidden flex items-center justify-center',
-                  isActive && 'bg-white'
-                )}>
-                  <Image
-                    src={`/icons/${item.icon}.${isActive ? 'gif' : 'png'}`}
-                    alt=""
-                    width={24}
-                    height={24}
-                    unoptimized
-                    className="w-5 h-5 object-contain"
-                  />
-                </span>
+                <Image
+                  src={`/icons/${item.icon}.png`}
+                  alt=""
+                  width={20}
+                  height={20}
+                  unoptimized
+                  className={cn(
+                    'flex-shrink-0 w-5 h-5 object-contain',
+                    isActive ? 'opacity-100' : 'opacity-60'
+                  )}
+                />
                 {item.label}
               </Link>
             );

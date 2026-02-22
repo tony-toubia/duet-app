@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchJourneys, updateJourney, seedJourneys } from '@/services/AdminService';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 const TRIGGER_LABELS: Record<string, string> = {
   user_created: 'New user sign-up',
@@ -74,7 +75,10 @@ export default function JourneysPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Journeys</h1>
+        <div className="flex items-center gap-3">
+          <AnimatedPageIcon name="journeys" />
+          <h1 className="text-2xl font-bold text-white">Journeys</h1>
+        </div>
         <div className="flex gap-2">
           {journeys.length === 0 && (
             <button
