@@ -1,35 +1,52 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import { useEffect, useRef } from 'react';
 
 interface AnimatedPageIconProps {
   name: string;
-  size?: number;
 }
 
 /**
- * Plays the animated GIF once on mount, then swaps to the static PNG.
- * Displayed in a white rounded box next to page titles.
+ * Plays the animated GIF once on mount, then freezes on the last frame.
+ * Uses a canvas to capture the final frame so there's no visual swap.
  */
-export function AnimatedPageIcon({ name, size = 32 }: AnimatedPageIconProps) {
-  const [showGif, setShowGif] = useState(true);
+export function AnimatedPageIcon({ name }: AnimatedPageIconProps) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    // GIFs are typically 2-4 seconds; swap to static after 4s
-    const timer = setTimeout(() => setShowGif(false), 4000);
+    const img = imgRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+
+    // After the GIF plays through (~4s), capture the current frame onto
+    // the canvas and hide the original img. The canvas shows the frozen frame.
+    const timer = setTimeout(() => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      ctx.drawImage(img, 0, 0);
+      canvas.style.display = 'block';
+      img.style.display = 'none';
+    }, 4000);
+
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <span className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white">
-      <Image
-        src={`/icons/${name}.${showGif ? 'gif' : 'png'}`}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        ref={imgRef}
+        src={`/icons/${name}.gif`}
         alt=""
-        width={size}
-        height={size}
-        unoptimized
         className="w-8 h-8 object-contain"
+      />
+      <canvas
+        ref={canvasRef}
+        className="w-8 h-8 object-contain"
+        style={{ display: 'none' }}
       />
     </span>
   );
