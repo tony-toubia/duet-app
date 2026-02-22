@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -11,12 +12,12 @@ import { cn } from '@/lib/cn';
 const ADMIN_UIDS = (process.env.NEXT_PUBLIC_ADMIN_UIDS || '').split(',').filter(Boolean);
 
 const NAV_ITEMS = [
-  { href: '/admin', label: 'Dashboard', icon: '📊' },
-  { href: '/admin/campaigns', label: 'Batch Campaigns', icon: '📨' },
-  { href: '/admin/messages', label: 'Messages', icon: '💬' },
-  { href: '/admin/segments', label: 'Segments', icon: '👥' },
-  { href: '/admin/journeys', label: 'Journeys', icon: '🔄' },
-  { href: '/admin/assets', label: 'Assets', icon: '🖼️' },
+  { href: '/admin', label: 'Dashboard', icon: 'dashboard' },
+  { href: '/admin/campaigns', label: 'Batch Campaigns', icon: 'campaigns' },
+  { href: '/admin/messages', label: 'Messages', icon: 'messages' },
+  { href: '/admin/segments', label: 'Segments', icon: 'segments' },
+  { href: '/admin/journeys', label: 'Journeys', icon: 'journeys' },
+  { href: '/admin/assets', label: 'Assets', icon: 'assets' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -80,7 +81,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     : 'text-text-muted hover:bg-glass hover:text-white'
                 )}
               >
-                <span>{item.icon}</span>
+                <span className={cn(
+                  'flex-shrink-0 w-6 h-6 rounded-md overflow-hidden flex items-center justify-center',
+                  isActive && 'bg-white'
+                )}>
+                  <Image
+                    src={`/icons/${item.icon}.${isActive ? 'gif' : 'png'}`}
+                    alt=""
+                    width={24}
+                    height={24}
+                    unoptimized
+                    className="w-5 h-5 object-contain"
+                  />
+                </span>
                 {item.label}
               </Link>
             );
