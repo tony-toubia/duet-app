@@ -276,7 +276,7 @@
       },
 
       "sendLog": {
-        ".indexOn": ["sentAt"],
+        ".indexOn": ["sentAt", "userId"],
         "$logId": {
           "sentAt": { ".validate": "newData.isNumber()" },
           "success": { ".validate": "newData.isBoolean()" }

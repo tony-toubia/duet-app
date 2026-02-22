@@ -93,7 +93,9 @@ export const RootNavigator = () => {
         return;
       }
 
-      navigateFromDeepLink(action);
+      if ('screen' in action) {
+        navigateFromDeepLink(action);
+      }
     };
 
     // Cold start: app opened from a link

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Spinner } from '@/components/ui/Spinner';
 import { previewSegmentRules } from '@/services/AdminService';
+import { useAdminStore } from '@/hooks/useAdminStore';
 import {
   SEGMENT_FIELDS,
   OPERATORS_BY_TYPE,
@@ -48,6 +49,7 @@ export default function SegmentBuilder({
   saveLabel,
 }: SegmentBuilderProps) {
   const router = useRouter();
+  const { campaigns, loadCampaigns } = useAdminStore();
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
   const [rules, setRules] = useState<SegmentRuleSet>(initialRules || emptyRuleSet());
@@ -56,6 +58,11 @@ export default function SegmentBuilder({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load campaigns for the campaign picker
+  useEffect(() => {
+    if (campaigns.length === 0) loadCampaigns();
+  }, [campaigns.length, loadCampaigns]);
 
   // Debounced preview
   const fetchPreview = useCallback(async (r: SegmentRuleSet) => {
@@ -365,6 +372,25 @@ export default function SegmentBuilder({
                             </>
                           )}
                         </div>
+                      )}
+
+                      {fieldDef?.type === 'campaign' && (
+                        <select
+                          value={String(cond.value || '')}
+                          onChange={(e) =>
+                            updateCondition(gi, ci, (c) => ({ ...c, value: e.target.value }))
+                          }
+                          className={`${selectClass} min-w-[200px]`}
+                        >
+                          <option value="">Select campaign...</option>
+                          {campaigns
+                            .filter((c: any) => c.status === 'sent')
+                            .map((c: any) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                        </select>
                       )}
 
                       {/* Remove condition */}

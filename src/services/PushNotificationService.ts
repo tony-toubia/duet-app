@@ -6,7 +6,7 @@
  * - Room invitations (future)
  */
 
-import { Platform, Alert, Linking } from 'react-native';
+import { Platform, Alert, Linking, PermissionsAndroid } from 'react-native';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
@@ -35,18 +35,17 @@ class PushNotificationService {
     this.callbacks = callbacks;
 
     try {
-      // Request permission (required for iOS, no-op on Android)
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      // Request permission
+      const enabled = await this.requestPermission();
 
       if (!enabled) {
-        console.log('[Push] Permission denied');
-        return false;
+        console.log('[Push] Permission denied — registering token anyway for silent data messages');
+        // On Android, we can still get a token and receive data-only messages
+        // even without notification permission. Register the token so we can
+        // at least track the device. We'll prompt for permission later.
+      } else {
+        console.log('[Push] Permission granted');
       }
-
-      console.log('[Push] Permission granted');
 
       // Create Android notification channel (required for Android 8+)
       if (Platform.OS === 'android') {
@@ -75,6 +74,86 @@ class PushNotificationService {
       console.error('[Push] Initialization error:', error);
       return false;
     }
+  }
+
+  /**
+   * Request notification permission (handles both iOS and Android 13+)
+   */
+  async requestPermission(): Promise<boolean> {
+    if (Platform.OS === 'ios') {
+      const authStatus = await messaging().requestPermission();
+      return (
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL
+      );
+    }
+
+    // Android 13+ (API 33) requires POST_NOTIFICATIONS runtime permission
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      console.log('[Push] Android POST_NOTIFICATIONS result:', result);
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    }
+
+    // Android < 13: notifications are enabled by default
+    return true;
+  }
+
+  /**
+   * Check and request notification permission, prompting the user to
+   * open Settings if they previously denied. Returns true if granted.
+   */
+  async ensurePermission(): Promise<boolean> {
+    const alreadyEnabled = await this.areNotificationsEnabled();
+    if (alreadyEnabled) return true;
+
+    if (Platform.OS === 'ios') {
+      // iOS: once denied, requestPermission() is a no-op. Must go to Settings.
+      const authStatus = await messaging().requestPermission();
+      const granted =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!granted) {
+        this.promptOpenSettings();
+        return false;
+      }
+      return true;
+    }
+
+    // Android 13+
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      if (result === PermissionsAndroid.RESULTS.GRANTED) {
+        return true;
+      }
+      if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+        this.promptOpenSettings();
+      }
+      return false;
+    }
+
+    // Android < 13: check if channel/app notifications are disabled
+    const enabled = await this.areNotificationsEnabled();
+    if (!enabled) {
+      this.promptOpenSettings();
+      return false;
+    }
+    return true;
+  }
+
+  private promptOpenSettings(): void {
+    Alert.alert(
+      'Notifications Disabled',
+      'Push notifications are turned off in your device settings. Would you like to open Settings to enable them?',
+      [
+        { text: 'Not Now', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+      ]
+    );
   }
 
   /**
@@ -254,7 +333,7 @@ class PushNotificationService {
           if (!action) break;
           if ('type' in action && action.type === 'external') {
             Linking.openURL(action.url);
-          } else if (navigationRef.isReady()) {
+          } else if ('screen' in action && navigationRef.isReady()) {
             navigationRef.navigate(action.screen as any, action.params as any);
           }
         }
@@ -292,6 +371,12 @@ class PushNotificationService {
    * Check if notifications are enabled
    */
   async areNotificationsEnabled(): Promise<boolean> {
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const result = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      return result;
+    }
     const authStatus = await messaging().hasPermission();
     return (
       authStatus === messaging.AuthorizationStatus.AUTHORIZED ||

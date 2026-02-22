@@ -1,52 +1,46 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface AnimatedPageIconProps {
   name: string;
 }
 
 /**
- * Plays the animated GIF once on mount, then freezes on the last frame.
- * Uses a canvas to capture the final frame so there's no visual swap.
+ * Plays the animated MP4 icon once on mount, then freezes on the last frame.
+ * Falls back to a static PNG if no MP4 is available.
  */
 export function AnimatedPageIcon({ name }: AnimatedPageIconProps) {
-  const imgRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [useFallback, setUseFallback] = useState(false);
 
   useEffect(() => {
-    const img = imgRef.current;
-    const canvas = canvasRef.current;
-    if (!img || !canvas) return;
+    setUseFallback(false);
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  }, [name]);
 
-    // After the GIF plays through (~4s), capture the current frame onto
-    // the canvas and hide the original img. The canvas shows the frozen frame.
-    const timer = setTimeout(() => {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-      canvas.style.display = 'block';
-      img.style.display = 'none';
-    }, 4000);
-
-    return () => clearTimeout(timer);
-  }, []);
+  if (useFallback) {
+    return (
+      <span className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`/icons/${name}.png`} alt="" className="w-8 h-8 object-contain" />
+      </span>
+    );
+  }
 
   return (
     <span className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        ref={imgRef}
-        src={`/icons/${name}.gif`}
-        alt=""
+      <video
+        ref={videoRef}
+        src={`/icons/${name}.mp4`}
+        muted
+        playsInline
+        autoPlay
         className="w-8 h-8 object-contain"
-      />
-      <canvas
-        ref={canvasRef}
-        className="w-8 h-8 object-contain"
-        style={{ display: 'none' }}
+        onError={() => setUseFallback(true)}
       />
     </span>
   );

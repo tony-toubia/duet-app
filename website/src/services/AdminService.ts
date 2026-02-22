@@ -155,6 +155,58 @@ export async function deleteMessage(id: string) {
   return api<{ deleted: string }>(`messages/${id}`, 'DELETE');
 }
 
+// Reporting
+export async function fetchReportingMonths() {
+  return api<{ months: { year: number; month: number; count: number }[] }>('reporting/months');
+}
+
+export async function fetchReportingCampaigns(year: number, month?: number) {
+  const params = month !== undefined ? `year=${year}&month=${month}` : `year=${year}`;
+  return api<{
+    year: number;
+    month?: number;
+    campaigns: any[];
+    totals: {
+      totalTargeted: number;
+      emailsSent: number;
+      emailsFailed: number;
+      pushSent: number;
+      pushFailed: number;
+      campaignCount: number;
+    };
+  }>(`reporting/campaigns?${params}`);
+}
+
+// Subscribers
+export async function searchSubscribers(query: string) {
+  return api<{
+    results: {
+      uid: string;
+      displayName: string | null;
+      email: string | null;
+      avatarUrl: string | null;
+      authProvider: string | null;
+      platform: string | null;
+      createdAt: number | null;
+    }[];
+  }>(`subscribers/search?q=${encodeURIComponent(query)}`);
+}
+
+export async function fetchSubscriber(uid: string) {
+  return api<{
+    uid: string;
+    profile: any;
+    preferences: any;
+    pushToken: string | null;
+    platform: string | null;
+    emailState: any;
+    status: any;
+    events: any[];
+    segments: { id: string; name: string }[];
+    sendHistory: any[];
+  }>(`subscribers/${uid}`);
+}
+
 // Assets
 export async function fetchAssets() {
   return api<{ assets: any[] }>('assets');

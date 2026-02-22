@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   Image,
   ActivityIndicator,
   Switch,
+  AppState,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { storageService } from '@/services/StorageService';
+import { pushNotificationService } from '@/services/PushNotificationService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { ProfileScreenProps } from '@/navigation/types';
@@ -22,8 +24,33 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [isUploading, setIsUploading] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [pushPermissionGranted, setPushPermissionGranted] = useState<boolean | null>(null);
   const insets = useSafeAreaInsets();
   const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
+
+  const checkPushPermission = useCallback(async () => {
+    const enabled = await pushNotificationService.areNotificationsEnabled();
+    setPushPermissionGranted(enabled);
+  }, []);
+
+  // Check push permission on mount and when returning from Settings
+  useEffect(() => {
+    checkPushPermission();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkPushPermission();
+    });
+    return () => sub.remove();
+  }, [checkPushPermission]);
+
+  const handlePushToggle = async (val: boolean) => {
+    if (val) {
+      // Toggling ON — ensure OS permission is granted
+      const granted = await pushNotificationService.ensurePermission();
+      setPushPermissionGranted(granted);
+      if (!granted) return; // Don't update preference if permission denied
+    }
+    updatePreferences({ pushOptIn: val });
+  };
 
   const handleChangePhoto = () => {
     setShowPhotoModal(true);
@@ -176,11 +203,15 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
               <View style={styles.toggleRow}>
                 <View style={styles.toggleInfo}>
                   <Text style={styles.infoLabel}>Push Notifications</Text>
-                  <Text style={styles.toggleDescription}>Receive push alerts on this device</Text>
+                  <Text style={styles.toggleDescription}>
+                    {pushPermissionGranted === false
+                      ? 'Notifications are disabled in device settings'
+                      : 'Receive push alerts on this device'}
+                  </Text>
                 </View>
                 <Switch
-                  value={preferences.pushOptIn}
-                  onValueChange={(val) => updatePreferences({ pushOptIn: val })}
+                  value={preferences.pushOptIn && pushPermissionGranted !== false}
+                  onValueChange={handlePushToggle}
                   trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
                   thumbColor={colors.text}
                 />

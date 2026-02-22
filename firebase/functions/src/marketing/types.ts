@@ -198,6 +198,7 @@ export interface SegmentContext {
   users: Record<string, any>;
   emailStates: Record<string, any>;
   statuses: Record<string, any>;
+  sendLogByUser: Record<string, SendLogEntry[]>;
   now: number;
 }
 
@@ -216,7 +217,9 @@ export type ConditionOperator =
   | 'less_than'
   | 'between'
   | 'within_last_days'
-  | 'more_than_days_ago';
+  | 'more_than_days_ago'
+  | 'was_sent'
+  | 'was_not_sent';
 
 export interface SegmentCondition {
   field: string;
@@ -235,12 +238,12 @@ export interface SegmentRuleSet {
   groups: SegmentRuleGroup[];
 }
 
-export type FieldType = 'string' | 'boolean' | 'number' | 'timestamp' | 'enum';
+export type FieldType = 'string' | 'boolean' | 'number' | 'timestamp' | 'enum' | 'campaign';
 
 export interface FieldDefinition {
   path: string;
   label: string;
-  source: 'users' | 'emailState' | 'status';
+  source: 'users' | 'emailState' | 'status' | 'sendLog';
   type: FieldType;
   enumValues?: string[];
 }
@@ -265,6 +268,8 @@ export const SEGMENT_FIELDS: FieldDefinition[] = [
   // Status
   { path: 'state', label: 'Online state', source: 'status', type: 'enum', enumValues: ['online', 'offline'] },
   { path: 'lastSeen', label: 'Last seen', source: 'status', type: 'timestamp' },
+  // Campaign history
+  { path: 'campaign', label: 'Campaign', source: 'sendLog', type: 'campaign' },
 ];
 
 export const OPERATORS_BY_TYPE: Record<FieldType, ConditionOperator[]> = {
@@ -273,4 +278,5 @@ export const OPERATORS_BY_TYPE: Record<FieldType, ConditionOperator[]> = {
   boolean: ['is_true', 'is_false'],
   number: ['equals', 'greater_than', 'less_than', 'between', 'exists', 'not_exists'],
   timestamp: ['within_last_days', 'more_than_days_ago', 'greater_than', 'less_than', 'exists', 'not_exists'],
+  campaign: ['was_sent', 'was_not_sent'],
 };

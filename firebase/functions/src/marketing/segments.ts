@@ -231,11 +231,24 @@ function evaluateCondition(value: any, cond: SegmentCondition, now: number): boo
   }
 }
 
+function evaluateCampaignCondition(uid: string, cond: SegmentCondition, ctx: SegmentContext): boolean {
+  const userSends = ctx.sendLogByUser[uid] || [];
+  const campaignId = String(cond.value || '');
+  if (!campaignId) return false;
+  const wasSent = userSends.some(
+    (entry) => entry.source === 'campaign' && entry.sourceId === campaignId
+  );
+  return cond.operator === 'was_sent' ? wasSent : !wasSent;
+}
+
 function evaluateRuleSet(uid: string, rules: SegmentRuleSet, ctx: SegmentContext): boolean {
   const groupResults = rules.groups.map((group) => {
     const condResults = group.conditions.map((cond) => {
       const fieldDef = FIELD_MAP.get(cond.field);
       if (!fieldDef) return false;
+      if (fieldDef.type === 'campaign') {
+        return evaluateCampaignCondition(uid, cond, ctx);
+      }
       const value = getFieldValue(uid, fieldDef, ctx);
       return evaluateCondition(value, cond, ctx.now);
     });
@@ -262,16 +275,27 @@ export async function computeAllSegments(): Promise<Record<string, number>> {
   const db = getDatabase();
   const now = Date.now();
 
-  const [usersSnap, emailStatesSnap, statusesSnap] = await Promise.all([
+  const [usersSnap, emailStatesSnap, statusesSnap, sendLogSnap] = await Promise.all([
     db.ref('users').once('value'),
     db.ref('emailState').once('value'),
     db.ref('status').once('value'),
+    db.ref('marketing/sendLog').once('value'),
   ]);
+
+  // Build per-user send log index
+  const sendLogByUser: Record<string, any[]> = {};
+  const rawLog = sendLogSnap.val() || {};
+  for (const entry of Object.values(rawLog) as any[]) {
+    if (!entry?.userId) continue;
+    if (!sendLogByUser[entry.userId]) sendLogByUser[entry.userId] = [];
+    sendLogByUser[entry.userId].push(entry);
+  }
 
   const ctx: SegmentContext = {
     users: usersSnap.val() || {},
     emailStates: emailStatesSnap.val() || {},
     statuses: statusesSnap.val() || {},
+    sendLogByUser,
     now,
   };
 

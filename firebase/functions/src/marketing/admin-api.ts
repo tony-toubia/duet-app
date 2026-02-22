@@ -111,15 +111,24 @@ export const marketingApi = onRequest(
           json(res, 400, { error: 'Rules required' });
           return;
         }
-        const [usersSnap, emailStatesSnap, statusesSnap] = await Promise.all([
+        const [usersSnap, emailStatesSnap, statusesSnap, sendLogSnap] = await Promise.all([
           db.ref('users').once('value'),
           db.ref('emailState').once('value'),
           db.ref('status').once('value'),
+          db.ref('marketing/sendLog').once('value'),
         ]);
+        const sendLogByUser: Record<string, any[]> = {};
+        const rawLog = sendLogSnap.val() || {};
+        for (const entry of Object.values(rawLog) as any[]) {
+          if (!entry?.userId) continue;
+          if (!sendLogByUser[entry.userId]) sendLogByUser[entry.userId] = [];
+          sendLogByUser[entry.userId].push(entry);
+        }
         const ctx: SegmentContext = {
           users: usersSnap.val() || {},
           emailStates: emailStatesSnap.val() || {},
           statuses: statusesSnap.val() || {},
+          sendLogByUser,
           now: Date.now(),
         };
         const memberSet = computeCustomSegment(rules, ctx);
@@ -511,6 +520,157 @@ export const marketingApi = onRequest(
           json(res, 200, { deleted: assetId });
           return;
         }
+      }
+
+      // ── Reporting ─────────────────────────────────────────────
+      if (path === 'reporting/campaigns' && method === 'GET') {
+        // Return all sent campaigns with results, optionally filtered by year/month
+        const year = parseInt(req.query.year as string) || new Date().getFullYear();
+        const month = req.query.month !== undefined ? parseInt(req.query.month as string) : undefined;
+
+        const snap = await db.ref('marketing/campaigns').once('value');
+        const campaigns: any[] = [];
+        snap.forEach((child) => {
+          const c = child.val();
+          if (c.status !== 'sent' || !c.sentAt) return;
+          const d = new Date(c.sentAt);
+          if (d.getFullYear() !== year) return;
+          if (month !== undefined && d.getMonth() !== month) return;
+          campaigns.push({ id: child.key, ...c });
+        });
+        campaigns.sort((a: any, b: any) => b.sentAt - a.sentAt);
+
+        // Aggregate totals for the period
+        let totalTargeted = 0, emailsSent = 0, emailsFailed = 0, pushSent = 0, pushFailed = 0;
+        for (const c of campaigns) {
+          if (c.results) {
+            totalTargeted += c.results.totalTargeted || 0;
+            emailsSent += c.results.emailsSent || 0;
+            emailsFailed += c.results.emailsFailed || 0;
+            pushSent += c.results.pushSent || 0;
+            pushFailed += c.results.pushFailed || 0;
+          }
+        }
+
+        json(res, 200, {
+          year, month,
+          campaigns,
+          totals: { totalTargeted, emailsSent, emailsFailed, pushSent, pushFailed, campaignCount: campaigns.length },
+        });
+        return;
+      }
+
+      if (path === 'reporting/months' && method === 'GET') {
+        // Return list of year-month pairs that have sent campaigns
+        const snap = await db.ref('marketing/campaigns').once('value');
+        const monthSet = new Map<string, { year: number; month: number; count: number }>();
+        snap.forEach((child) => {
+          const c = child.val();
+          if (c.status !== 'sent' || !c.sentAt) return;
+          const d = new Date(c.sentAt);
+          const key = `${d.getFullYear()}-${d.getMonth()}`;
+          const existing = monthSet.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            monthSet.set(key, { year: d.getFullYear(), month: d.getMonth(), count: 1 });
+          }
+        });
+        const months = Array.from(monthSet.values()).sort(
+          (a, b) => b.year - a.year || b.month - a.month
+        );
+        json(res, 200, { months });
+        return;
+      }
+
+      // ── Subscribers ────────────────────────────────────────────
+      if (path === 'subscribers/search' && method === 'GET') {
+        const q = (req.query.q as string || '').toLowerCase().trim();
+        if (!q) { json(res, 400, { error: 'Query parameter "q" is required' }); return; }
+
+        const usersSnap = await db.ref('users').once('value');
+        const results: any[] = [];
+        usersSnap.forEach((child) => {
+          const u = child.val();
+          const uid = child.key!;
+          const email = (u.profile?.email || '').toLowerCase();
+          const name = (u.profile?.displayName || '').toLowerCase();
+          if (uid.toLowerCase().includes(q) || email.includes(q) || name.includes(q)) {
+            results.push({
+              uid,
+              displayName: u.profile?.displayName || null,
+              email: u.profile?.email || null,
+              avatarUrl: u.profile?.avatarUrl || null,
+              authProvider: u.profile?.authProvider || null,
+              platform: u.platform || null,
+              createdAt: u.profile?.createdAt || null,
+            });
+          }
+        });
+        json(res, 200, { results: results.slice(0, 50) });
+        return;
+      }
+
+      const subscriberMatch = path.match(/^subscribers\/([^/]+)$/);
+      if (subscriberMatch && method === 'GET') {
+        const uid = subscriberMatch[1];
+
+        const [userSnap, emailStateSnap, statusSnap, eventsSnap, segmentsSnap, sendLogSnap] =
+          await Promise.all([
+            db.ref(`users/${uid}`).once('value'),
+            db.ref(`emailState/${uid}`).once('value'),
+            db.ref(`status/${uid}`).once('value'),
+            db.ref(`events/${uid}`).once('value'),
+            db.ref('marketing/segments').once('value'),
+            db.ref('marketing/sendLog').orderByChild('userId').equalTo(uid).once('value'),
+          ]);
+
+        if (!userSnap.exists()) { json(res, 404, { error: 'User not found' }); return; }
+        const user = userSnap.val();
+        const emailState = emailStateSnap.val() || {};
+        const status = statusSnap.val() || {};
+
+        // Events — flatten by type
+        const rawEvents = eventsSnap.val() || {};
+        const events: any[] = [];
+        for (const [eventType, entries] of Object.entries(rawEvents) as [string, any][]) {
+          if (typeof entries === 'object' && entries !== null) {
+            for (const [, evt] of Object.entries(entries) as [string, any][]) {
+              events.push({ type: eventType, ...evt });
+            }
+          }
+        }
+        events.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        // Segments this user belongs to
+        const allSegments = segmentsSnap.val() || {};
+        const memberOf: { id: string; name: string }[] = [];
+        for (const [segId, seg] of Object.entries(allSegments) as [string, any][]) {
+          if (seg.members && seg.members[uid]) {
+            memberOf.push({ id: segId, name: seg.name });
+          }
+        }
+
+        // Send log
+        const sendHistory: any[] = [];
+        sendLogSnap.forEach((child) => {
+          sendHistory.push({ id: child.key, ...child.val() });
+        });
+        sendHistory.sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0));
+
+        json(res, 200, {
+          uid,
+          profile: user.profile || {},
+          preferences: user.preferences || {},
+          pushToken: user.pushToken || null,
+          platform: user.platform || null,
+          emailState,
+          status,
+          events: events.slice(0, 100),
+          segments: memberOf,
+          sendHistory,
+        });
+        return;
       }
 
       // ── Stats ────────────────────────────────────────────────

@@ -11,7 +11,9 @@ export type ConditionOperator =
   | 'less_than'
   | 'between'
   | 'within_last_days'
-  | 'more_than_days_ago';
+  | 'more_than_days_ago'
+  | 'was_sent'
+  | 'was_not_sent';
 
 export interface SegmentCondition {
   field: string;
@@ -30,12 +32,12 @@ export interface SegmentRuleSet {
   groups: SegmentRuleGroup[];
 }
 
-export type FieldType = 'string' | 'boolean' | 'number' | 'timestamp' | 'enum';
+export type FieldType = 'string' | 'boolean' | 'number' | 'timestamp' | 'enum' | 'campaign';
 
 export interface FieldDefinition {
   path: string;
   label: string;
-  source: 'users' | 'emailState' | 'status';
+  source: 'users' | 'emailState' | 'status' | 'sendLog';
   type: FieldType;
   enumValues?: string[];
 }
@@ -56,6 +58,7 @@ export const SEGMENT_FIELDS: FieldDefinition[] = [
   { path: 'reengagementSentAt', label: 'Re-engagement sent', source: 'emailState', type: 'timestamp' },
   { path: 'state', label: 'Online state', source: 'status', type: 'enum', enumValues: ['online', 'offline'] },
   { path: 'lastSeen', label: 'Last seen', source: 'status', type: 'timestamp' },
+  { path: 'campaign', label: 'Campaign', source: 'sendLog', type: 'campaign' },
 ];
 
 export const OPERATORS_BY_TYPE: Record<FieldType, ConditionOperator[]> = {
@@ -64,6 +67,7 @@ export const OPERATORS_BY_TYPE: Record<FieldType, ConditionOperator[]> = {
   boolean: ['is_true', 'is_false'],
   number: ['equals', 'greater_than', 'less_than', 'between', 'exists', 'not_exists'],
   timestamp: ['within_last_days', 'more_than_days_ago', 'greater_than', 'less_than', 'exists', 'not_exists'],
+  campaign: ['was_sent', 'was_not_sent'],
 };
 
 export const OPERATOR_LABELS: Record<ConditionOperator, string> = {
@@ -80,6 +84,8 @@ export const OPERATOR_LABELS: Record<ConditionOperator, string> = {
   between: 'between',
   within_last_days: 'within last N days',
   more_than_days_ago: 'more than N days ago',
+  was_sent: 'was sent to user',
+  was_not_sent: 'was not sent to user',
 };
 
 /** Returns true if the operator needs no value input */
@@ -95,6 +101,11 @@ export function isBetweenOperator(op: ConditionOperator): boolean {
 /** Returns true if the operator is a days-based operator */
 export function isDaysOperator(op: ConditionOperator): boolean {
   return ['within_last_days', 'more_than_days_ago'].includes(op);
+}
+
+/** Returns true if the operator is campaign-based (needs campaign picker) */
+export function isCampaignOperator(op: ConditionOperator): boolean {
+  return ['was_sent', 'was_not_sent'].includes(op);
 }
 
 const FIELD_MAP = new Map(SEGMENT_FIELDS.map((f) => [f.path, f]));

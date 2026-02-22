@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/hooks/useAuthStore';
@@ -18,6 +17,8 @@ const NAV_ITEMS = [
   { href: '/admin/segments', label: 'Segments', icon: 'segments' },
   { href: '/admin/journeys', label: 'Journeys', icon: 'journeys' },
   { href: '/admin/assets', label: 'Assets', icon: 'assets' },
+  { href: '/admin/reporting', label: 'Reporting', icon: 'reporting' },
+  { href: '/admin/subscribers', label: 'Subscribers', icon: 'subscribers' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -81,12 +82,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     : 'text-text-muted hover:bg-glass hover:text-white'
                 )}
               >
-                <Image
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   src={`/icons/${item.icon}.png`}
                   alt=""
                   width={20}
                   height={20}
-                  unoptimized
                   className={cn(
                     'flex-shrink-0 w-5 h-5 object-contain',
                     isActive ? 'opacity-100' : 'opacity-60'
