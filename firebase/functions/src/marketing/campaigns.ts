@@ -52,6 +52,8 @@ export async function executeCampaign(
   const sendEmail = campaign.channels.includes('email') && campaign.email;
   const sendPush = campaign.channels.includes('push') && campaign.push;
 
+  console.log(`[Campaign] ${campaignId}: channels=${JSON.stringify(campaign.channels)}, hasEmail=${!!campaign.email}, hasPush=${!!campaign.push}, emailMsgId=${campaign.emailMessageId || 'none'}, pushMsgId=${campaign.pushMessageId || 'none'}, targets=${memberIds.length}`);
+
   let emailsSent = 0;
   let emailsFailed = 0;
   let pushSent = 0;

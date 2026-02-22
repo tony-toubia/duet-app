@@ -180,6 +180,8 @@ export const marketingApi = onRequest(
           status: 'draft',
           email: body.email || null,
           push: body.push || null,
+          emailMessageId: body.emailMessageId || null,
+          pushMessageId: body.pushMessageId || null,
           createdAt: now,
           updatedAt: now,
           sentAt: null,
