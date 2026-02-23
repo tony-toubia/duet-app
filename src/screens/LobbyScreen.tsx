@@ -42,13 +42,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const signOut = useAuthStore((s) => s.signOut);
 
   const [showingAd, setShowingAd] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
 
-  // Navigate to room when connected (gated by showingAd for pre-roll)
+  // Navigate to room when connected (gated by ad + audio readiness)
   useEffect(() => {
-    if (roomCode && !showingAd) {
+    if (roomCode && !showingAd && audioReady) {
       navigation.replace('Room');
     }
-  }, [roomCode, showingAd, navigation]);
+  }, [roomCode, showingAd, audioReady, navigation]);
 
   // Handle auto-join from push notification
   useEffect(() => {
@@ -84,6 +85,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
       }
       // Start mic after ad dismisses so user isn't recorded during ad
       await startAudio();
+      setAudioReady(true);
       setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
@@ -109,6 +111,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
       }
       // Start mic after ad dismisses so user isn't recorded during ad
       await startAudio();
+      setAudioReady(true);
       setShowJoinInput(false);
     } catch (error: any) {
       console.error('[Lobby] Join room failed:', error);
