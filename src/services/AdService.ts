@@ -32,11 +32,15 @@ class AdService {
   private roomLeaveCount = 0;
   private isLoaded = false;
   private onClosedResolve: (() => void) | null = null;
+  private interstitialRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private interstitialRetryCount = 0;
 
   private rewarded: RewardedAd | null = null;
   private rewardedLoaded = false;
   private rewardedEarned = false;
   private onRewardedClosedResolve: ((earned: boolean) => void) | null = null;
+  private rewardedRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private rewardedRetryCount = 0;
 
   /**
    * Initialize and preload all ads
@@ -49,11 +53,18 @@ class AdService {
   // ── Interstitial ──
 
   private loadInterstitial(): void {
+    // Clear any pending retry
+    if (this.interstitialRetryTimer) {
+      clearTimeout(this.interstitialRetryTimer);
+      this.interstitialRetryTimer = null;
+    }
+
     this.interstitial = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID);
 
     this.interstitial.addAdEventListener(AdEventType.LOADED, () => {
       console.log('[Ad] Interstitial loaded');
       this.isLoaded = true;
+      this.interstitialRetryCount = 0;
     });
 
     this.interstitial.addAdEventListener(AdEventType.CLOSED, () => {
@@ -63,14 +74,18 @@ class AdService {
         this.onClosedResolve();
         this.onClosedResolve = null;
       }
+      this.interstitialRetryCount = 0;
       this.loadInterstitial();
     });
 
     this.interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
       console.log('[Ad] Interstitial error:', error);
       this.isLoaded = false;
-      // Retry after a delay
-      setTimeout(() => this.loadInterstitial(), 30000);
+      // Exponential backoff: 30s, 60s, 120s, 240s, capped at 5 min
+      const delay = Math.min(30000 * Math.pow(2, this.interstitialRetryCount), 300000);
+      this.interstitialRetryCount++;
+      console.log(`[Ad] Interstitial retry in ${delay / 1000}s (attempt ${this.interstitialRetryCount})`);
+      this.interstitialRetryTimer = setTimeout(() => this.loadInterstitial(), delay);
     });
 
     this.interstitial.load();
@@ -107,12 +122,19 @@ class AdService {
   // ── Rewarded ──
 
   private loadRewarded(): void {
+    // Clear any pending retry
+    if (this.rewardedRetryTimer) {
+      clearTimeout(this.rewardedRetryTimer);
+      this.rewardedRetryTimer = null;
+    }
+
     this.rewarded = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
     this.rewardedEarned = false;
 
     this.rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
       console.log('[Ad] Rewarded loaded');
       this.rewardedLoaded = true;
+      this.rewardedRetryCount = 0;
     });
 
     this.rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
@@ -127,14 +149,18 @@ class AdService {
         this.onRewardedClosedResolve(this.rewardedEarned);
         this.onRewardedClosedResolve = null;
       }
+      this.rewardedRetryCount = 0;
       this.loadRewarded();
     });
 
     this.rewarded.addAdEventListener(AdEventType.ERROR, (error) => {
       console.log('[Ad] Rewarded error:', error);
       this.rewardedLoaded = false;
-      // Retry after a delay
-      setTimeout(() => this.loadRewarded(), 30000);
+      // Exponential backoff: 30s, 60s, 120s, 240s, capped at 5 min
+      const delay = Math.min(30000 * Math.pow(2, this.rewardedRetryCount), 300000);
+      this.rewardedRetryCount++;
+      console.log(`[Ad] Rewarded retry in ${delay / 1000}s (attempt ${this.rewardedRetryCount})`);
+      this.rewardedRetryTimer = setTimeout(() => this.loadRewarded(), delay);
     });
 
     this.rewarded.load();

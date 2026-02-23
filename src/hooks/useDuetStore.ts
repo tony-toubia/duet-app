@@ -163,7 +163,22 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     
     // Create signaling service
     const signaling = new SignalingService({
-      onOffer: () => {}, // We're creating, we send the offer
+      onOffer: async (offer) => {
+        // Host can receive ICE restart offers from the answerer
+        const { webrtc, signaling, connectionState } = get();
+        if (connectionState === 'connected') return; // Already connected, ignore
+        if (webrtc && signaling) {
+          try {
+            console.log('[Store] Host received ICE restart offer from answerer');
+            set({ connectionState: 'connecting' });
+            const answer = await webrtc.handleOffer(offer);
+            await signaling.sendAnswer(answer);
+            console.log('[Store] Host sent answer to ICE restart');
+          } catch (e) {
+            console.error('[Store] Failed to handle ICE restart offer:', e);
+          }
+        }
+      },
       onAnswer: async (answer) => {
         const { webrtc } = get();
         await webrtc?.handleAnswer(answer);
@@ -284,7 +299,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           console.error('[Store] WebRTC or Signaling not available!', { webrtc: !!webrtc, signaling: !!signaling });
         }
       },
-      onAnswer: () => {}, // We're joining, we receive offer and send answer
+      onAnswer: async (answer) => {
+        // Answerer receives answers when it initiates an ICE restart
+        const { webrtc } = get();
+        await webrtc?.handleAnswer(answer);
+      },
       onIceCandidate: async (candidate) => {
         const { webrtc } = get();
         await webrtc?.addIceCandidate(candidate);
@@ -317,9 +336,14 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
-      onIceRestartOffer: async () => {
-        // Only the offerer (host) initiates ICE restart — answerer is a no-op here.
-        // The answerer handles the restart offer via the signaling onOffer callback.
+      onIceRestartOffer: async (offer) => {
+        // Answerer can also initiate ICE restart when host device is dormant.
+        // Send the restart offer via signaling so the host can respond.
+        const { signaling } = get();
+        if (signaling) {
+          console.log('[Store] Answerer sending ICE restart offer via signaling');
+          await signaling.sendOffer(offer);
+        }
       },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);

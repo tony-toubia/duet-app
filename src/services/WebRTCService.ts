@@ -54,6 +54,7 @@ export class WebRTCService {
 
   // ICE restart: schedule a restart after brief disconnection (e.g., screen lock)
   private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private iceRestartCount: number = 0;
   private isOfferer: boolean = false;
 
   constructor(callbacks: WebRTCCallbacks) {
@@ -115,6 +116,7 @@ export class WebRTCService {
         switch (state) {
           case 'connected':
             this.cancelIceRestart();
+            this.iceRestartCount = 0;
             this.setConnectionState('connected');
             break;
           case 'disconnected':
@@ -124,7 +126,7 @@ export class WebRTCService {
           case 'failed':
             this.cancelIceRestart();
             this.setConnectionState('failed');
-            // Also attempt ICE restart on failed — last chance before giving up
+            // Attempt ICE restart on failed — both sides can try
             this.attemptIceRestart();
             break;
           case 'closed':
@@ -346,15 +348,18 @@ export class WebRTCService {
   onLocalIceCandidate: ((candidate: RTCIceCandidate) => void) | null = null;
   
   /**
-   * Schedule an ICE restart after 3 seconds if the connection doesn't self-recover.
-   * Only the offerer initiates ICE restart (creates new offer with iceRestart flag).
+   * Schedule an ICE restart with exponential backoff.
+   * Both offerer and answerer can initiate restarts to handle cases
+   * where the other side's device is dormant.
    */
   private scheduleIceRestart(): void {
     this.cancelIceRestart();
+    // Exponential backoff: 3s, 6s, 12s, 24s, capped at 30s
+    const delay = Math.min(3000 * Math.pow(2, this.iceRestartCount), 30000);
     this.iceRestartTimer = setTimeout(() => {
       this.attemptIceRestart();
-    }, 3000);
-    console.log('[WebRTC] ICE restart scheduled in 3s');
+    }, delay);
+    console.log(`[WebRTC] ICE restart scheduled in ${delay / 1000}s (attempt ${this.iceRestartCount + 1})`);
   }
 
   private cancelIceRestart(): void {
@@ -373,20 +378,27 @@ export class WebRTCService {
       return;
     }
 
-    if (!this.isOfferer) {
-      // Answerer can't initiate ICE restart — wait for offerer's new offer
-      console.log('[WebRTC] Answerer waiting for ICE restart offer from host');
+    // Cap retries to avoid infinite restart loops
+    if (this.iceRestartCount >= 5) {
+      console.log('[WebRTC] Max ICE restart attempts reached, giving up');
+      this.setConnectionState('failed');
       return;
     }
 
-    console.log('[WebRTC] Attempting ICE restart...');
+    this.iceRestartCount++;
+    console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
     try {
       const offer = await this.peerConnection.createOffer({ iceRestart: true } as any);
       await this.peerConnection.setLocalDescription(offer);
       console.log('[WebRTC] ICE restart offer created, sending via signaling');
       this.callbacks.onIceRestartOffer(offer as RTCSessionDescription);
+
+      // Schedule another attempt in case this one doesn't connect
+      this.scheduleIceRestart();
     } catch (e) {
       console.error('[WebRTC] ICE restart failed:', e);
+      // Schedule retry even on error
+      this.scheduleIceRestart();
     }
   }
 

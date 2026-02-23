@@ -97,10 +97,12 @@ export class SignalingService {
     // Listen for partner joining
     this.listenForPartner();
 
-    // Listen for answer
+    // Listen for offer (ICE restart from answerer) and answer
+    this.listenForOffer();
     this.listenForAnswer();
 
-    // Listen for answer ICE candidates
+    // Listen for ICE candidates from both sides (needed for ICE restart)
+    this.listenForIceCandidates('offerCandidates');
     this.listenForIceCandidates('answerCandidates');
 
     console.log('[Signaling] Created room:', this.roomCode);
@@ -148,12 +150,14 @@ export class SignalingService {
     // Keep Firebase socket alive during background/screen lock
     this.startHeartbeat();
 
-    // Listen for offer
+    // Listen for offer and answer (needed for ICE restart)
     this.listenForOffer();
-    
-    // Listen for offer ICE candidates
+    this.listenForAnswer();
+
+    // Listen for ICE candidates from both sides (needed for ICE restart)
     this.listenForIceCandidates('offerCandidates');
-    
+    this.listenForIceCandidates('answerCandidates');
+
     // Listen for partner leaving
     this.listenForPartner();
     
@@ -162,34 +166,40 @@ export class SignalingService {
   }
   
   /**
-   * Send offer (offerer only)
+   * Send offer (either side can send during ICE restart).
+   * Clears stale ICE candidates before writing the new offer.
    */
   async sendOffer(offer: RTCSessionDescription): Promise<void> {
-    if (!this.roomRef || !this.isOfferer) {
+    if (!this.roomRef) {
       throw new Error('Cannot send offer');
     }
-    
+
+    // Clear stale candidates and answer from previous exchange
+    await this.roomRef.child('offerCandidates').remove();
+    await this.roomRef.child('answerCandidates').remove();
+    await this.roomRef.child('answer').remove();
+
     await this.roomRef.child('offer').set({
       type: offer.type,
       sdp: offer.sdp,
     });
-    
+
     console.log('[Signaling] Sent offer');
   }
-  
+
   /**
-   * Send answer (answerer only)
+   * Send answer (either side can respond during ICE restart)
    */
   async sendAnswer(answer: RTCSessionDescription): Promise<void> {
-    if (!this.roomRef || this.isOfferer) {
+    if (!this.roomRef) {
       throw new Error('Cannot send answer');
     }
-    
+
     await this.roomRef.child('answer').set({
       type: answer.type,
       sdp: answer.sdp,
     });
-    
+
     console.log('[Signaling] Sent answer');
   }
   
