@@ -1030,9 +1030,6 @@ class DuetAudioManager: RCTEventEmitter {
       updateAudioRoute()
 
       // Configure audio session for voice + mixing.
-      // IMPORTANT: Do NOT call setActive(true) explicitly here.
-      // Let AVAudioEngine.start() activate it implicitly - this avoids sending
-      // interruption notifications to other apps (Spotify, etc.) which cause them to pause.
       // Always use .default mode — .playAndRecord already provides hardware AEC.
       // Note: .voiceChat mode can deadlock the UI thread on some iOS versions.
       let session = AVAudioSession.sharedInstance()
@@ -1043,9 +1040,14 @@ class DuetAudioManager: RCTEventEmitter {
       )
       try session.setPreferredSampleRate(outputSampleRate)
       try session.setPreferredIOBufferDuration(0.02) // 20ms buffer for low latency
-      // Session will be activated implicitly by engine.start() below
 
-      print("[DuetAudio] Audio session configured (.default mode, route: \\(isSpeakerRoute ? "speaker" : "external"))")
+      // Explicitly activate the session. This is required because:
+      // 1. AdMob ads may deactivate/reconfigure the audio session during pre-roll
+      // 2. react-native-webrtc's RTCAudioSession may have changed session state
+      // The .notifyOthersOnDeactivation option is only used on deactivation, not here.
+      try session.setActive(true)
+
+      print("[DuetAudio] Audio session configured and activated (.default mode, route: \\(isSpeakerRoute ? "speaker" : "external"))")
 
       audioEngine = AVAudioEngine()
       playerNode = AVAudioPlayerNode()
@@ -1274,6 +1276,11 @@ class DuetAudioManager: RCTEventEmitter {
 
     // Normal path: ducking already active or not enabled — write directly
     if let buffer = dataToBuffer(data, format: format) {
+      // Ensure player is still playing (can stop after audio session interruption)
+      if !player.isPlaying {
+        print("[DuetAudio] Player was stopped, restarting")
+        player.play()
+      }
       player.scheduleBuffer(buffer, completionHandler: nil)
     }
 
@@ -1463,14 +1470,24 @@ class DuetAudioManager: RCTEventEmitter {
       // Audio was interrupted (e.g., phone call)
       sendEvent(withName: "onConnectionStateChange", body: ["state": "interrupted"])
     case .ended:
-      // Interruption ended, try to resume
-      if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
-        let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
-        if options.contains(.shouldResume) {
-          try? audioEngine?.start()
-          playerNode?.play()
-          sendEvent(withName: "onConnectionStateChange", body: ["state": "resumed"])
-        }
+      // Interruption ended — always try to resume the engine regardless of shouldResume flag.
+      // Ad SDKs (AdMob) may interrupt audio without sending shouldResume, leaving the engine stopped.
+      print("[DuetAudio] Interruption ended, reactivating audio session and restarting engine")
+      do {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+          .playAndRecord,
+          mode: .default,
+          options: audioSessionOptions()
+        )
+        try session.setActive(true)
+        try audioEngine?.start()
+        playerNode?.play()
+        sendEvent(withName: "onConnectionStateChange", body: ["state": "resumed"])
+        print("[DuetAudio] Engine resumed after interruption")
+      } catch {
+        print("[DuetAudio] Failed to resume after interruption: \\(error)")
+        sendEvent(withName: "onError", body: ["message": "Failed to resume audio after interruption: \\(error.localizedDescription)"])
       }
     @unknown default:
       break

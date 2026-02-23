@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import {
   RTCPeerConnection,
   RTCSessionDescription,
@@ -7,10 +8,16 @@ import { getIceServers } from '@/config/turn';
 
 // WebRTC configuration
 // ICE servers loaded from config for easy production deployment
+// iOS: use 'nohost' to skip host/mDNS candidates which trigger the
+//   "find devices on local network" permission prompt. STUN (srflx)
+//   and TURN (relay) candidates still work for all network scenarios.
+// Android: use 'all' for optimal connectivity.
 const getRtcConfig = () => ({
   iceServers: getIceServers(),
   iceCandidatePoolSize: 10,
-  iceTransportPolicy: 'all' as const,
+  // 'nohost' is supported by react-native-webrtc (maps to RTCIceTransportPolicyNoHost)
+  // but not in the TS type definitions, so we cast it.
+  iceTransportPolicy: (Platform.OS === 'ios' ? 'nohost' : 'all') as 'all' | 'relay',
 });
 
 export type ConnectionState = 
