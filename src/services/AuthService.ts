@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import database from '@react-native-firebase/database';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -33,7 +34,9 @@ class AuthService {
   }
 
   async signInWithGoogle(): Promise<FirebaseAuthTypes.User> {
-    await GoogleSignin.hasPlayServices();
+    if (Platform.OS === 'android') {
+      await GoogleSignin.hasPlayServices();
+    }
     const signInResult = await GoogleSignin.signIn();
     const idToken = (signInResult as any).idToken ?? (signInResult as any).data?.idToken;
     if (!idToken) throw new Error('Google Sign-In failed: no ID token');

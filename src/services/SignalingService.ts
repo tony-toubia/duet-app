@@ -182,6 +182,7 @@ export class SignalingService {
     await this.roomRef.child('offer').set({
       type: offer.type,
       sdp: offer.sdp,
+      sentBy: this.userId,
     });
 
     console.log('[Signaling] Sent offer');
@@ -198,6 +199,7 @@ export class SignalingService {
     await this.roomRef.child('answer').set({
       type: answer.type,
       sdp: answer.sdp,
+      sentBy: this.userId,
     });
 
     console.log('[Signaling] Sent answer');
@@ -221,36 +223,36 @@ export class SignalingService {
   }
   
   /**
-   * Listen for offer (answerer side)
+   * Listen for offer — ignore if we sent it ourselves
    */
   private listenForOffer(): void {
     const offerRef = this.roomRef.child('offer');
-    
+
     const unsubscribe = offerRef.on('value', (snapshot: any) => {
       const offer = snapshot.val();
-      if (offer) {
+      if (offer && offer.sentBy !== this.userId) {
         console.log('[Signaling] Received offer');
         this.callbacks.onOffer(offer as RTCSessionDescription);
       }
     });
-    
+
     this.unsubscribers.push(() => offerRef.off('value', unsubscribe));
   }
-  
+
   /**
-   * Listen for answer (offerer side)
+   * Listen for answer — ignore if we sent it ourselves
    */
   private listenForAnswer(): void {
     const answerRef = this.roomRef.child('answer');
-    
+
     const unsubscribe = answerRef.on('value', (snapshot: any) => {
       const answer = snapshot.val();
-      if (answer) {
+      if (answer && answer.sentBy !== this.userId) {
         console.log('[Signaling] Received answer');
         this.callbacks.onAnswer(answer as RTCSessionDescription);
       }
     });
-    
+
     this.unsubscribers.push(() => answerRef.off('value', unsubscribe));
   }
   
