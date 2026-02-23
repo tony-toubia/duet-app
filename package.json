@@ -29,6 +29,7 @@
     "expo-dev-client": "~5.2.4",
     "expo-image-picker": "~16.1.4",
     "expo-status-bar": "~2.2.3",
+    "promise": "^8.3.0",
     "react": "19.0.0",
     "react-native": "0.79.6",
     "react-native-google-mobile-ads": "^14.9.0",
