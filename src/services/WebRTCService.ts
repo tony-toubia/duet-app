@@ -10,9 +10,7 @@ import { getIceServers } from '@/config/turn';
 const getRtcConfig = () => ({
   iceServers: getIceServers(),
   iceCandidatePoolSize: 10,
-  // Relay-only avoids the iOS "find devices on local network" permission prompt
-  // that host candidates trigger. For audio-only, relay overhead is negligible.
-  iceTransportPolicy: 'relay' as const,
+  iceTransportPolicy: 'all' as const,
 });
 
 export type ConnectionState = 
@@ -83,14 +81,23 @@ export class WebRTCService {
       // Handle ICE candidates
       pc.onicecandidate = (event: any) => {
         if (event.candidate) {
-          // Log candidate details for debugging
           const candidate = event.candidate;
+          const candidateStr: string = candidate.candidate || '';
+          const candidateType = candidateStr.split(' ')[7]; // typ host/srflx/relay
+
+          // Filter out host and mDNS candidates to avoid the iOS
+          // "find devices on local network" permission prompt.
+          if (candidateType === 'host' || candidateStr.includes('.local')) {
+            console.log('[WebRTC] Filtered host/mDNS candidate');
+            return;
+          }
+
           console.log('[WebRTC] Local ICE candidate:', {
             type: candidate.type,
             protocol: candidate.protocol,
             address: candidate.address,
             port: candidate.port,
-            candidateType: candidate.candidate?.split(' ')[7], // typ host/srflx/relay
+            candidateType,
           });
           // Send candidate to peer via signaling
           this.onLocalIceCandidate?.(event.candidate);
