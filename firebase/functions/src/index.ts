@@ -217,7 +217,10 @@ export const onFriendRequestCreated = onValueCreated(
     const friendId = event.params.friendId;
     const friendData = event.data.val();
 
-    if (friendData.initiatedBy === userId) {
+    // Only notify the recipient, not the sender.
+    // initiatedBy is the sender's UID; userId is the node owner.
+    // /friends/B/A has initiatedBy=A, so when userId(B) !== initiatedBy(A), B is the recipient.
+    if (friendData.initiatedBy !== userId) {
       try {
         const userSnapshot = await db.ref(`/users/${userId}`).once('value');
         const userData = userSnapshot.val();
@@ -227,6 +230,7 @@ export const onFriendRequestCreated = onValueCreated(
           return;
         }
 
+        // displayName on this entry is the sender's name (stored from sender's perspective)
         const message: Message = {
           token: userData.pushToken,
           notification: {

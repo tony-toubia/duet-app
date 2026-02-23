@@ -10,8 +10,9 @@ import { getIceServers } from '@/config/turn';
 const getRtcConfig = () => ({
   iceServers: getIceServers(),
   iceCandidatePoolSize: 10,
-  // Try all transports - will prefer direct, fall back to relay
-  iceTransportPolicy: 'all' as const,
+  // Relay-only avoids the iOS "find devices on local network" permission prompt
+  // that host candidates trigger. For audio-only, relay overhead is negligible.
+  iceTransportPolicy: 'relay' as const,
 });
 
 export type ConnectionState = 

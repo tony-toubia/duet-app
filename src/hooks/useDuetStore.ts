@@ -8,6 +8,7 @@ import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { friendsService } from '@/services/FriendsService';
 import { eventTrackingService } from '@/services/EventTrackingService';
+import { navigationRef } from '@/navigation/navigationRef';
 
 export interface PendingAlert {
   title: string;
@@ -105,6 +106,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         },
         onShowAlert: (alert) => {
           set({ pendingAlert: alert });
+        },
+        onRoomInvite: (roomCode) => {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('Lobby' as any, { autoJoinCode: roomCode } as any);
+          }
         },
       });
 
