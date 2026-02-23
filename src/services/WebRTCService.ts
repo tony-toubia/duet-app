@@ -85,10 +85,12 @@ export class WebRTCService {
           const candidateStr: string = candidate.candidate || '';
           const candidateType = candidateStr.split(' ')[7]; // typ host/srflx/relay
 
-          // Filter out host and mDNS candidates to avoid the iOS
-          // "find devices on local network" permission prompt.
-          if (candidateType === 'host' || candidateStr.includes('.local')) {
-            console.log('[WebRTC] Filtered host/mDNS candidate');
+          // Only filter mDNS candidates (.local addresses) which trigger
+          // the iOS "find devices on local network" permission prompt.
+          // Regular host candidates (with real IPs) are safe and needed
+          // when STUN/TURN don't produce srflx/relay candidates.
+          if (candidateStr.includes('.local')) {
+            console.log('[WebRTC] Filtered mDNS candidate');
             return;
           }
 
