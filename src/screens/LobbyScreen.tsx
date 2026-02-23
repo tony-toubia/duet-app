@@ -34,6 +34,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     initialize,
     createRoom,
     joinRoom,
+    startAudio,
   } = useDuetStore();
 
   const userProfile = useAuthStore((s) => s.userProfile);
@@ -75,12 +76,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       const code = await createRoom();
-      // Show pre-roll ad before navigating to room
+      // Show pre-roll ad before starting mic
       if (adService.isPreRollReady) {
         setShowingAd(true);
         await adService.showPreRoll();
         setShowingAd(false);
       }
+      // Start mic after ad dismisses so user isn't recorded during ad
+      await startAudio();
       setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
@@ -98,12 +101,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       await joinRoom(code.toUpperCase());
-      // Show pre-roll ad before navigating to room
+      // Show pre-roll ad before starting mic
       if (adService.isPreRollReady) {
         setShowingAd(true);
         await adService.showPreRoll();
         setShowingAd(false);
       }
+      // Start mic after ad dismisses so user isn't recorded during ad
+      await startAudio();
       setShowJoinInput(false);
     } catch (error: any) {
       console.error('[Lobby] Join room failed:', error);

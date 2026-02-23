@@ -48,6 +48,7 @@ interface DuetState {
   initialize: () => Promise<void>;
   createRoom: () => Promise<string>;
   joinRoom: (code: string) => Promise<void>;
+  startAudio: () => Promise<void>;
   leaveRoom: () => Promise<void>;
   setMuted: (muted: boolean) => void;
   setDeafened: (deafened: boolean) => void;
@@ -246,20 +247,6 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     crashlyticsService.logRoomCreated(roomCode);
     eventTrackingService.track('room_created', { roomCode });
 
-    // Request mic permission on Android (iOS handles via infoPlist)
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
-      );
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        console.warn('[Store] Microphone permission denied');
-      }
-    }
-
-    // Start audio engine
-    await DuetAudio.startAudioEngine();
-    crashlyticsService.logAudioEngineStart();
-
     return roomCode;
   },
   
@@ -346,6 +333,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     crashlyticsService.logRoomJoined(code);
     eventTrackingService.track('room_joined', { roomCode: code });
 
+  },
+
+  // =====================
+  // AUDIO START (called after pre-roll ad)
+  // =====================
+
+  startAudio: async () => {
     // Request mic permission on Android (iOS handles via infoPlist)
     if (Platform.OS === 'android') {
       const granted = await PermissionsAndroid.request(
@@ -360,7 +354,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     await DuetAudio.startAudioEngine();
     crashlyticsService.logAudioEngineStart();
   },
-  
+
   leaveRoom: async () => {
     const { webrtc, signaling, partnerId, roomCode } = get();
 
