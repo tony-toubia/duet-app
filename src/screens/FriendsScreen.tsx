@@ -131,7 +131,7 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
     if (!inviteTarget || isInviting) return;
     setIsInviting(true);
     try {
-      const { roomCode, createRoom } = useDuetStore.getState();
+      const { roomCode, createRoom, setFromInvite } = useDuetStore.getState();
       let code = roomCode;
       if (!code) {
         code = await createRoom();
@@ -139,7 +139,8 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
       await invitationService.sendInvitation(inviteTarget.uid, code);
       setInviteTarget(null);
       if (!roomCode) {
-        // We just created a room, navigate to it
+        // We just created a room via friend invite — skip share modal
+        setFromInvite(true);
         navigation.navigate('Lobby');
       }
     } catch (error: any) {

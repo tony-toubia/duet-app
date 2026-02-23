@@ -36,6 +36,9 @@ interface DuetState {
   // Alerts (surfaced from PushNotificationService)
   pendingAlert: PendingAlert | null;
 
+  // Invite tracking (suppress share modal when room originated from friend invite)
+  fromInvite: boolean;
+
   // Settings
   duckLevel: number; // 0-100, percentage of original volume when ducking
   vadSensitivity: number; // 0-100, higher = more sensitive
@@ -58,6 +61,7 @@ interface DuetState {
   setDuckingEnabled: (enabled: boolean) => void;
   sendReaction: (emoji: string) => void;
   dismissAlert: () => void;
+  setFromInvite: (value: boolean) => void;
 }
 
 export const useDuetStore = create<DuetState>((set, get) => ({
@@ -76,6 +80,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   incomingReaction: null,
 
   pendingAlert: null,
+
+  fromInvite: false,
 
   duckLevel: 30,
   vadSensitivity: 40, // Default: moderate-low, good for car/road noise environments
@@ -108,6 +114,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           set({ pendingAlert: alert });
         },
         onRoomInvite: (roomCode) => {
+          set({ fromInvite: true });
           if (navigationRef.isReady()) {
             navigationRef.navigate('Lobby' as any, { autoJoinCode: roomCode } as any);
           }
@@ -408,6 +415,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       isSpeaking: false,
       isPartnerSpeaking: false,
       incomingReaction: null,
+      fromInvite: false,
     });
   },
   
@@ -453,6 +461,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   dismissAlert: () => {
     set({ pendingAlert: null });
+  },
+
+  setFromInvite: (value: boolean) => {
+    set({ fromInvite: value });
   },
 }));
 

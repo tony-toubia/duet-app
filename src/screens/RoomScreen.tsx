@@ -60,20 +60,25 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     isPartnerSpeaking,
     vadSensitivity,
     duckingEnabled,
+    fromInvite,
     leaveRoom,
     setMuted,
     setDeafened,
     setVadSensitivity,
     setDuckingEnabled,
+    setFromInvite,
   } = useDuetStore();
 
   const hasBeenConnected = useRef(false);
 
-  // Auto-show share modal when entering as host (room creator)
+  // Auto-show share modal when entering as host — skip if room was created via friend invite
   useEffect(() => {
-    if (isHost && roomCode && !hasShownInitialShare.current) {
+    if (isHost && roomCode && !hasShownInitialShare.current && !fromInvite) {
       hasShownInitialShare.current = true;
       setShowShareModal(true);
+    }
+    if (fromInvite) {
+      setFromInvite(false);
     }
   }, [isHost, roomCode]);
 
