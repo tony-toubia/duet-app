@@ -8,7 +8,7 @@
 
 import { Platform, Alert, Linking, PermissionsAndroid } from 'react-native';
 import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
-import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle, EventType } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import { eventTrackingService } from './EventTrackingService';
@@ -243,7 +243,30 @@ class PushNotificationService {
       // The notification will show automatically
     });
 
-    // Handle notification opens (when user taps notification)
+    // Handle taps on notifee-displayed foreground notifications
+    notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS && detail.notification?.data) {
+        const data = detail.notification.data as Record<string, string>;
+        console.log('[Push] Notifee foreground tap:', data.type || 'notification');
+        eventTrackingService.track('push_opened', {
+          type: data.type || 'notification',
+        });
+        if (data.type) {
+          // Typed message (room_invite, friend_request, etc.)
+          this.handleMessage({ data } as FirebaseMessagingTypes.RemoteMessage, false);
+        } else if (data.actionUrl) {
+          // Campaign notification with action URL
+          const action = parseDeepLink(data.actionUrl);
+          if (action && 'type' in action && action.type === 'external') {
+            Linking.openURL(action.url);
+          } else if (action && 'screen' in action && navigationRef.isReady()) {
+            navigationRef.navigate(action.screen as any, action.params as any);
+          }
+        }
+      }
+    });
+
+    // Handle notification opens (when user taps FCM notification)
     messaging().onNotificationOpenedApp((message) => {
       console.log('[Push] Notification opened app:', message.data?.type);
       eventTrackingService.track('push_opened', {

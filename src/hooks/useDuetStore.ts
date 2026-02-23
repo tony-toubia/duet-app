@@ -117,6 +117,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           set({ fromInvite: true });
           if (navigationRef.isReady()) {
             navigationRef.navigate('Lobby' as any, { autoJoinCode: roomCode } as any);
+          } else {
+            // Retry until navigation is ready (cold start from notification)
+            const check = setInterval(() => {
+              if (navigationRef.isReady()) {
+                clearInterval(check);
+                navigationRef.navigate('Lobby' as any, { autoJoinCode: roomCode } as any);
+              }
+            }, 100);
+            setTimeout(() => clearInterval(check), 5000);
           }
         },
       });
