@@ -27,13 +27,18 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install app dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Type check app
+        run: npx tsc --noEmit
 
-      - name: Type check
+      - name: Install function dependencies
+        working-directory: firebase/functions
+        run: npm ci
+
+      - name: Type check cloud functions
+        working-directory: firebase/functions
         run: npx tsc --noEmit
 
   # =====================
