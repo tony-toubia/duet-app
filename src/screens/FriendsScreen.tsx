@@ -131,17 +131,22 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
     if (!inviteTarget || isInviting) return;
     setIsInviting(true);
     try {
-      const { roomCode, createRoom, setFromInvite } = useDuetStore.getState();
+      const { roomCode, createRoom, startAudio, setFromInvite } = useDuetStore.getState();
       let code = roomCode;
+      const createdNewRoom = !code;
       if (!code) {
         code = await createRoom();
+        await startAudio();
       }
       await invitationService.sendInvitation(inviteTarget.uid, code);
       setInviteTarget(null);
-      if (!roomCode) {
-        // We just created a room via friend invite — skip share modal
+      if (createdNewRoom) {
+        // We just created a room via friend invite — go to Room directly, skip share modal
         setFromInvite(true);
-        navigation.navigate('Lobby');
+        navigation.reset({
+          index: 1,
+          routes: [{ name: 'Lobby' }, { name: 'Room' }],
+        });
       }
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to send invitation.');

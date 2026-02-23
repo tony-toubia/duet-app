@@ -70,6 +70,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   } = useDuetStore();
 
   const hasBeenConnected = useRef(false);
+  const isLeaving = useRef(false);
 
   // Auto-show share modal when entering as host — skip if room was created via friend invite
   useEffect(() => {
@@ -88,9 +89,17 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     }
   }, [connectionState]);
 
+  // Navigate to lobby when room code is cleared (after leaveRoom)
+  useEffect(() => {
+    if (!roomCode && isLeaving.current) {
+      navigation.replace('Lobby');
+    }
+  }, [roomCode, navigation]);
+
   // Auto-eject when room is deleted from Firebase
   useEffect(() => {
-    if (roomDeleted) {
+    if (roomDeleted && !isLeaving.current) {
+      isLeaving.current = true;
       Alert.alert(
         'Room Closed',
         'This room is no longer available.',
@@ -103,18 +112,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     }
   }, [roomDeleted]);
 
-  // Clean up on unmount (e.g., app termination)
+  // Clean up on unmount (e.g., app termination, unexpected navigation)
   useEffect(() => {
     return () => {
-      leaveRoom();
+      if (!isLeaving.current) {
+        leaveRoom();
+      }
     };
   }, []);
-
-  // If no room code, go back to lobby
-  if (!roomCode) {
-    navigation.replace('Lobby');
-    return null;
-  }
 
   const handleShareCode = () => {
     setShowShareModal(true);
@@ -141,6 +146,8 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   };
 
   const handleConfirmLeave = async () => {
+    if (isLeaving.current) return;
+    isLeaving.current = true;
     setShowLeaveModal(false);
     const willShowAd = adService.willShowInterstitial();
     await leaveRoom();
@@ -175,6 +182,11 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         return 'Waiting for partner...';
     }
   };
+
+  // While leaving, show nothing (effect will navigate to Lobby)
+  if (!roomCode) {
+    return null;
+  }
 
   const topBar = (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>

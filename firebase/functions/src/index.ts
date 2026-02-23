@@ -30,6 +30,29 @@ const messaging = getMessaging();
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
 
+// ─── FCM send with retry ─────────────────────────────────────────────
+// Cloud Functions v2 can intermittently fail to obtain OAuth2 tokens.
+// A single retry is enough for the token refresh to succeed.
+
+async function sendWithRetry(message: Message, maxRetries = 2): Promise<string> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await messaging.send(message);
+    } catch (error: any) {
+      const isAuthError =
+        error?.code === 'messaging/third-party-auth-error' ||
+        error?.code === 'messaging/internal-error';
+      if (isAuthError && attempt < maxRetries) {
+        console.warn(`[FCM] Attempt ${attempt} failed with ${error.code}, retrying...`);
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('sendWithRetry: exhausted retries');
+}
+
 // ─── Email helpers ────────────────────────────────────────────────────
 
 async function sendEmail(
@@ -156,8 +179,8 @@ export const onMemberLeft = onValueDeleted(
         };
 
         try {
-          await messaging.send(message);
-          console.log(`Notification sent to ${remainingMemberId}`);
+          await sendWithRetry(message);
+          console.log(`Notification sent to ${remainingMemberId} (${userData.platform || 'unknown'})`);
         } catch (error: any) {
           if (
             error.code === 'messaging/invalid-registration-token' ||
@@ -166,7 +189,7 @@ export const onMemberLeft = onValueDeleted(
             console.log(`Removing invalid token for user ${remainingMemberId}`);
             await db.ref(`/users/${remainingMemberId}/pushToken`).remove();
           } else {
-            console.error(`Error sending notification to ${remainingMemberId}:`, error);
+            console.error(`Error sending notification to ${remainingMemberId} (${userData.platform || 'unknown'}):`, error);
           }
         }
       });
@@ -262,8 +285,8 @@ export const onFriendRequestCreated = onValueCreated(
           },
         };
 
-        await messaging.send(message);
-        console.log(`Friend request notification sent to ${userId}`);
+        await sendWithRetry(message);
+        console.log(`Friend request notification sent to ${userId} (${userData.platform || 'unknown'})`);
       } catch (error) {
         console.error('Error sending friend request notification:', error);
       }
@@ -322,8 +345,9 @@ export const onInvitationCreated = onValueCreated(
         },
       };
 
-      await messaging.send(message);
-      console.log(`Room invitation notification sent to ${invitation.toUid}`);
+      console.log(`[FCM] Sending invitation to ${invitation.toUid} (${userData.platform || 'unknown'}), token: ${userData.pushToken.substring(0, 20)}...`);
+      await sendWithRetry(message);
+      console.log(`Room invitation notification sent to ${invitation.toUid} (${userData.platform || 'unknown'})`);
 
       // Clean up invitation after sending
       await event.data.ref.remove();
