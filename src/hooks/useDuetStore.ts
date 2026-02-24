@@ -139,9 +139,19 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isSpeaking: event.speaking });
       });
 
+      let audioPacketCount = 0;
+      let lastAudioLogTime = 0;
       DuetAudio.onAudioData((data) => {
         // Send audio to partner via WebRTC with metadata
         const { webrtc } = get();
+        audioPacketCount++;
+        const now = Date.now();
+        // Log every 5 seconds to track if audio events are flowing
+        if (now - lastAudioLogTime > 5000) {
+          console.log(`[Audio] Sent ${audioPacketCount} packets in last 5s, dc=${webrtc?.getDataChannelState?.() ?? 'unknown'}`);
+          audioPacketCount = 0;
+          lastAudioLogTime = now;
+        }
         webrtc?.sendAudioData(data.audio, data.sampleRate, data.channels);
       });
 

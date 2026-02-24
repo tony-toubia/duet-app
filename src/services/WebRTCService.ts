@@ -301,6 +301,10 @@ export class WebRTCService {
     }
   }
 
+  getDataChannelState(): string {
+    return this.dataChannel?.readyState ?? 'null';
+  }
+
   /**
    * Send an emoji reaction to peer
    */

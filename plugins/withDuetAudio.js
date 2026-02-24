@@ -461,6 +461,9 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         })
     }
 
+    private var nativeAudioPacketCount = 0L
+    private var lastNativeAudioLogTime = 0L
+
     private fun processInputBuffer(buffer: FloatArray, length: Int) {
         val rms = calculateRMS(buffer, length)
         val speaking = rms > vadThreshold
@@ -484,6 +487,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
 
         if (isSpeaking) {
+            nativeAudioPacketCount++
+            val now = System.currentTimeMillis()
+            if (now - lastNativeAudioLogTime > 5000) {
+                android.util.Log.d("DuetAudio", "Native: sent ${'$'}nativeAudioPacketCount packets in last 5s")
+                nativeAudioPacketCount = 0
+                lastNativeAudioLogTime = now
+            }
             val base64 = floatArrayToBase64(buffer, length)
             sendEvent("onAudioData", Arguments.createMap().apply {
                 putString("audio", base64)
