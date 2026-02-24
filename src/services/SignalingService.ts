@@ -339,11 +339,17 @@ export class SignalingService {
 
       if (memberCount >= 2) {
         this.partnerEverJoined = true;
-        // Debounce: only fire onPartnerJoined if partner wasn't already present
+        // Always cancel any pending "partner left" debounce when partner is present.
+        // Without this, a debounce started during a brief disconnect can fire
+        // AFTER the partner has already rejoined.
+        if (this.partnerDebounceTimer) {
+          clearTimeout(this.partnerDebounceTimer);
+          this.partnerDebounceTimer = null;
+        }
+        // Only fire onPartnerJoined if partner wasn't already present
         // This prevents duplicate fires from listenForReconnect re-adding ourselves
         if (!this.partnerPresent) {
           this.partnerPresent = true;
-          if (this.partnerDebounceTimer) clearTimeout(this.partnerDebounceTimer);
           console.log('[Signaling] Partner joined!');
           this.callbacks.onPartnerJoined();
         }
@@ -359,7 +365,7 @@ export class SignalingService {
               console.log('[Signaling] Partner left (confirmed after debounce)');
               this.callbacks.onPartnerLeft();
             }
-          }, 8000);
+          }, 15000);
         }
       } else if (memberCount === 0) {
         // Members node was deleted — check if room itself still exists
