@@ -85,6 +85,7 @@ module.exports = {
         "android.permission.WAKE_LOCK",
         "android.permission.ACCESS_WIFI_STATE",
         "android.permission.CHANGE_WIFI_STATE",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "com.google.android.gms.permission.AD_ID"
       ]
     },

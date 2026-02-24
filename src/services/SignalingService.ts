@@ -303,16 +303,34 @@ export class SignalingService {
    * or the app is backgrounded, which would trigger onDisconnect and remove
    * our member entry.
    */
+  private heartbeatFailures = 0;
+
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => {
+    this.heartbeatFailures = 0;
+    this.heartbeatTimer = setInterval(async () => {
       if (this.roomRef && this.userId) {
-        this.roomRef
-          .child('members')
-          .child(this.userId)
-          .child('heartbeat')
-          .set(database.ServerValue.TIMESTAMP)
-          .catch(() => {}); // Ignore errors (e.g., if room was deleted)
+        try {
+          await this.roomRef
+            .child('members')
+            .child(this.userId)
+            .child('heartbeat')
+            .set(database.ServerValue.TIMESTAMP);
+          this.heartbeatFailures = 0;
+        } catch {
+          this.heartbeatFailures++;
+          console.log(`[Signaling] Heartbeat failed (${this.heartbeatFailures})`);
+          if (this.heartbeatFailures >= 2) {
+            // Force Firebase to reconnect — Doze may have blocked the socket
+            console.log('[Signaling] Forcing Firebase reconnect after heartbeat failures');
+            try {
+              database().goOffline();
+              setTimeout(() => database().goOnline(), 200);
+            } catch {
+              // Ignore
+            }
+          }
+        }
       }
     }, 10_000);
     console.log('[Signaling] Heartbeat started (10s interval)');
@@ -365,7 +383,7 @@ export class SignalingService {
               console.log('[Signaling] Partner left (confirmed after debounce)');
               this.callbacks.onPartnerLeft();
             }
-          }, 15000);
+          }, 120_000); // 2 minutes — survives Doze maintenance window gaps
         }
       } else if (memberCount === 0) {
         // Members node was deleted — check if room itself still exists

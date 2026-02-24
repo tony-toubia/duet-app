@@ -14,9 +14,11 @@ import android.content.Intent
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Base64
 import android.view.KeyEvent
 import com.facebook.react.bridge.*
@@ -253,6 +255,27 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             )
             wakeLock?.acquire()
             android.util.Log.d("DuetAudio", "Wake lock acquired")
+
+            // Request battery optimization exemption so Doze doesn't block network.
+            // A foreground service + WiFi lock keep the radio powered, but Doze
+            // still suspends outbound connections at the framework level unless
+            // the app is on the battery optimization whitelist.
+            try {
+                val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+                val packageName = reactApplicationContext.packageName
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${'$'}packageName")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    reactApplicationContext.startActivity(intent)
+                    android.util.Log.d("DuetAudio", "Prompted for battery optimization exemption")
+                } else {
+                    android.util.Log.d("DuetAudio", "Already exempt from battery optimization")
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("DuetAudio", "Failed to request battery opt exemption: ${'$'}{e.message}")
+            }
 
             // Acquire WiFi lock to prevent WiFi from sleeping when screen is off.
             // Without this, Android suspends WiFi ~5s after screen-off, killing
@@ -674,6 +697,42 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ toneGen.release() }, 500)
         } catch (e: Exception) {
             // Ignore — chime is non-critical
+        }
+    }
+
+    // =====================
+    // BATTERY OPTIMIZATION
+    // =====================
+
+    @ReactMethod
+    fun isIgnoringBatteryOptimizations(promise: Promise) {
+        val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val isIgnoring = pm.isIgnoringBatteryOptimizations(reactApplicationContext.packageName)
+        promise.resolve(isIgnoring)
+    }
+
+    @ReactMethod
+    fun requestBatteryOptimizationExemption(promise: Promise) {
+        try {
+            val pm = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val packageName = reactApplicationContext.packageName
+
+            if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                android.util.Log.d("DuetAudio", "Already exempt from battery optimization")
+                promise.resolve(true)
+                return
+            }
+
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${'$'}packageName")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactApplicationContext.startActivity(intent)
+            android.util.Log.d("DuetAudio", "Launched battery optimization exemption dialog")
+            promise.resolve(false)
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Failed to request battery optimization exemption: ${'$'}{e.message}")
+            promise.reject("BATTERY_OPT_ERROR", e.message)
         }
     }
 
