@@ -119,6 +119,22 @@ export const onMemberLeft = onValueDeleted(
     const memberId = event.params.memberId;
 
     try {
+      // Grace period: wait 10s before sending the notification.
+      // When a device backgrounds or loses connectivity briefly, Firebase
+      // onDisconnect removes the member, but the device re-registers within
+      // seconds. Without this delay, every brief disconnect triggers a
+      // "Partner Disconnected" push to the other user.
+      await new Promise((r) => setTimeout(r, 10_000));
+
+      // Re-check: if the member has rejoined, skip the notification
+      const memberSnap = await db
+        .ref(`/rooms/${roomCode}/members/${memberId}`)
+        .once('value');
+      if (memberSnap.exists()) {
+        console.log(`Member ${memberId} rejoined room ${roomCode} within grace period, skipping notification`);
+        return;
+      }
+
       const roomSnapshot = await db.ref(`/rooms/${roomCode}`).once('value');
       const room = roomSnapshot.val();
 
