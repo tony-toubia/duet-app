@@ -14,6 +14,7 @@ import android.content.Intent
 import android.media.*
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import android.util.Base64
@@ -53,6 +54,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var noiseSuppressor: NoiseSuppressor? = null
     private var focusRequest: AudioFocusRequest? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     // Dynamic ducking state
     private var hasDuckingFocus = false
@@ -252,6 +254,24 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             wakeLock?.acquire()
             android.util.Log.d("DuetAudio", "Wake lock acquired")
 
+            // Acquire WiFi lock to prevent WiFi from sleeping when screen is off.
+            // Without this, Android suspends WiFi ~5s after screen-off, killing
+            // both Firebase RTDB (triggering onDisconnect) and WebRTC connections.
+            try {
+                val wifiManager = reactApplicationContext.applicationContext
+                    .getSystemService(Context.WIFI_SERVICE) as WifiManager
+                wifiLock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "Duet::AudioWifiLock")
+                } else {
+                    @Suppress("DEPRECATION")
+                    wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "Duet::AudioWifiLock")
+                }
+                wifiLock?.acquire()
+                android.util.Log.d("DuetAudio", "WiFi lock acquired")
+            } catch (e: Exception) {
+                android.util.Log.w("DuetAudio", "Failed to acquire WiFi lock: ${'$'}{e.message}")
+            }
+
             setupAudioRecord()
             setupAudioTrack()
             startRecording()
@@ -405,6 +425,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             android.util.Log.d("DuetAudio", "Wake lock released")
         }
         wakeLock = null
+
+        // Release WiFi lock
+        if (wifiLock?.isHeld == true) {
+            wifiLock?.release()
+            android.util.Log.d("DuetAudio", "WiFi lock released")
+        }
+        wifiLock = null
 
         promise.resolve(Arguments.createMap().apply {
             putBoolean("success", true)
