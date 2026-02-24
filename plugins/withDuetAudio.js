@@ -247,6 +247,17 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
                 // Non-fatal: audio will still work, just might stop when screen locks
             }
 
+            // Start HeadlessJsTask service to keep JS event loop alive when backgrounded.
+            // Without this, onHostPause removes the Choreographer callback, stopping all
+            // NativeEventEmitter event delivery and setTimeout/setInterval timers.
+            try {
+                val keepAliveIntent = Intent(reactApplicationContext, DuetJsKeepAliveService::class.java)
+                reactApplicationContext.startService(keepAliveIntent)
+                android.util.Log.d("DuetAudio", "JS keep-alive service started")
+            } catch (e: Exception) {
+                android.util.Log.w("DuetAudio", "Failed to start JS keep-alive service: ${'$'}{e.message}")
+            }
+
             // Acquire wake lock to keep CPU running in background
             val powerManager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(
@@ -440,6 +451,15 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             android.util.Log.d("DuetAudio", "Foreground service stopped")
         } catch (e: Exception) {
             android.util.Log.w("DuetAudio", "Failed to stop foreground service: ${'$'}{e.message}")
+        }
+
+        // Stop JS keep-alive service
+        try {
+            val keepAliveIntent = Intent(reactApplicationContext, DuetJsKeepAliveService::class.java)
+            reactApplicationContext.stopService(keepAliveIntent)
+            android.util.Log.d("DuetAudio", "JS keep-alive service stopped")
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Failed to stop JS keep-alive service: ${'$'}{e.message}")
         }
 
         // Release wake lock
@@ -850,6 +870,39 @@ class DuetAudioService : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
+    }
+}
+`;
+
+const DUET_JS_KEEP_ALIVE_SERVICE_KT = `package com.duet.audio
+
+import android.content.Intent
+import com.facebook.react.HeadlessJsTaskService
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.jstasks.HeadlessJsTaskConfig
+
+/**
+ * Lightweight HeadlessJsTaskService that keeps the React Native JS event loop
+ * running when the app is backgrounded.
+ *
+ * When a HeadlessJsTask is active, JavaTimerManager keeps the Choreographer
+ * frame callback posted (isRunningTasks=true), which means setTimeout,
+ * setInterval, and NativeEventEmitter events all continue to fire.
+ *
+ * This is critical for the audio pipeline: native AudioRecord sends audio
+ * data events to JS via NativeEventEmitter, and JS forwards them over the
+ * WebRTC data channel. Without this, backgrounding the app pauses the JS
+ * thread and audio stops in both directions.
+ */
+class DuetJsKeepAliveService : HeadlessJsTaskService() {
+
+    override fun getTaskConfig(intent: Intent?): HeadlessJsTaskConfig {
+        return HeadlessJsTaskConfig(
+            "DuetKeepAlive",       // Must match AppRegistry.registerHeadlessTask key
+            Arguments.createMap(), // No data needed
+            0,                     // timeout = 0 means no timeout (runs indefinitely)
+            true                   // allowedInForeground = true (audio starts while app is visible)
+        )
     }
 }
 `;
@@ -1741,6 +1794,10 @@ function withDuetAudioAndroid(config) {
         path.join(audioDir, 'DuetAudioService.kt'),
         DUET_AUDIO_SERVICE_KT
       );
+      fs.writeFileSync(
+        path.join(audioDir, 'DuetJsKeepAliveService.kt'),
+        DUET_JS_KEEP_ALIVE_SERVICE_KT
+      );
 
       console.log('[withDuetAudio] Created Android native audio module files in:', audioDir);
 
@@ -1774,6 +1831,21 @@ function withDuetAudioService(config) {
         },
       });
       console.log('[withDuetAudio] Added DuetAudioService to AndroidManifest');
+    }
+
+    // Add the HeadlessJs keep-alive service
+    const keepAliveExists = application.service.some(
+      (s) => s.$?.['android:name'] === '.audio.DuetJsKeepAliveService'
+    );
+
+    if (!keepAliveExists) {
+      application.service.push({
+        $: {
+          'android:name': '.audio.DuetJsKeepAliveService',
+          'android:exported': 'false',
+        },
+      });
+      console.log('[withDuetAudio] Added DuetJsKeepAliveService to AndroidManifest');
     }
 
     return config;
