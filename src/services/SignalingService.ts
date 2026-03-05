@@ -39,6 +39,7 @@ export class SignalingService {
   private partnerPresent: boolean = false;
   private partnerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionId: string = '';  // Unique per-connection session to detect stale messages
 
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
@@ -55,7 +56,8 @@ export class SignalingService {
       throw error;
     }
     this.userId = currentUser.uid;
-    console.log('[Signaling] Authenticated as:', this.userId);
+    this.sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    console.log('[Signaling] Authenticated as:', this.userId, 'session:', this.sessionId);
     return this.userId;
   }
   
@@ -67,11 +69,20 @@ export class SignalingService {
       throw new Error('Not authenticated. Call initialize() first.');
     }
     
-    // Generate 6-character room code
-    this.roomCode = this.generateRoomCode();
+    // Generate 6-character room code with collision check
     this.isOfferer = true;
-    
-    this.roomRef = database().ref(`rooms/${this.roomCode}`);
+    let attempts = 0;
+    do {
+      this.roomCode = this.generateRoomCode();
+      this.roomRef = database().ref(`rooms/${this.roomCode}`);
+      const existing = await this.roomRef.once('value');
+      if (!existing.exists()) break;
+      attempts++;
+      console.log(`[Signaling] Room code collision (${this.roomCode}), retrying...`);
+    } while (attempts < 5);
+    if (attempts >= 5) {
+      throw new Error('Failed to generate a unique room code. Please try again.');
+    }
     
     // Set up the room with you as the first member
     await this.roomRef.set({
@@ -183,9 +194,10 @@ export class SignalingService {
       type: offer.type,
       sdp: offer.sdp,
       sentBy: this.userId,
+      sessionId: this.sessionId,
     });
 
-    console.log('[Signaling] Sent offer');
+    console.log('[Signaling] Sent offer (session:', this.sessionId, ')');
   }
 
   /**
@@ -200,9 +212,10 @@ export class SignalingService {
       type: answer.type,
       sdp: answer.sdp,
       sentBy: this.userId,
+      sessionId: this.sessionId,
     });
 
-    console.log('[Signaling] Sent answer');
+    console.log('[Signaling] Sent answer (session:', this.sessionId, ')');
   }
   
   /**
@@ -383,7 +396,7 @@ export class SignalingService {
               console.log('[Signaling] Partner left (confirmed after debounce)');
               this.callbacks.onPartnerLeft();
             }
-          }, 120_000); // 2 minutes — survives Doze maintenance window gaps
+          }, 15_000); // 15 seconds — balances fast detection with reconnect tolerance
         }
       } else if (memberCount === 0) {
         // Members node was deleted — check if room itself still exists

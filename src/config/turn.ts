@@ -83,7 +83,46 @@ export function getIceServers(): TurnServer[] {
   const productionTurn = getProductionTurn();
   const turnServers = productionTurn.length > 0 ? productionTurn : FALLBACK_TURN;
 
-  return [...STUN_SERVERS, ...turnServers];
+  const servers = [...STUN_SERVERS, ...turnServers];
+  const hasTurn = turnServers.length > 0;
+  const source = productionTurn.length > 0 ? 'production' : 'fallback';
+  console.log(`[TURN] Using ${source} TURN servers (${turnServers.length} TURN, ${STUN_SERVERS.length} STUN)`);
+  if (!hasTurn) {
+    console.warn('[TURN] No TURN servers configured! Users behind symmetric NATs will not be able to connect.');
+  }
+
+  return servers;
+}
+
+/**
+ * Check if any relay candidates were found during ICE gathering.
+ * Call after ICE gathering is complete to detect TURN failures.
+ */
+export function diagnoseTurnFailure(candidates: Array<{ candidate: string }>): {
+  hasRelay: boolean;
+  hasSrflx: boolean;
+  hasHost: boolean;
+  diagnosis: string;
+} {
+  let hasRelay = false;
+  let hasSrflx = false;
+  let hasHost = false;
+
+  for (const c of candidates) {
+    const typ = c.candidate?.split(' ')[7];
+    if (typ === 'relay') hasRelay = true;
+    if (typ === 'srflx') hasSrflx = true;
+    if (typ === 'host') hasHost = true;
+  }
+
+  let diagnosis = '';
+  if (!hasRelay && !hasSrflx) {
+    diagnosis = 'No TURN/STUN candidates found. Check your network connection and firewall settings.';
+  } else if (!hasRelay) {
+    diagnosis = 'No TURN relay candidates. Users behind strict firewalls may have trouble connecting.';
+  }
+
+  return { hasRelay, hasSrflx, hasHost, diagnosis };
 }
 
 /**
@@ -115,4 +154,5 @@ export async function fetchDynamicTurnCredentials(
 export default {
   getIceServers,
   fetchDynamicTurnCredentials,
+  diagnoseTurnFailure,
 };

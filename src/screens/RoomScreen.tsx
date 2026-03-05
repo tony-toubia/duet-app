@@ -26,6 +26,7 @@ import { RoomNativeAd } from '@/components/RoomNativeAd';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
 import { ReactionBar } from '@/components/ReactionBar';
 import { ReactionOverlay } from '@/components/ReactionOverlay';
+import { ConnectionQualityIndicator } from '@/components/ConnectionQualityIndicator';
 import { ShareModal } from '@/components/ShareModal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { InviteModal } from '@/components/InviteModal';
@@ -50,6 +51,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
 
   const {
     connectionState,
+    webrtc,
     roomCode,
     roomDeleted,
     isHost,
@@ -197,6 +199,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       <Text style={[styles.connectionText, { color: getConnectionColor() }]}>
         {getConnectionText()}
       </Text>
+      <ConnectionQualityIndicator webrtc={webrtc} />
       <GuestRoomTimer onTimeExpired={handleLeave} onControlsLocked={setControlsLocked} />
       <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn}>
         <Text style={styles.leaveBtnText}>Leave</Text>
@@ -260,6 +263,19 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     <MediaPlayer minimized={mediaMinimized} onToggleMinimized={() => setMediaMinimized(!mediaMinimized)} />
   );
 
+  const handleWatchRewardedAd = async () => {
+    const earned = await adService.showRewarded();
+    if (earned) {
+      Alert.alert('Ad-Free!', 'You have 1 hour of ad-free rooms. Enjoy!');
+    }
+  };
+
+  const rewardedAdButton = adService.isRewardedReady && !adService.isAdFree ? (
+    <TouchableOpacity style={styles.rewardedAdBtn} onPress={handleWatchRewardedAd}>
+      <Text style={styles.rewardedAdText}>Watch ad for 1hr ad-free</Text>
+    </TouchableOpacity>
+  ) : null;
+
   const adTransitionOverlay = showAdTransition ? (
     <View style={styles.adTransition}>
       <ActivityIndicator size="large" color={colors.text} />
@@ -288,6 +304,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
             <View style={styles.twoColRight}>
               <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
               <RoomNativeAd />
+              {rewardedAdButton}
               {duckingToggle}
               {mediaPlayer}
               <NavigationWidget />
@@ -341,6 +358,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           <ReactionBar />
           <VoiceSensitivity value={vadSensitivity} onChange={setVadSensitivity} />
           <RoomNativeAd />
+          {rewardedAdButton}
           {duckingToggle}
           {mediaPlayer}
           <NavigationWidget />
@@ -522,5 +540,20 @@ const styles = StyleSheet.create({
   adTransitionSub: {
     color: colors.textMuted,
     fontSize: 13,
+  },
+  rewardedAdBtn: {
+    backgroundColor: colors.glass,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    marginHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  rewardedAdText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

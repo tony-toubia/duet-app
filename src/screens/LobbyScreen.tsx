@@ -13,9 +13,13 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import database from '@react-native-firebase/database';
+import auth from '@react-native-firebase/auth';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { adService } from '@/services/AdService';
+import { invitationService } from '@/services/InvitationService';
 import { LobbyNativeAd } from '@/components/LobbyNativeAd';
 import { ShareModal } from '@/components/ShareModal';
 import { colors } from '@/theme';
@@ -44,6 +48,26 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const [showingAd, setShowingAd] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
 
+  // Online friends for quick connect
+  const acceptedFriends = useFriendsStore((s) => s.acceptedFriends);
+  const statuses = useFriendsStore((s) => s.statuses);
+
+  // Subscribe to friends on mount
+  useEffect(() => {
+    const unsub = useFriendsStore.getState().subscribe();
+    return unsub;
+  }, []);
+
+  const onlineFriends = acceptedFriends().filter(
+    (f) => statuses[f.uid]?.state === 'online'
+  );
+
+  const [persistentRoom, setPersistentRoom] = useState<{
+    partnerUid: string;
+    partnerName: string;
+    partnerAvatar?: string | null;
+  } | null>(null);
+
   // Navigate to room when connected (gated by ad + audio readiness)
   useEffect(() => {
     if (roomCode && !showingAd && audioReady) {
@@ -58,6 +82,23 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
       handleJoinWithCode(autoJoinCode);
     }
   }, [route.params?.autoJoinCode, isInitialized]);
+
+  // Fetch persistent room entry when initialized
+  useEffect(() => {
+    if (!isInitialized) return;
+    const user = auth().currentUser;
+    if (!user) return;
+    database()
+      .ref(`/users/${user.uid}/persistentRoom`)
+      .once('value')
+      .then((snap) => {
+        const data = snap.val();
+        if (data && data.partnerUid && data.partnerName) {
+          setPersistentRoom(data);
+        }
+      })
+      .catch((e) => console.warn('[Lobby] Failed to load persistent room:', e));
+  }, [isInitialized]);
 
   useEffect(() => {
     const init = async () => {
@@ -123,6 +164,52 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
 
   const handleJoinRoom = () => handleJoinWithCode(joinCode);
 
+  const handleQuickConnect = async (friendUid: string, friendName: string) => {
+    setIsLoading(true);
+    try {
+      const code = await createRoom();
+      await invitationService.sendInvitation(friendUid, code);
+      useDuetStore.getState().setFromInvite(true);
+      if (adService.isPreRollReady) {
+        setShowingAd(true);
+        await adService.showPreRoll();
+        setShowingAd(false);
+      }
+      await startAudio();
+      setAudioReady(true);
+      Alert.alert('Invitation Sent', `${friendName} has been invited to join!`);
+    } catch (error: any) {
+      console.error('[Lobby] Quick connect failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to connect. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    if (!persistentRoom) return;
+    setIsLoading(true);
+    try {
+      const code = await createRoom();
+      // Send invitation to persistent partner
+      await invitationService.sendInvitation(persistentRoom.partnerUid, code);
+      // Show pre-roll ad before starting mic
+      if (adService.isPreRollReady) {
+        setShowingAd(true);
+        await adService.showPreRoll();
+        setShowingAd(false);
+      }
+      await startAudio();
+      setAudioReady(true);
+      setShareCode(code);
+    } catch (error: any) {
+      console.error('[Lobby] Reconnect failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to reconnect. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!isInitialized) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -186,6 +273,38 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         </View>
         <View style={{ flex: 1 }} />
         <View style={styles.lobbyButtons}>
+          {persistentRoom && (
+            <TouchableOpacity
+              style={styles.reconnectButton}
+              onPress={handleReconnect}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.reconnectText}>
+                  Reconnect with {persistentRoom.partnerName}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
+          {onlineFriends.length > 0 && !showJoinInput && (
+            <View style={styles.onlineFriendsRow}>
+              {onlineFriends.slice(0, 3).map((friend) => (
+                <TouchableOpacity
+                  key={friend.uid}
+                  style={styles.onlineFriendChip}
+                  onPress={() => handleQuickConnect(friend.uid, friend.displayName)}
+                  disabled={isLoading}
+                >
+                  <View style={styles.onlineDot} />
+                  <Text style={styles.onlineFriendName} numberOfLines={1}>
+                    {friend.displayName.split(' ')[0]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <TouchableOpacity
             style={styles.startRoomButton}
             onPress={handleCreateRoom}
@@ -365,6 +484,17 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 12,
   },
+  reconnectButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 16,
+    borderRadius: 28,
+    alignItems: 'center',
+  },
+  reconnectText: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+  },
   startRoomButton: {
     backgroundColor: '#e8734a',
     paddingVertical: 16,
@@ -420,5 +550,34 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  onlineFriendsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  onlineFriendChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4ade80',
+  },
+  onlineFriendName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+    maxWidth: 80,
   },
 });

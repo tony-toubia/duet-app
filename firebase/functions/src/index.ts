@@ -734,3 +734,196 @@ export const processEmailQueue = onSchedule(
     console.log(`[Email Queue] Done. Tips: ${tipsSent}, Re-engagement: ${reengagementSent}`);
   }
 );
+
+// ─── Rate Limiting ──────────────────────────────────────────────────
+
+/**
+ * Rate limit check helper. Uses a counter at /rateLimits/{userId}/{action}.
+ * Returns true if within limit, false if rate limited.
+ */
+async function checkRateLimit(
+  userId: string,
+  action: string,
+  maxPerWindow: number,
+  windowMs: number
+): Promise<boolean> {
+  const now = Date.now();
+  const ref = db.ref(`/rateLimits/${userId}/${action}`);
+  const snap = await ref.once('value');
+  const entries: number[] = snap.val() || [];
+
+  // Filter to only entries within the window
+  const recent = entries.filter((ts: number) => now - ts < windowMs);
+
+  if (recent.length >= maxPerWindow) {
+    return false; // Rate limited
+  }
+
+  // Add current timestamp and keep only recent entries
+  recent.push(now);
+  await ref.set(recent);
+  return true;
+}
+
+/**
+ * Rate limit room creation: max 10 rooms per user per hour.
+ * Triggered on new room creation.
+ */
+export const onRoomCreatedRateLimit = onValueCreated(
+  { ref: '/rooms/{roomCode}', region: 'us-central1' },
+  async (event) => {
+    const createdBy = event.data.val()?.createdBy;
+    if (!createdBy) return;
+
+    const allowed = await checkRateLimit(createdBy, 'room_create', 10, 60 * 60 * 1000);
+    if (!allowed) {
+      console.warn(`[RateLimit] User ${createdBy} exceeded room creation limit, removing room`);
+      await event.data.ref.remove();
+    }
+  }
+);
+
+/**
+ * Rate limit invitation sending: max 50 per user per day.
+ */
+export const onInvitationRateLimit = onValueCreated(
+  { ref: '/invitations/{invitationId}', region: 'us-central1' },
+  async (event) => {
+    const invitation = event.data.val();
+    if (!invitation?.fromUid) return;
+
+    const allowed = await checkRateLimit(invitation.fromUid, 'invitation', 50, 24 * 60 * 60 * 1000);
+    if (!allowed) {
+      console.warn(`[RateLimit] User ${invitation.fromUid} exceeded invitation limit`);
+      await event.data.ref.remove();
+    }
+  }
+);
+
+/**
+ * Rate limit friend requests: max 20 per user per day.
+ */
+export const onFriendRequestRateLimit = onValueCreated(
+  { ref: '/friends/{userId}/{friendId}', region: 'us-central1' },
+  async (event) => {
+    const friendData = event.data.val();
+    if (!friendData?.initiatedBy) return;
+
+    const allowed = await checkRateLimit(friendData.initiatedBy, 'friend_request', 20, 24 * 60 * 60 * 1000);
+    if (!allowed) {
+      console.warn(`[RateLimit] User ${friendData.initiatedBy} exceeded friend request limit`);
+      await event.data.ref.remove();
+    }
+  }
+);
+
+// ─── Clean up rate limit data ────────────────────────────────────────
+
+/**
+ * Clean up old rate limit entries. Runs daily.
+ */
+export const cleanupRateLimits = onSchedule('every 24 hours', async () => {
+  try {
+    await db.ref('/rateLimits').remove();
+    console.log('[RateLimit] Cleaned up all rate limit data');
+  } catch (error) {
+    console.error('[RateLimit] Cleanup failed:', error);
+  }
+});
+
+// ─── Proactive Push Notifications ───────────────────────────────────
+
+/**
+ * When a user comes online, notify their friends who have pushOptIn enabled.
+ * "Your partner is online — start a duet?"
+ * Rate limited to max 2 proactive pushes per user per day.
+ */
+export const onUserOnline = onValueWritten(
+  { ref: '/status/{userId}', region: 'us-central1' },
+  async (event) => {
+    const userId = event.params.userId;
+    const after = event.data.after.val();
+
+    // Only fire when state transitions to 'online'
+    if (!after || after.state !== 'online') return;
+    const before = event.data.before.val();
+    if (before?.state === 'online') return; // Already online, no transition
+
+    try {
+      // Get user's friends
+      const friendsSnap = await db.ref(`/friends/${userId}`).once('value');
+      const friends = friendsSnap.val();
+      if (!friends) return;
+
+      // Get user's display name
+      const profileSnap = await db.ref(`/users/${userId}/profile`).once('value');
+      const profile = profileSnap.val();
+      const displayName = profile?.displayName || 'Your friend';
+
+      const acceptedFriendIds = Object.entries(friends)
+        .filter(([, f]: [string, any]) => f.status === 'accepted')
+        .map(([uid]) => uid);
+
+      if (acceptedFriendIds.length === 0) return;
+
+      const notifications = acceptedFriendIds.map(async (friendId) => {
+        // Check friend's push preferences
+        const friendSnap = await db.ref(`/users/${friendId}`).once('value');
+        const friendData = friendSnap.val();
+
+        if (!friendData?.pushToken) return;
+        if (friendData.preferences?.pushOptIn === false) return;
+
+        // Rate limit: max 2 proactive pushes per friend per day
+        const allowed = await checkRateLimit(friendId, 'proactive_push', 2, 24 * 60 * 60 * 1000);
+        if (!allowed) return;
+
+        const message: Message = {
+          token: friendData.pushToken,
+          notification: {
+            title: `${displayName} is online`,
+            body: 'Start a duet together?',
+          },
+          data: {
+            type: 'friend_online',
+            fromUid: userId,
+            fromDisplayName: displayName,
+          },
+          android: {
+            priority: 'normal',
+            notification: {
+              channelId: 'duet_notifications',
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                alert: {
+                  title: `${displayName} is online`,
+                  body: 'Start a duet together?',
+                },
+                sound: 'default',
+              },
+            },
+          },
+        };
+
+        try {
+          await sendWithRetry(message);
+          console.log(`[ProactivePush] Sent "friend online" to ${friendId}`);
+        } catch (error: any) {
+          if (
+            error.code === 'messaging/invalid-registration-token' ||
+            error.code === 'messaging/registration-token-not-registered'
+          ) {
+            await db.ref(`/users/${friendId}/pushToken`).remove();
+          }
+        }
+      });
+
+      await Promise.all(notifications);
+    } catch (error) {
+      console.error('[ProactivePush] Error:', error);
+    }
+  }
+);

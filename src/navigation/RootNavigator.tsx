@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthScreen } from '@/screens/AuthScreen';
+import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { LobbyScreen } from '@/screens/LobbyScreen';
 import { RoomScreen } from '@/screens/RoomScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
@@ -11,6 +13,7 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
 import { presenceService } from '@/services/PresenceService';
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { colors } from '@/theme';
 import { RootStackParamList } from './types';
 import { parseDeepLink } from './deepLinkParser';
@@ -36,10 +39,17 @@ export const RootNavigator = () => {
   const { user, isLoading, initializeAuth } = useAuthStore();
   const pendingAlert = useDuetStore((s) => s.pendingAlert);
   const dismissAlert = useDuetStore((s) => s.dismissAlert);
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
     const unsubscribe = initializeAuth();
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem('onboardingComplete').then((value) => {
+      setShowOnboarding(value !== 'true');
+    });
   }, []);
 
   // Set up presence tracking when user is authenticated
@@ -115,7 +125,7 @@ export const RootNavigator = () => {
     return () => subscription.remove();
   }, []);
 
-  if (isLoading) {
+  if (isLoading || showOnboarding === null) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -124,34 +134,41 @@ export const RootNavigator = () => {
   }
 
   return (
-    <>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <>
-            <Stack.Screen name="Lobby" component={LobbyScreen} />
-            <Stack.Screen name="Room" component={RoomScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="Friends" component={FriendsScreen} />
-          </>
-        ) : (
-          <Stack.Screen name="Auth" component={AuthScreen} />
+    <ErrorBoundary>
+      <>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {user ? (
+            <>
+              <Stack.Screen name="Lobby" component={LobbyScreen} />
+              <Stack.Screen name="Room" component={RoomScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Friends" component={FriendsScreen} />
+            </>
+          ) : showOnboarding ? (
+            <>
+              <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+              <Stack.Screen name="Auth" component={AuthScreen} />
+            </>
+          ) : (
+            <Stack.Screen name="Auth" component={AuthScreen} />
+          )}
+        </Stack.Navigator>
+        {pendingAlert && (
+          <ConfirmModal
+            visible={true}
+            title={pendingAlert.title}
+            message={pendingAlert.message}
+            buttons={pendingAlert.buttons.map((btn) => ({
+              ...btn,
+              onPress: () => {
+                btn.onPress?.();
+                dismissAlert();
+              },
+            }))}
+            onClose={dismissAlert}
+          />
         )}
-      </Stack.Navigator>
-      {pendingAlert && (
-        <ConfirmModal
-          visible={true}
-          title={pendingAlert.title}
-          message={pendingAlert.message}
-          buttons={pendingAlert.buttons.map((btn) => ({
-            ...btn,
-            onPress: () => {
-              btn.onPress?.();
-              dismissAlert();
-            },
-          }))}
-          onClose={dismissAlert}
-        />
-      )}
-    </>
+      </>
+    </ErrorBoundary>
   );
 };

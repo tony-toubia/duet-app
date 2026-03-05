@@ -20,12 +20,19 @@ const getRtcConfig = () => ({
   iceTransportPolicy: (Platform.OS === 'ios' ? 'nohost' : 'all') as 'all' | 'relay',
 });
 
-export type ConnectionState = 
+export type ConnectionState =
   | 'disconnected'
   | 'connecting'
   | 'connected'
   | 'reconnecting'
   | 'failed';
+
+export type ConnectionQuality = {
+  rtt: number;
+  quality: 'excellent' | 'good' | 'fair' | 'poor';
+  packetsLost: number;
+  packetsReceived: number;
+};
 
 export interface AudioPacket {
   audio: string;      // base64 encoded audio data
@@ -287,17 +294,13 @@ export class WebRTCService {
   }
   
   /**
-   * Send audio data to peer with metadata
+   * Send audio data to peer with metadata.
+   * Uses compact pipe-delimited format: "A|sampleRate|channels|base64Audio"
+   * ~40% less overhead than JSON.stringify while staying string-compatible.
    */
   sendAudioData(base64Audio: string, sampleRate: number = 48000, channels: number = 1): void {
     if (this.dataChannel?.readyState === 'open') {
-      // Send as JSON packet with metadata for cross-platform compatibility
-      const packet: AudioPacket = {
-        audio: base64Audio,
-        sampleRate,
-        channels,
-      };
-      this.dataChannel.send(JSON.stringify(packet));
+      this.dataChannel.send(`A|${sampleRate}|${channels}|${base64Audio}`);
     }
   }
 
@@ -329,18 +332,33 @@ export class WebRTCService {
     };
     
     channel.onmessage = (event) => {
+      const msg: string = event.data;
+
+      // Compact audio format: "A|sampleRate|channels|base64Audio"
+      if (msg.startsWith('A|')) {
+        const firstPipe = 2;
+        const secondPipe = msg.indexOf('|', firstPipe);
+        const thirdPipe = msg.indexOf('|', secondPipe + 1);
+        this.callbacks.onAudioData({
+          audio: msg.substring(thirdPipe + 1),
+          sampleRate: parseInt(msg.substring(firstPipe, secondPipe), 10),
+          channels: parseInt(msg.substring(secondPipe + 1, thirdPipe), 10),
+        });
+        return;
+      }
+
+      // JSON messages (reactions + legacy audio)
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(msg);
         if (data.type === 'reaction') {
           this.callbacks.onReaction?.(data.emoji);
         } else {
-          // Audio packet (with or without explicit type field)
           this.callbacks.onAudioData(data as AudioPacket);
         }
       } catch (e) {
-        // Fallback for legacy raw base64 data (backward compatibility)
+        // Fallback for raw base64 data
         this.callbacks.onAudioData({
-          audio: event.data,
+          audio: msg,
           sampleRate: 48000,
           channels: 1,
         });
@@ -410,6 +428,49 @@ export class WebRTCService {
       console.error('[WebRTC] ICE restart failed:', e);
       // Schedule retry even on error
       this.scheduleIceRestart();
+    }
+  }
+
+  /**
+   * Get connection quality stats from the peer connection.
+   */
+  async getConnectionStats(): Promise<ConnectionQuality | null> {
+    if (!this.peerConnection) return null;
+
+    try {
+      const stats = await this.peerConnection.getStats();
+      let rtt = -1;
+      let packetsLost = 0;
+      let packetsReceived = 0;
+
+      stats.forEach((report: any) => {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          if (typeof report.currentRoundTripTime === 'number') {
+            rtt = report.currentRoundTripTime * 1000; // seconds -> ms
+          }
+        }
+        if (report.type === 'inbound-rtp') {
+          if (typeof report.packetsLost === 'number') {
+            packetsLost += report.packetsLost;
+          }
+          if (typeof report.packetsReceived === 'number') {
+            packetsReceived += report.packetsReceived;
+          }
+        }
+      });
+
+      if (rtt < 0) return null;
+
+      let quality: ConnectionQuality['quality'];
+      if (rtt < 50) quality = 'excellent';
+      else if (rtt < 150) quality = 'good';
+      else if (rtt < 300) quality = 'fair';
+      else quality = 'poor';
+
+      return { rtt: Math.round(rtt), quality, packetsLost, packetsReceived };
+    } catch (e) {
+      console.warn('[WebRTC] Failed to get connection stats:', e);
+      return null;
     }
   }
 

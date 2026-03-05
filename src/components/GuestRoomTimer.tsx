@@ -169,6 +169,8 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
   return (
     <>
       <View style={[styles.timerPill, { borderColor: timerColor }]}>
+        <Text style={styles.guestBadge}>Guest</Text>
+        <Text style={styles.timerSeparator}>|</Text>
         <Text style={[styles.timerText, { color: timerColor }]}>{timeText}</Text>
       </View>
 
@@ -180,9 +182,9 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
       >
         <View style={styles.overlay}>
           <View style={styles.modal}>
-            <Text style={styles.modalTitle}>Session Paused</Text>
+            <Text style={styles.modalTitle}>Guest Time's Up</Text>
             <Text style={styles.modalMessage}>
-              Watch a short ad to continue your call, or sign in for unlimited time.
+              Guest sessions are limited to {GUEST_SESSION_SECONDS / 60} minutes. Watch a short ad to extend, or create a free account for unlimited time.
             </Text>
 
             <View style={styles.graceContainer}>
@@ -205,7 +207,7 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-              <Text style={styles.signInButtonText}>Sign In</Text>
+              <Text style={styles.signInButtonText}>Create Free Account</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.leaveButton} onPress={handleLeaveRoom}>
@@ -225,6 +227,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
+  },
+  guestBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  timerSeparator: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.3)',
+    marginHorizontal: 4,
   },
   timerText: {
     fontSize: 11,
