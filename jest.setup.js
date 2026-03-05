@@ -1,17 +1,25 @@
 // Mock @react-native-firebase/auth
+// The mockAuthState object is shared so tests can mutate currentUser before calling code under test.
+const mockAuthState = { currentUser: null };
+
 jest.mock('@react-native-firebase/auth', () => {
-  const mockAuth = () => ({
-    currentUser: null,
+  const mockAuth = jest.fn(() => ({
+    get currentUser() {
+      return mockAuthState.currentUser;
+    },
     onAuthStateChanged: jest.fn((callback) => {
-      callback(null);
+      callback(mockAuthState.currentUser);
       return jest.fn(); // unsubscribe
     }),
     signInAnonymously: jest.fn(),
     signOut: jest.fn(),
-  });
+  }));
   mockAuth.default = mockAuth;
   return mockAuth;
 });
+
+// Export for use in tests
+global.__mockAuthState = mockAuthState;
 
 // Mock @react-native-firebase/database
 jest.mock('@react-native-firebase/database', () => {
