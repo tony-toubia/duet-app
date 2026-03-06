@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
-import { PreRollAd, type ImaAdDisplayContainer } from './PreRollAd';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function LobbyScreen() {
@@ -18,11 +17,6 @@ export function LobbyScreen() {
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [showingAd, setShowingAd] = useState(false);
-
-  const adContainerRef = useRef<HTMLDivElement | null>(null);
-  const adVideoRef = useRef<HTMLVideoElement | null>(null);
-  const adDisplayContainerRef = useRef<ImaAdDisplayContainer | null>(null);
 
   const { roomCode, initialize, createRoom, joinRoom } = useDuetStore();
   const userProfile = useAuthStore((s) => s.userProfile);
@@ -43,10 +37,10 @@ export function LobbyScreen() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (roomCode && !showingAd) {
+    if (roomCode) {
       router.push(`/app/room/${roomCode}`);
     }
-  }, [roomCode, showingAd, router]);
+  }, [roomCode, router]);
 
   useEffect(() => {
     const init = async () => {
@@ -60,76 +54,16 @@ export function LobbyScreen() {
     init();
   }, [initialize]);
 
-  // --- IMA Pre-Roll Ad helpers ---
-
-  const isAdEnabled = (): boolean => {
-    const vastTag = process.env.NEXT_PUBLIC_IMA_VAST_TAG?.trim();
-    return !!vastTag && !!window.google?.ima;
-  };
-
-  const initializeAdContainer = (): boolean => {
-    try {
-      const ima = window.google?.ima;
-      if (!ima) return false;
-
-      const containerDiv = document.createElement('div');
-      containerDiv.id = 'ima-ad-container';
-      containerDiv.style.cssText =
-        'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
-        'width:min(640px,90vw);height:min(360px,50vh);z-index:101;';
-      document.body.appendChild(containerDiv);
-
-      const videoEl = document.createElement('video');
-      videoEl.playsInline = true;
-      videoEl.style.cssText = 'width:100%;height:100%;background:#000;border-radius:12px;';
-      containerDiv.appendChild(videoEl);
-
-      const adDisplayContainer = new ima.AdDisplayContainer(containerDiv, videoEl);
-      adDisplayContainer.initialize();
-
-      adContainerRef.current = containerDiv;
-      adVideoRef.current = videoEl;
-      adDisplayContainerRef.current = adDisplayContainer;
-
-      return true;
-    } catch (err) {
-      console.warn('[LobbyScreen] Failed to initialize IMA container:', err);
-      return false;
-    }
-  };
-
-  const cleanupAdElements = () => {
-    if (adContainerRef.current) {
-      adContainerRef.current.remove();
-      adContainerRef.current = null;
-    }
-    adVideoRef.current = null;
-    adDisplayContainerRef.current = null;
-  };
-
-  const handleAdComplete = useCallback(() => {
-    cleanupAdElements();
-    setShowingAd(false);
-  }, []);
-
   // --- Room handlers ---
 
   const handleCreateRoom = async () => {
     setError(null);
     setIsLoading(true);
-
-    const adReady = isAdEnabled() && initializeAdContainer();
-
     try {
       const code = await createRoom();
       setShareCode(code);
-
-      if (adReady) {
-        setShowingAd(true);
-      }
     } catch (err: any) {
       setError(err?.message || 'Failed to create room.');
-      if (adReady) cleanupAdElements();
     } finally {
       setIsLoading(false);
     }
@@ -142,19 +76,11 @@ export function LobbyScreen() {
     }
     setError(null);
     setIsLoading(true);
-
-    const adReady = isAdEnabled() && initializeAdContainer();
-
     try {
       await joinRoom(code.toUpperCase());
       setShowJoinInput(false);
-
-      if (adReady) {
-        setShowingAd(true);
-      }
     } catch (err: any) {
       setError(err?.message || 'Failed to join room.');
-      if (adReady) cleanupAdElements();
     } finally {
       setIsLoading(false);
     }
@@ -169,7 +95,6 @@ export function LobbyScreen() {
   }
 
   return (
-    <>
       <div
         className="min-h-screen-safe bg-[#1a293d] bg-cover bg-no-repeat flex flex-col"
         style={{ backgroundImage: 'url(/duet-app-bg.jpg)', backgroundPosition: 'center 40%' }}
@@ -270,20 +195,10 @@ export function LobbyScreen() {
         </div>
 
         <ShareModal
-          visible={!!shareCode && !showingAd}
+          visible={!!shareCode}
           roomCode={shareCode || ''}
           onClose={() => setShareCode(null)}
         />
       </div>
-
-      {showingAd && adDisplayContainerRef.current && adVideoRef.current && adContainerRef.current && (
-        <PreRollAd
-          adDisplayContainer={adDisplayContainerRef.current}
-          videoElement={adVideoRef.current}
-          adContainerElement={adContainerRef.current}
-          onComplete={handleAdComplete}
-        />
-      )}
-    </>
   );
 }

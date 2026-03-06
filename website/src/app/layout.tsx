@@ -32,18 +32,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const imaVastTag = process.env.NEXT_PUBLIC_IMA_VAST_TAG?.trim();
-
   return (
     <html lang="en">
-      <head>
-        {imaVastTag && (
-          <script
-            async
-            src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"
-          />
-        )}
-      </head>
+      <head />
       <body>
         {children}
       </body>
