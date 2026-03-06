@@ -5,11 +5,11 @@
       ".indexOn": ["createdAt"],
 
       "$roomCode": {
-        // Anyone can read room data (needed for joining)
-        ".read": true,
+        // Only authenticated users can read room data (SDP contains IP addresses)
+        ".read": "auth != null",
 
-        // Room can be created by anyone, but structure must be valid
-        ".write": "!data.exists() || auth != null",
+        // Only authenticated users can create or modify rooms
+        ".write": "auth != null",
 
         // Validate room structure
         ".validate": "newData.hasChildren(['createdAt', 'createdBy'])",
@@ -153,6 +153,13 @@
           "pushOptIn": {
             ".validate": "newData.isBoolean()"
           }
+        },
+
+        "persistentRoom": {
+          ".validate": "newData.hasChildren(['partnerUid', 'partnerName'])",
+          "partnerUid": { ".validate": "newData.isString()" },
+          "partnerName": { ".validate": "newData.isString()" },
+          "partnerAvatar": { ".validate": "newData.isString() || newData.val() == null" }
         }
       }
     },
@@ -221,8 +228,8 @@
       "$invitationId": {
         // Anyone authenticated can read invitations addressed to them
         ".read": "auth != null && data.child('toUid').val() == auth.uid",
-        // Anyone authenticated can create invitations
-        ".write": "auth != null",
+        // Only the sender can create invitations (prevents spoofing)
+        ".write": "auth != null && (!data.exists() || data.child('fromUid').val() == auth.uid) && newData.child('fromUid').val() == auth.uid",
         ".validate": "newData.hasChildren(['fromUid', 'fromDisplayName', 'toUid', 'roomCode', 'createdAt'])"
       }
     },
@@ -313,6 +320,26 @@
               "$key": { ".validate": "newData.isString()" }
             }
           }
+        }
+      }
+    },
+
+    // Rate limiting data — admin SDK only (managed by Cloud Functions)
+    "rateLimits": {
+      ".read": false,
+      ".write": false
+    },
+
+    // Referral tracking
+    "referrals": {
+      "$userId": {
+        ".read": "$userId == auth.uid",
+        ".write": "$userId == auth.uid",
+        "$referralId": {
+          ".validate": "newData.hasChildren(['referredUid', 'referredAt'])",
+          "referredUid": { ".validate": "newData.isString()" },
+          "referredAt": { ".validate": "newData.isNumber()" },
+          "referredName": { ".validate": "newData.isString()" }
         }
       }
     },

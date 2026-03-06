@@ -42,6 +42,14 @@ class AdService {
   private rewardedRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private rewardedRetryCount = 0;
 
+  // Frequency cap: max 1 interstitial per 30 minutes
+  private lastInterstitialShownAt = 0;
+  private static readonly INTERSTITIAL_COOLDOWN_MS = 30 * 60 * 1000;
+
+  // Ad-free window from rewarded ads (1 hour)
+  private adFreeUntil = 0;
+  private static readonly AD_FREE_DURATION_MS = 60 * 60 * 1000;
+
   /**
    * Initialize and preload all ads
    */
@@ -92,25 +100,41 @@ class AdService {
   }
 
   /**
-   * Check if the next room leave will trigger an interstitial.
+   * Whether the user is currently in an ad-free window (from watching a rewarded ad).
    */
-  willShowInterstitial(): boolean {
-    return (this.roomLeaveCount + 1) % 3 === 0 && this.isLoaded && !!this.interstitial;
+  get isAdFree(): boolean {
+    return Date.now() < this.adFreeUntil;
   }
 
   /**
-   * Show an interstitial ad every 3rd room leave.
-   * Returns a promise that resolves when the ad is closed (or immediately if no ad shown).
+   * Check if the next room leave will trigger an interstitial.
+   */
+  willShowInterstitial(): boolean {
+    if (this.isAdFree) return false;
+    const cooldownOk = Date.now() - this.lastInterstitialShownAt >= AdService.INTERSTITIAL_COOLDOWN_MS;
+    return (this.roomLeaveCount + 1) % 3 === 0 && this.isLoaded && !!this.interstitial && cooldownOk;
+  }
+
+  /**
+   * Show an interstitial ad every 3rd room leave, with frequency cap.
+   * Respects ad-free window from rewarded ads and 30-minute cooldown.
    */
   async onRoomLeave(): Promise<void> {
     this.roomLeaveCount++;
 
-    if (this.roomLeaveCount % 3 === 0 && this.isLoaded && this.interstitial) {
+    if (this.isAdFree) {
+      console.log('[Ad] Ad-free window active, skipping interstitial');
+      return;
+    }
+
+    const cooldownOk = Date.now() - this.lastInterstitialShownAt >= AdService.INTERSTITIAL_COOLDOWN_MS;
+    if (this.roomLeaveCount % 3 === 0 && this.isLoaded && this.interstitial && cooldownOk) {
       try {
         const closedPromise = new Promise<void>((resolve) => {
           this.onClosedResolve = resolve;
         });
         await this.interstitial.show();
+        this.lastInterstitialShownAt = Date.now();
         await closedPromise;
       } catch (error) {
         console.log('[Ad] Failed to show interstitial:', error);
@@ -182,7 +206,12 @@ class AdService {
         this.onRewardedClosedResolve = resolve;
       });
       await this.rewarded.show();
-      return await closedPromise;
+      const earned = await closedPromise;
+      if (earned) {
+        this.adFreeUntil = Date.now() + AdService.AD_FREE_DURATION_MS;
+        console.log('[Ad] Ad-free window granted for 1 hour');
+      }
+      return earned;
     } catch (error) {
       console.log('[Ad] Failed to show rewarded:', error);
       this.onRewardedClosedResolve = null;

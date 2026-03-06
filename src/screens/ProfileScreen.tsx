@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { storageService } from '@/services/StorageService';
 import { pushNotificationService } from '@/services/PushNotificationService';
+import { referralService } from '@/services/ReferralService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { ProfileScreenProps } from '@/navigation/types';
@@ -25,6 +26,9 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [pushPermissionGranted, setPushPermissionGranted] = useState<boolean | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralCount, setReferralCount] = useState<number>(0);
+  const [isSharing, setIsSharing] = useState(false);
   const insets = useSafeAreaInsets();
   const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
 
@@ -41,6 +45,41 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
     });
     return () => sub.remove();
   }, [checkPushPermission]);
+
+  // Load referral data for non-guest users
+  useEffect(() => {
+    if (isGuest || !user) return;
+    const loadReferralData = async () => {
+      try {
+        const [code, count] = await Promise.all([
+          referralService.getReferralCode(),
+          referralService.getReferralCount(),
+        ]);
+        setReferralCode(code);
+        setReferralCount(count);
+      } catch (error) {
+        console.log('[Profile] Failed to load referral data:', error);
+      }
+    };
+    loadReferralData();
+  }, [isGuest, user]);
+
+  const handleShareReferral = async () => {
+    setIsSharing(true);
+    try {
+      await referralService.shareReferralLink();
+      // Refresh code in case it was just created
+      const code = await referralService.getReferralCode();
+      if (code) setReferralCode(code);
+    } catch (error: any) {
+      // User cancelled share — not an error
+      if (error?.message !== 'User did not share') {
+        Alert.alert('Error', 'Failed to share referral code.');
+      }
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   const handlePushToggle = async (val: boolean) => {
     if (val) {
@@ -215,6 +254,35 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
                   trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
                   thumbColor={colors.text}
                 />
+              </View>
+            </View>
+          </View>
+        )}
+
+        {!isGuest && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Referral Program</Text>
+            <View style={styles.card}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Your Referral Code</Text>
+                <Text style={styles.infoValue}>{referralCode || '...'}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Friends Referred</Text>
+                <Text style={styles.infoValue}>{referralCount}</Text>
+              </View>
+              <View style={styles.referralAction}>
+                <TouchableOpacity
+                  style={styles.shareBtn}
+                  onPress={handleShareReferral}
+                  disabled={isSharing}
+                >
+                  {isSharing ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <Text style={styles.shareBtnText}>Share Your Code</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -429,6 +497,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     opacity: 0.7,
+  },
+  referralAction: {
+    padding: 16,
+  },
+  shareBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  shareBtnText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
   },
   signOutBtn: {
     marginHorizontal: 20,

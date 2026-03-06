@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Platform, PermissionsAndroid } from 'react-native';
 import database from '@react-native-firebase/database';
+import auth from '@react-native-firebase/auth';
 import { DuetAudio } from '@/native/DuetAudio';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
@@ -251,6 +252,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
         crashlyticsService.logWebRTCStateChange(state);
+        if (state === 'connected') {
+          eventTrackingService.startSession();
+          eventTrackingService.track('connection_established', { role: 'host' });
+        } else if (state === 'failed') {
+          eventTrackingService.track('connection_failed', { role: 'host' });
+        }
       },
       onAudioData: async (packet) => {
         // Play received audio with proper sample rate (this triggers ducking in native code)
@@ -345,6 +352,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onConnectionStateChange: (state) => {
         set({ connectionState: state });
         crashlyticsService.logWebRTCStateChange(state);
+        if (state === 'connected') {
+          eventTrackingService.startSession();
+          eventTrackingService.track('connection_established', { role: 'guest' });
+        } else if (state === 'failed') {
+          eventTrackingService.track('connection_failed', { role: 'guest' });
+        }
       },
       onAudioData: async (packet) => {
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
@@ -416,6 +429,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     crashlyticsService.log('[Store] Leaving room...');
 
+    // Track session duration
+    await eventTrackingService.endSession({ roomCode: roomCode || '' });
+    eventTrackingService.track('room_left', { roomCode: roomCode || '' });
+
     // Record recent connection before cleanup
     if (partnerId && partnerId !== 'partner' && roomCode) {
       try {
@@ -428,6 +445,29 @@ export const useDuetStore = create<DuetState>((set, get) => ({
             profile.avatarUrl || null,
             roomCode
           );
+
+          // Save as persistent room for quick reconnect (only if changed)
+          const currentUser = auth().currentUser;
+          if (currentUser) {
+            try {
+              const persistentSnap = await database()
+                .ref(`/users/${currentUser.uid}/persistentRoom`)
+                .once('value');
+              const existing = persistentSnap.val();
+              if (!existing || existing.partnerUid !== partnerId) {
+                await database()
+                  .ref(`/users/${currentUser.uid}/persistentRoom`)
+                  .set({
+                    partnerUid: partnerId,
+                    partnerName: profile.displayName || 'Duet User',
+                    partnerAvatar: profile.avatarUrl || null,
+                  });
+                crashlyticsService.log(`[Store] Saved persistent room partner: ${partnerId}`);
+              }
+            } catch (e) {
+              console.warn('[Store] Failed to save persistent room:', e);
+            }
+          }
         }
       } catch (e) {
         console.warn('[Store] Failed to record recent connection:', e);

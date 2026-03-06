@@ -1,3 +1,8 @@
+const fs = require('fs');
+
+const googleServicesPlist = process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist";
+const googleServicesJson = process.env.GOOGLE_SERVICES_JSON || "./google-services.json";
+
 module.exports = {
   expo: {
     name: "Duet",
@@ -17,7 +22,7 @@ module.exports = {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
       buildNumber: "19",
-      googleServicesFile: process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
+      ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
         "applinks:getduet.app"
@@ -47,7 +52,7 @@ module.exports = {
       },
       package: "com.duet.app",
       versionCode: 28,
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
+      ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {
           action: "VIEW",

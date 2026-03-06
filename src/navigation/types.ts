@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Auth: undefined;
   Lobby: { autoJoinCode?: string } | undefined;
   Room: undefined;
@@ -8,6 +9,7 @@ export type RootStackParamList = {
   Friends: undefined;
 };
 
+export type OnboardingScreenProps = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 export type AuthScreenProps = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 export type LobbyScreenProps = NativeStackScreenProps<RootStackParamList, 'Lobby'>;
 export type RoomScreenProps = NativeStackScreenProps<RootStackParamList, 'Room'>;
