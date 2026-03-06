@@ -32,19 +32,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const adsenseClientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID?.trim();
   const imaVastTag = process.env.NEXT_PUBLIC_IMA_VAST_TAG?.trim();
 
   return (
     <html lang="en">
       <head>
-        {adsenseClientId && (
-          <script
-            async
-            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`}
-            crossOrigin="anonymous"
-          />
-        )}
         {imaVastTag && (
           <script
             async

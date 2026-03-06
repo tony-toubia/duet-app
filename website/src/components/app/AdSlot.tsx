@@ -17,10 +17,26 @@ interface AdSlotProps {
 export function AdSlot({ adSlot: rawAdSlot, format = 'auto', className = '' }: AdSlotProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pushed = useRef(false);
+  const scriptLoaded = useRef(false);
   const [adFilled, setAdFilled] = useState(false);
 
   const clientId = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID?.trim();
   const adSlot = rawAdSlot?.trim();
+
+  // Load the AdSense script on-demand only when this component mounts
+  useEffect(() => {
+    if (!clientId || scriptLoaded.current) return;
+    if (document.querySelector(`script[src*="adsbygoogle.js?client=${clientId}"]`)) {
+      scriptLoaded.current = true;
+      return;
+    }
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${clientId}`;
+    script.crossOrigin = 'anonymous';
+    document.head.appendChild(script);
+    scriptLoaded.current = true;
+  }, [clientId]);
 
   useEffect(() => {
     if (!clientId || !adSlot || pushed.current) return;
