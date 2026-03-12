@@ -21,7 +21,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "20",
+      buildNumber: "21",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -33,7 +33,7 @@ module.exports = {
       infoPlist: {
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
         NSLocalNetworkUsageDescription: "Duet uses your local network to establish peer-to-peer voice connections.",
-        UIBackgroundModes: ["audio", "voip"],
+        UIBackgroundModes: ["audio"],
         BGTaskSchedulerPermittedIdentifiers: ["com.duet.audio"],
         ITSAppUsesNonExemptEncryption: false,
         LSApplicationQueriesSchemes: [
@@ -131,6 +131,7 @@ module.exports = {
           delayAppMeasurementInit: true
         }
       ],
+      "expo-apple-authentication",
       "./plugins/withDuetAudio",
       "./plugins/withAndroidQueries"
     ],

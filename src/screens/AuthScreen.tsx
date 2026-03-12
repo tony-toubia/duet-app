@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { colors } from '@/theme';
 import type { AuthScreenProps } from '@/navigation/types';
@@ -57,7 +58,14 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, sendSignInLink, continueAsGuest } = useAuthStore();
+  const { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, sendSignInLink, continueAsGuest } = useAuthStore();
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
+    }
+  }, []);
 
   const isPasswordValid = (pw: string) =>
     pw.length >= 8 &&
@@ -65,6 +73,20 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     /[a-z]/.test(pw) &&
     /\d/.test(pw) &&
     /[^A-Za-z0-9]/.test(pw);
+
+  const handleAppleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithApple();
+    } catch (error: any) {
+      console.error('[Auth] Apple sign-in failed:', error);
+      if (error?.code !== 'ERR_REQUEST_CANCELED') {
+        Alert.alert('Sign In Failed', error?.message || 'Could not sign in with Apple. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -217,6 +239,15 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
           </View>
           <View style={{ flex: 1 }} />
           <View style={styles.buttons}>
+            {appleAuthAvailable && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={28}
+                style={styles.appleBtn}
+                onPress={handleAppleSignIn}
+              />
+            )}
             <TouchableOpacity
               style={styles.googleBtn}
               onPress={handleGoogleSignIn}
@@ -345,6 +376,15 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
 
           {mode === 'register' && (
             <>
+              {appleAuthAvailable && (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={28}
+                  style={styles.appleBtn}
+                  onPress={handleAppleSignIn}
+                />
+              )}
               <TouchableOpacity
                 style={styles.googleRegisterBtn}
                 onPress={handleGoogleSignIn}
@@ -532,6 +572,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingBottom: 16,
     gap: 12,
+  },
+  appleBtn: {
+    height: 52,
+    width: '100%',
   },
   googleBtn: {
     backgroundColor: '#e8734a',

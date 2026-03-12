@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import database from '@react-native-firebase/database';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { analyticsService } from './AnalyticsService';
@@ -13,7 +15,7 @@ export interface UserProfile {
   email: string | null;
   avatarUrl: string | null;
   createdAt: number;
-  authProvider: 'google' | 'email' | 'anonymous';
+  authProvider: 'google' | 'apple' | 'email' | 'anonymous';
 }
 
 class AuthService {
@@ -66,6 +68,59 @@ class AuthService {
     return result.user;
   }
 
+  async signInWithApple(): Promise<FirebaseAuthTypes.User> {
+    // Generate a random nonce and hash it for Apple
+    const rawNonce = Math.random().toString(36).substring(2, 10) +
+                     Math.random().toString(36).substring(2, 10);
+    const hashedNonce = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      rawNonce
+    );
+
+    const appleCredential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
+    });
+
+    const { identityToken, fullName } = appleCredential;
+    if (!identityToken) throw new Error('Apple Sign-In failed: no identity token');
+
+    // Create Firebase credential: identityToken as token, rawNonce as secret
+    const credential = auth.AppleAuthProvider.credential(identityToken, rawNonce);
+
+    // If currently anonymous, link the account
+    const currentUser = auth().currentUser;
+    if (currentUser?.isAnonymous) {
+      try {
+        const result = await currentUser.linkWithCredential(credential);
+        if (fullName?.givenName) {
+          const displayName = [fullName.givenName, fullName.familyName].filter(Boolean).join(' ');
+          await result.user.updateProfile({ displayName });
+        }
+        return result.user;
+      } catch (linkError: any) {
+        if (linkError.code === 'auth/credential-already-in-use') {
+          const result = await auth().signInWithCredential(credential);
+          return result.user;
+        }
+        throw linkError;
+      }
+    }
+
+    const result = await auth().signInWithCredential(credential);
+    // Apple only returns the name on first sign-in — save it immediately
+    if (fullName?.givenName && !result.user.displayName) {
+      const displayName = [fullName.givenName, fullName.familyName].filter(Boolean).join(' ');
+      await result.user.updateProfile({ displayName });
+    }
+    analyticsService.logLogin('apple');
+    analyticsService.setUserId(result.user.uid);
+    return result.user;
+  }
+
   async signUpWithEmail(email: string, password: string, displayName: string): Promise<FirebaseAuthTypes.User> {
     const currentUser = auth().currentUser;
 
@@ -111,7 +166,7 @@ class AuthService {
 
   private async createOrUpdateProfile(
     user: FirebaseAuthTypes.User,
-    provider: 'google' | 'email' | 'anonymous'
+    provider: 'google' | 'apple' | 'email' | 'anonymous'
   ): Promise<void> {
     const profileRef = database().ref(`/users/${user.uid}/profile`);
     const existing = await profileRef.once('value');
@@ -209,16 +264,19 @@ class AuthService {
   }
 
   async ensureProfile(user: FirebaseAuthTypes.User): Promise<void> {
+    const providerId = user.providerData[0]?.providerId;
     const provider = user.isAnonymous
       ? 'anonymous'
-      : user.providerData[0]?.providerId === 'google.com'
+      : providerId === 'google.com'
         ? 'google'
-        : 'email';
+        : providerId === 'apple.com'
+          ? 'apple'
+          : 'email';
 
     // Retry with backoff — RTDB may not have the new auth token yet
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        await this.createOrUpdateProfile(user, provider as 'google' | 'email' | 'anonymous');
+        await this.createOrUpdateProfile(user, provider as 'google' | 'apple' | 'email' | 'anonymous');
         return;
       } catch (err) {
         if (attempt < 2) {

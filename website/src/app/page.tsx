@@ -7,11 +7,11 @@ const jsonLd = {
   '@type': 'SoftwareApplication',
   name: 'Duet',
   applicationCategory: 'CommunicationApplication',
-  operatingSystem: 'iOS, Android, Web',
+  operatingSystem: 'iOS, Web',
   description: 'Always-on voice for the people who matter most. One-tap rooms, peer-to-peer encrypted audio.',
   url: 'https://getduet.app',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-  installUrl: 'https://play.google.com/store/apps/details?id=com.duet.app',
+  installUrl: 'https://getduet.app/app',
 };
 
 export default function LandingPage() {
@@ -279,7 +279,7 @@ export default function LandingPage() {
             Ready to connect?
           </h2>
           <p className="text-lg text-white/70 mb-12 max-sm:text-base">
-            Available free on iOS, Android, and the web.
+            Available free on iOS and the web.
           </p>
 
           {/* Store badges + web app */}
@@ -294,22 +294,6 @@ export default function LandingPage() {
                 className="h-[53px] w-auto"
               />
             </span>
-
-            {/* Google Play badge */}
-            <a
-              href="https://play.google.com/store/apps/details?id=com.duet.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="opacity-80 hover:opacity-100 transition-opacity"
-            >
-              <Image
-                src="/badge-googleplay.png"
-                alt="Get it on Google Play"
-                width={180}
-                height={53}
-                className="h-[53px] w-auto"
-              />
-            </a>
 
             {/* Web app button */}
             <Link

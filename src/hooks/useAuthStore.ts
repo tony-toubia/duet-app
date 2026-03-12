@@ -21,6 +21,7 @@ interface AuthState {
   // Actions
   initializeAuth: () => () => void;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signUpWithEmail: (email: string, password: string, displayName: string) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   sendSignInLink: (email: string) => Promise<void>;
@@ -101,6 +102,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           avatarUrl: user.photoURL || null,
           createdAt: Date.now(),
           authProvider: 'google',
+        },
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  signInWithApple: async () => {
+    set({ isLoading: true });
+    try {
+      const user = await authService.signInWithApple();
+      set({
+        user,
+        isGuest: false,
+        isLoading: false,
+        userProfile: {
+          displayName: user.displayName || 'Duet User',
+          email: user.email || null,
+          avatarUrl: user.photoURL || null,
+          createdAt: Date.now(),
+          authProvider: 'apple',
         },
       });
     } catch (error) {
