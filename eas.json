@@ -8,32 +8,34 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "android": {
         "buildType": "apk",
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false,
-        "image": "macos-sequoia-15.5-xcode-16.4"
+        "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       }
     },
     "production": {
       "ios": {
         "simulator": false,
-        "image": "macos-sequoia-15.5-xcode-16.4"
+        "image": "macos-sequoia-15.6-xcode-26.0"
       },
       "android": {
         "buildType": "app-bundle",
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b"
       }
     }
   },

@@ -964,6 +964,10 @@ class DuetAudioManager: RCTEventEmitter {
   // Background task tracking
   private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
+  // Keep-alive: schedule silent buffers so iOS doesn't suspend the app during silence
+  private var keepAliveTimer: DispatchSourceTimer?
+  private let keepAliveIntervalSec: TimeInterval = 5.0
+
   // MARK: - RCTEventEmitter
 
   override static func requiresMainQueueSetup() -> Bool {
@@ -1250,6 +1254,10 @@ class DuetAudioManager: RCTEventEmitter {
       try engine.start()
       player.play()
 
+      // Start keep-alive timer: schedules tiny silent buffers on the player
+      // so iOS sees continuous audio output and won't suspend the app
+      startKeepAliveTimer()
+
       resolve(["success": true])
     } catch {
       reject("ENGINE_START_ERROR", "Failed to start audio engine: \\(error.localizedDescription)", error)
@@ -1259,6 +1267,7 @@ class DuetAudioManager: RCTEventEmitter {
   @objc
   func stopAudioEngine(_ resolve: @escaping RCTPromiseResolveBlock,
                        reject: @escaping RCTPromiseRejectBlock) {
+    stopKeepAliveTimer()
     audioEngine?.inputNode.removeTap(onBus: 0)
     playerNode?.stop()
     audioEngine?.stop()
@@ -1286,6 +1295,39 @@ class DuetAudioManager: RCTEventEmitter {
     endBackgroundTask()
 
     resolve(["success": true])
+  }
+
+  // MARK: - Background Keep-Alive
+
+  private func startKeepAliveTimer() {
+    stopKeepAliveTimer()
+    let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+    timer.schedule(deadline: .now() + keepAliveIntervalSec, repeating: keepAliveIntervalSec)
+    timer.setEventHandler { [weak self] in
+      guard let self = self,
+            let player = self.playerNode,
+            let engine = self.audioEngine,
+            engine.isRunning else { return }
+
+      // Only inject silence if no partner audio recently (within 2x the interval)
+      let elapsed = CACurrentMediaTime() - self.lastPartnerAudioTime
+      guard elapsed > self.keepAliveIntervalSec else { return }
+
+      // Schedule a tiny silent buffer (960 frames = 20ms at 48kHz)
+      let format = AVAudioFormat(standardFormatWithSampleRate: self.outputSampleRate, channels: self.channels)!
+      guard let silentBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960) else { return }
+      silentBuffer.frameLength = 960
+      // Buffer is already zero-filled by default
+      if !player.isPlaying { player.play() }
+      player.scheduleBuffer(silentBuffer, completionHandler: nil)
+    }
+    timer.resume()
+    keepAliveTimer = timer
+  }
+
+  private func stopKeepAliveTimer() {
+    keepAliveTimer?.cancel()
+    keepAliveTimer = nil
   }
 
   // MARK: - Audio Processing

@@ -21,7 +21,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "21",
+      buildNumber: "23",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -51,7 +51,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 29,
+      versionCode: 31,
       ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {
@@ -103,9 +103,9 @@ module.exports = {
         {
           android: {
             minSdkVersion: 24,
-            compileSdkVersion: 35,
-            targetSdkVersion: 35,
-            enableMinifyInReleaseBuilds: true,
+            compileSdkVersion: 36,
+            targetSdkVersion: 36,
+            enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             newArchEnabled: false,
           },
