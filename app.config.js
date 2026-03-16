@@ -105,7 +105,7 @@ module.exports = {
             minSdkVersion: 24,
             compileSdkVersion: 35,
             targetSdkVersion: 35,
-            enableProguardInReleaseBuilds: true,
+            enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             newArchEnabled: false,
           },
