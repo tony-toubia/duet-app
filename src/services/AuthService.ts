@@ -40,10 +40,7 @@ class AuthService {
       await GoogleSignin.hasPlayServices();
     }
     const signInResult = await GoogleSignin.signIn();
-    if (signInResult.type !== 'success') {
-      throw new Error('Google Sign-In failed: user cancelled or no credential');
-    }
-    const idToken = signInResult.data?.idToken;
+    const idToken = (signInResult as any).idToken ?? (signInResult as any).data?.idToken;
     if (!idToken) throw new Error('Google Sign-In failed: no ID token');
 
     const googleCredential = auth.GoogleAuthProvider.credential(idToken);
