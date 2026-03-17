@@ -1,0 +1,14 @@
+diff --git a/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.m b/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.m
+index 40ee9aa..976d8ac 100644
+--- a/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.m
++++ b/node_modules/@react-native-firebase/auth/ios/RNFBAuth/RNFBAuthModule.m
+@@ -1819,7 +1819,8 @@ RCT_EXPORT_METHOD(useEmulator
+       appName = @"[DEFAULT]";
+     }
+ 
+-    appLanguage[appName] = [FIRAuth authWithApp:firebaseApp].languageCode;
++    NSString *langCode = [FIRAuth authWithApp:firebaseApp].languageCode;
++    appLanguage[appName] = langCode ?: [NSNull null];
+ 
+     if (user != nil) {
+       appUser[appName] = [self firebaseUserToDict:user];
