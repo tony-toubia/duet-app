@@ -1,8 +1,14 @@
 import { Platform } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import database from '@react-native-firebase/database';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
+
+// Google Sign-In is disabled on iOS due to GoogleSignIn SDK crash on iOS 26.
+// The native module is excluded via react-native.config.js on iOS.
+let GoogleSignin: any = null;
+if (Platform.OS !== 'ios') {
+  GoogleSignin = require('@react-native-google-signin/google-signin').GoogleSignin;
+}
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,7 +34,7 @@ class AuthService {
       ? '' // Expo Go fallback
       : Constants.expoConfig?.extra?.googleWebClientId || '';
 
-    if (webClientId) {
+    if (webClientId && GoogleSignin) {
       GoogleSignin.configure({ webClientId });
     }
 
@@ -36,6 +42,9 @@ class AuthService {
   }
 
   async signInWithGoogle(): Promise<FirebaseAuthTypes.User> {
+    if (!GoogleSignin) {
+      throw new Error('Google Sign-In is not available on this platform');
+    }
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices();
     }

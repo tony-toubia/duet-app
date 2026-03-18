@@ -248,6 +248,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
                 onPress={handleAppleSignIn}
               />
             )}
+            {Platform.OS !== 'ios' && (
             <TouchableOpacity
               style={styles.googleBtn}
               onPress={handleGoogleSignIn}
@@ -259,6 +260,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
                 <Text style={styles.googleBtnText}>Sign in with Google</Text>
               )}
             </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.emailBtn}
               onPress={() => setMode('emailLink')}
@@ -385,6 +387,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
                   onPress={handleAppleSignIn}
                 />
               )}
+              {Platform.OS !== 'ios' && (
               <TouchableOpacity
                 style={styles.googleRegisterBtn}
                 onPress={handleGoogleSignIn}
@@ -396,6 +399,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
                   <Text style={styles.googleRegisterBtnText}>Register with Google</Text>
                 )}
               </TouchableOpacity>
+              )}
 
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
