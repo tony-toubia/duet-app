@@ -1,8 +1,57 @@
+diff --git a/node_modules/@react-native-google-signin/google-signin/ios/RCTConvert+RNGoogleSignin.mm b/node_modules/@react-native-google-signin/google-signin/ios/RCTConvert+RNGoogleSignin.mm
+index ff1f718..f097e72 100644
+--- a/node_modules/@react-native-google-signin/google-signin/ios/RCTConvert+RNGoogleSignin.mm
++++ b/node_modules/@react-native-google-signin/google-signin/ios/RCTConvert+RNGoogleSignin.mm
+@@ -2,15 +2,35 @@
+ 
+ @implementation RCTConvert(RNGoogleSignin)
+ 
+-RCT_ENUM_CONVERTER(GIDSignInButtonStyle, (@{
+-                                            @"standard": @(kGIDSignInButtonStyleStandard),
+-                                            @"wide": @(kGIDSignInButtonStyleWide),
+-                                            @"icon": @(kGIDSignInButtonStyleIconOnly),
+-                                            }), kGIDSignInButtonStyleStandard, integerValue)
++// Replaced RCT_ENUM_CONVERTER with nil-safe implementations for iOS 26 compatibility.
++// The GID* button style/color constants may be nil on iOS 26 "Liquid Glass",
++// causing crashes in dictionary literals inside dispatch_once.
+ 
+-RCT_ENUM_CONVERTER(GIDSignInButtonColorScheme, (@{
+-                                                  @"dark": @(kGIDSignInButtonColorSchemeDark),
+-                                                  @"light": @(kGIDSignInButtonColorSchemeLight),
+-                                                  }), kGIDSignInButtonColorSchemeLight, integerValue)
+++ (GIDSignInButtonStyle)GIDSignInButtonStyle:(id)json RCT_DYNAMIC
++{
++  static NSDictionary *mapping;
++  static dispatch_once_t onceToken;
++  dispatch_once(&onceToken, ^{
++    NSMutableDictionary *m = [NSMutableDictionary new];
++    m[@"standard"] = @(kGIDSignInButtonStyleStandard) ?: @(0);
++    m[@"wide"] = @(kGIDSignInButtonStyleWide) ?: @(1);
++    m[@"icon"] = @(kGIDSignInButtonStyleIconOnly) ?: @(2);
++    mapping = [m copy];
++  });
++  return _RCT_CAST(GIDSignInButtonStyle, [RCTConvertEnumValue("GIDSignInButtonStyle", mapping, @(kGIDSignInButtonStyleStandard), json) integerValue]);
++}
++
+++ (GIDSignInButtonColorScheme)GIDSignInButtonColorScheme:(id)json RCT_DYNAMIC
++{
++  static NSDictionary *mapping;
++  static dispatch_once_t onceToken;
++  dispatch_once(&onceToken, ^{
++    NSMutableDictionary *m = [NSMutableDictionary new];
++    m[@"dark"] = @(kGIDSignInButtonColorSchemeDark) ?: @(0);
++    m[@"light"] = @(kGIDSignInButtonColorSchemeLight) ?: @(1);
++    mapping = [m copy];
++  });
++  return _RCT_CAST(GIDSignInButtonColorScheme, [RCTConvertEnumValue("GIDSignInButtonColorScheme", mapping, @(kGIDSignInButtonColorSchemeLight), json) integerValue]);
++}
+ 
+ @end
 diff --git a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
-index 530f959..87634c9 100644
+index 530f959..b8e7925 100644
 --- a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
 +++ b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
-@@ -28,19 +28,35 @@ static NSString *const kClientIdKey = @"CLIENT_ID";
+@@ -28,19 +28,22 @@ static NSString *const kClientIdKey = @"CLIENT_ID";
  
  - (NSDictionary *)constantsToExport
  {
@@ -19,35 +68,22 @@ index 530f959..87634c9 100644
 -           NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
 -           ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
 -           };
-+  @try {
-+    return @{
-+             @"BUTTON_SIZE_ICON": @(kGIDSignInButtonStyleIconOnly),
-+             @"BUTTON_SIZE_STANDARD": @(kGIDSignInButtonStyleStandard),
-+             @"BUTTON_SIZE_WIDE": @(kGIDSignInButtonStyleWide),
-+             @"SIGN_IN_CANCELLED": [@(kGIDSignInErrorCodeCanceled) stringValue],
-+             @"SIGN_IN_REQUIRED": [@(kGIDSignInErrorCodeHasNoAuthInKeychain) stringValue],
-+             @"SCOPES_ALREADY_GRANTED": [@(kGIDSignInErrorCodeScopesAlreadyGranted) stringValue],
-+             @"IN_PROGRESS": ASYNC_OP_IN_PROGRESS,
-+             // these never happen on iOS
-+             PLAY_SERVICES_NOT_AVAILABLE: PLAY_SERVICES_NOT_AVAILABLE,
-+             NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
-+             ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
-+             };
-+  } @catch (NSException *e) {
-+    NSLog(@"[RNGoogleSignin] constantsToExport failed: %@", e);
-+    return @{
-+             @"BUTTON_SIZE_ICON": @(0),
-+             @"BUTTON_SIZE_STANDARD": @(1),
-+             @"BUTTON_SIZE_WIDE": @(2),
-+             @"SIGN_IN_CANCELLED": @"-5",
-+             @"SIGN_IN_REQUIRED": @"-4",
-+             @"SCOPES_ALREADY_GRANTED": @"-8",
-+             @"IN_PROGRESS": ASYNC_OP_IN_PROGRESS,
-+             PLAY_SERVICES_NOT_AVAILABLE: PLAY_SERVICES_NOT_AVAILABLE,
-+             NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
-+             ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
-+             };
-+  }
++  // Use NSMutableDictionary to avoid crash from nil values in dictionary literals.
++  // iOS 26 "Liquid Glass" removed/changed some GID* constants, causing nil insertion crashes.
++  NSMutableDictionary *constants = [NSMutableDictionary new];
++
++  constants[@"BUTTON_SIZE_ICON"] = @(kGIDSignInButtonStyleIconOnly) ?: @(0);
++  constants[@"BUTTON_SIZE_STANDARD"] = @(kGIDSignInButtonStyleStandard) ?: @(1);
++  constants[@"BUTTON_SIZE_WIDE"] = @(kGIDSignInButtonStyleWide) ?: @(2);
++  constants[@"SIGN_IN_CANCELLED"] = [@(kGIDSignInErrorCodeCanceled) stringValue] ?: @"-5";
++  constants[@"SIGN_IN_REQUIRED"] = [@(kGIDSignInErrorCodeHasNoAuthInKeychain) stringValue] ?: @"-4";
++  constants[@"SCOPES_ALREADY_GRANTED"] = [@(kGIDSignInErrorCodeScopesAlreadyGranted) stringValue] ?: @"-8";
++  constants[@"IN_PROGRESS"] = ASYNC_OP_IN_PROGRESS;
++  constants[PLAY_SERVICES_NOT_AVAILABLE] = PLAY_SERVICES_NOT_AVAILABLE;
++  constants[NO_SAVED_CREDENTIAL_FOUND] = NO_SAVED_CREDENTIAL_FOUND;
++  constants[ONE_TAP_START_FAILED] = ONE_TAP_START_FAILED;
++
++  return constants;
  }
  
  #ifdef RCT_NEW_ARCH_ENABLED
