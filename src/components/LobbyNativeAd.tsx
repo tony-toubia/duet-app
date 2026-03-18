@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Platform } from 'react-native';
-import {
-  NativeAd,
-  NativeAdView,
-  NativeAsset,
-  NativeAssetType,
-  NativeMediaAspectRatio,
-  TestIds,
-} from 'react-native-google-mobile-ads';
+
+// Google Mobile Ads SDK crashes on iOS 26 - disabled on iOS
+if (Platform.OS === 'ios') {
+  // Export a no-op component for iOS at the bottom of the file
+}
+const ads = Platform.OS !== 'ios' ? require('react-native-google-mobile-ads') : null;
+const NativeAd = ads?.NativeAd;
+const NativeAdView = ads?.NativeAdView;
+const NativeAsset = ads?.NativeAsset;
+const NativeAssetType = ads?.NativeAssetType ?? {};
+const NativeMediaAspectRatio = ads?.NativeMediaAspectRatio ?? {};
+const TestIds = ads?.TestIds ?? { NATIVE: '' };
 import Constants from 'expo-constants';
 
 const getLobbyNativeAdUnitId = () => {
@@ -21,11 +25,12 @@ const getLobbyNativeAdUnitId = () => {
 const LOBBY_NATIVE_AD_UNIT_ID = getLobbyNativeAdUnitId();
 
 export const LobbyNativeAd = () => {
-  const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
+  const [nativeAd, setNativeAd] = useState<any>(null);
 
   useEffect(() => {
+    if (!NativeAd) return; // Ads disabled on iOS
     let destroyed = false;
-    let ad: NativeAd | null = null;
+    let ad: any = null;
 
     NativeAd.createForAdRequest(LOBBY_NATIVE_AD_UNIT_ID, {
       aspectRatio: NativeMediaAspectRatio.LANDSCAPE,

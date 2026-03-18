@@ -10,14 +10,14 @@ import {
   Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import {
-  NativeAd,
-  NativeAdView,
-  NativeAsset,
-  NativeAssetType,
-  NativeMediaAspectRatio,
-  TestIds,
-} from 'react-native-google-mobile-ads';
+// Google Mobile Ads SDK crashes on iOS 26 - disabled on iOS
+const _ads = Platform.OS !== 'ios' ? require('react-native-google-mobile-ads') : null;
+const NativeAd = _ads?.NativeAd;
+const NativeAdView = _ads?.NativeAdView;
+const NativeAsset = _ads?.NativeAsset;
+const NativeAssetType = _ads?.NativeAssetType ?? {};
+const NativeMediaAspectRatio = _ads?.NativeMediaAspectRatio ?? {};
+const TestIds = _ads?.TestIds ?? { NATIVE: '' };
 import Constants from 'expo-constants';
 import { colors } from '@/theme';
 
@@ -38,12 +38,12 @@ interface ShareModalProps {
 
 export const ShareModal = ({ visible, roomCode, onClose }: ShareModalProps) => {
   const [copied, setCopied] = useState(false);
-  const [nativeAd, setNativeAd] = useState<NativeAd | null>(null);
-  const adRef = useRef<NativeAd | null>(null);
+  const [nativeAd, setNativeAd] = useState<any>(null);
+  const adRef = useRef<any>(null);
 
   // Load ad when modal becomes visible
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !NativeAd) return; // Ads disabled on iOS
 
     let destroyed = false;
 
