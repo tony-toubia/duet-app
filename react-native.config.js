@@ -1,7 +1,6 @@
-// Disable google-signin and google-mobile-ads on iOS due to crashes on iOS 26.
-// Both GoogleSignIn SDK and Google Mobile Ads SDK have internal dispatch_once
-// NSDictionary initialization that inserts nil values on iOS 26 "Liquid Glass".
-// Apple Sign-In is used as the iOS auth method instead.
+// Disable modules on iOS that crash on iOS 26 due to nil NSDictionary constants.
+// GoogleSignIn SDK, Google Mobile Ads SDK, and potentially others have internal
+// dispatch_once initialization that inserts nil values on iOS 26 "Liquid Glass".
 module.exports = {
   dependencies: {
     '@react-native-google-signin/google-signin': {
@@ -10,6 +9,16 @@ module.exports = {
       },
     },
     'react-native-google-mobile-ads': {
+      platforms: {
+        ios: null,
+      },
+    },
+    '@notifee/react-native': {
+      platforms: {
+        ios: null,
+      },
+    },
+    'react-native-svg': {
       platforms: {
         ios: null,
       },
