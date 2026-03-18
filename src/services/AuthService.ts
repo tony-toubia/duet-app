@@ -259,7 +259,7 @@ class AuthService {
   }
 
   async signOut(): Promise<void> {
-    try { await GoogleSignin.signOut(); } catch {}
+    try { await GoogleSignin?.signOut(); } catch {}
     analyticsService.setUserId(null);
     await auth().signOut();
   }
