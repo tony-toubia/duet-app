@@ -1,0 +1,53 @@
+diff --git a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
+index 530f959..87634c9 100644
+--- a/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
++++ b/node_modules/@react-native-google-signin/google-signin/ios/RNGoogleSignin.mm
+@@ -28,19 +28,35 @@ static NSString *const kClientIdKey = @"CLIENT_ID";
+ 
+ - (NSDictionary *)constantsToExport
+ {
+-  return @{
+-           @"BUTTON_SIZE_ICON": @(kGIDSignInButtonStyleIconOnly),
+-           @"BUTTON_SIZE_STANDARD": @(kGIDSignInButtonStyleStandard),
+-           @"BUTTON_SIZE_WIDE": @(kGIDSignInButtonStyleWide),
+-           @"SIGN_IN_CANCELLED": [@(kGIDSignInErrorCodeCanceled) stringValue],
+-           @"SIGN_IN_REQUIRED": [@(kGIDSignInErrorCodeHasNoAuthInKeychain) stringValue],
+-           @"SCOPES_ALREADY_GRANTED": [@(kGIDSignInErrorCodeScopesAlreadyGranted) stringValue],
+-           @"IN_PROGRESS": ASYNC_OP_IN_PROGRESS,
+-           // these never happen on iOS
+-           PLAY_SERVICES_NOT_AVAILABLE: PLAY_SERVICES_NOT_AVAILABLE,
+-           NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
+-           ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
+-           };
++  @try {
++    return @{
++             @"BUTTON_SIZE_ICON": @(kGIDSignInButtonStyleIconOnly),
++             @"BUTTON_SIZE_STANDARD": @(kGIDSignInButtonStyleStandard),
++             @"BUTTON_SIZE_WIDE": @(kGIDSignInButtonStyleWide),
++             @"SIGN_IN_CANCELLED": [@(kGIDSignInErrorCodeCanceled) stringValue],
++             @"SIGN_IN_REQUIRED": [@(kGIDSignInErrorCodeHasNoAuthInKeychain) stringValue],
++             @"SCOPES_ALREADY_GRANTED": [@(kGIDSignInErrorCodeScopesAlreadyGranted) stringValue],
++             @"IN_PROGRESS": ASYNC_OP_IN_PROGRESS,
++             // these never happen on iOS
++             PLAY_SERVICES_NOT_AVAILABLE: PLAY_SERVICES_NOT_AVAILABLE,
++             NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
++             ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
++             };
++  } @catch (NSException *e) {
++    NSLog(@"[RNGoogleSignin] constantsToExport failed: %@", e);
++    return @{
++             @"BUTTON_SIZE_ICON": @(0),
++             @"BUTTON_SIZE_STANDARD": @(1),
++             @"BUTTON_SIZE_WIDE": @(2),
++             @"SIGN_IN_CANCELLED": @"-5",
++             @"SIGN_IN_REQUIRED": @"-4",
++             @"SCOPES_ALREADY_GRANTED": @"-8",
++             @"IN_PROGRESS": ASYNC_OP_IN_PROGRESS,
++             PLAY_SERVICES_NOT_AVAILABLE: PLAY_SERVICES_NOT_AVAILABLE,
++             NO_SAVED_CREDENTIAL_FOUND: NO_SAVED_CREDENTIAL_FOUND,
++             ONE_TAP_START_FAILED: ONE_TAP_START_FAILED,
++             };
++  }
+ }
+ 
+ #ifdef RCT_NEW_ARCH_ENABLED
