@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 
-// Google Mobile Ads SDK crashes on iOS 26 - disabled on iOS
-if (Platform.OS === 'ios') {
-  // Export a no-op component for iOS at the bottom of the file
-}
+// Google Mobile Ads SDK crashes on iOS 26 — native module excluded on iOS via react-native.config.js
 const ads = Platform.OS !== 'ios' ? require('react-native-google-mobile-ads') : null;
 const NativeAd = ads?.NativeAd;
 const NativeAdView = ads?.NativeAdView;
