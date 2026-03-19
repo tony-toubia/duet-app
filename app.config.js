@@ -97,7 +97,8 @@ module.exports = {
     plugins: [
       "@react-native-firebase/app",
       "@react-native-firebase/crashlytics",
-      "@react-native-google-signin/google-signin",
+      // "@react-native-google-signin/google-signin" — DISABLED: GoogleSignIn iOS SDK crashes on iOS 26.
+      // Android google-signin works via autolinking without this plugin.
       [
         "expo-build-properties",
         {
