@@ -1,0 +1,28 @@
+diff --git a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.m b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.m
+index 7d28331..4767fba 100644
+--- a/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.m
++++ b/node_modules/@react-native-firebase/app/ios/RNFBApp/RNFBUtilsModule.m
+@@ -84,15 +84,14 @@ RCT_EXPORT_MODULE();
+ }
+ 
+ - (NSDictionary *)constantsToExport {
+-  NSMutableDictionary *constants = [@{
+-    @"MAIN_BUNDLE" : [[NSBundle mainBundle] bundlePath],
+-    @"CACHES_DIRECTORY" : [self getPathForDirectory:NSCachesDirectory],
+-    @"DOCUMENT_DIRECTORY" : [self getPathForDirectory:NSDocumentDirectory],
+-    @"PICTURES_DIRECTORY" : [self getPathForDirectory:NSPicturesDirectory],
+-    @"MOVIES_DIRECTORY" : [self getPathForDirectory:NSMoviesDirectory],
+-    @"TEMP_DIRECTORY" : NSTemporaryDirectory(),
+-    @"LIBRARY_DIRECTORY" : [self getPathForDirectory:NSLibraryDirectory],
+-  } mutableCopy];
++  NSMutableDictionary *constants = [NSMutableDictionary new];
++  constants[@"MAIN_BUNDLE"] = [[NSBundle mainBundle] bundlePath] ?: @"";
++  constants[@"CACHES_DIRECTORY"] = [self getPathForDirectory:NSCachesDirectory] ?: @"";
++  constants[@"DOCUMENT_DIRECTORY"] = [self getPathForDirectory:NSDocumentDirectory] ?: @"";
++  constants[@"PICTURES_DIRECTORY"] = [self getPathForDirectory:NSPicturesDirectory] ?: @"";
++  constants[@"MOVIES_DIRECTORY"] = [self getPathForDirectory:NSMoviesDirectory] ?: @"";
++  constants[@"TEMP_DIRECTORY"] = NSTemporaryDirectory() ?: @"";
++  constants[@"LIBRARY_DIRECTORY"] = [self getPathForDirectory:NSLibraryDirectory] ?: @"";
+ 
+   return constants;
+ }
