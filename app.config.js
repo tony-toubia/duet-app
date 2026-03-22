@@ -3,6 +3,16 @@ const fs = require('fs');
 const googleServicesPlist = process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist";
 const googleServicesJson = process.env.GOOGLE_SERVICES_JSON || "./google-services.json";
 
+// Google SDK binaries crash on iOS 26 during dispatch_once initialization
+// (nil NSDictionary insertion). Disable their Expo config plugins on iOS
+// so prebuild doesn't pull the crashing SDKs into the native project.
+// react-native.config.js already disables autolinking, but the Expo plugins
+// are a separate code path that also adds the native SDKs.
+// EAS_BUILD_PLATFORM is set by EAS Build; the --platform check covers local prebuild.
+const platformIdx = process.argv.indexOf('--platform');
+const isIOS = process.env.EAS_BUILD_PLATFORM === 'ios' ||
+  (platformIdx !== -1 && process.argv[platformIdx + 1] === 'ios');
+
 module.exports = {
   expo: {
     name: "Duet",
@@ -97,7 +107,9 @@ module.exports = {
     plugins: [
       "@react-native-firebase/app",
       "@react-native-firebase/crashlytics",
-      "@react-native-google-signin/google-signin",
+      // Google Sign-In & Mobile Ads plugins are Android-only; their Google SDK
+      // binaries crash on iOS 26 (dispatch_once nil NSDictionary insertion).
+      ...(isIOS ? [] : ["@react-native-google-signin/google-signin"]),
       [
         "expo-build-properties",
         {
@@ -123,14 +135,14 @@ module.exports = {
           cameraPermission: "Duet needs access to your camera to take a profile picture."
         }
       ],
-      [
+      ...(isIOS ? [] : [[
         "react-native-google-mobile-ads",
         {
           androidAppId: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
           iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
           delayAppMeasurementInit: true
         }
-      ],
+      ]]),
       "expo-apple-authentication",
       "./plugins/withDuetAudio",
       "./plugins/withAndroidQueries"
