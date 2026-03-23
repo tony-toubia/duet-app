@@ -31,6 +31,7 @@ module.exports = {
         "aps-environment": "production"
       },
       infoPlist: {
+        RCTNewArchEnabled: false,
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
         NSLocalNetworkUsageDescription: "Duet uses your local network to establish peer-to-peer voice connections.",
         UIBackgroundModes: ["audio"],
