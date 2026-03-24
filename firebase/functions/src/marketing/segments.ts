@@ -185,7 +185,7 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
 
 const FIELD_MAP = new Map(SEGMENT_FIELDS.map((f) => [f.path, f]));
 
-function resolvePath(obj: any, path: string): any {
+export function resolvePath(obj: any, path: string): any {
   const parts = path.split('.');
   let current = obj;
   for (const part of parts) {
@@ -195,7 +195,7 @@ function resolvePath(obj: any, path: string): any {
   return current;
 }
 
-function getFieldValue(uid: string, fieldDef: FieldDefinition, ctx: SegmentContext): any {
+export function getFieldValue(uid: string, fieldDef: FieldDefinition, ctx: SegmentContext): any {
   let source: any;
   switch (fieldDef.source) {
     case 'users':      source = ctx.users[uid]; break;
@@ -206,19 +206,35 @@ function getFieldValue(uid: string, fieldDef: FieldDefinition, ctx: SegmentConte
   return resolvePath(source, fieldDef.path);
 }
 
-function evaluateCondition(value: any, cond: SegmentCondition, now: number): boolean {
+export function evaluateCondition(value: any, cond: SegmentCondition, now: number): boolean {
   switch (cond.operator) {
     case 'exists':             return value != null && value !== '';
     case 'not_exists':         return value == null || value === '';
     case 'is_true':            return value === true;
     case 'is_false':           return value === false || value == null;
-    case 'equals':             return value == cond.value;
-    case 'not_equals':         return value != cond.value;
+    case 'equals': {
+      if (value === cond.value) return true;
+      if (typeof value === 'number' && value === Number(cond.value)) return true;
+      if (typeof cond.value === 'number' && Number(value) === cond.value && value !== '' && value != null) return true;
+      return false;
+    }
+    case 'not_equals': {
+      if (value === cond.value) return false;
+      if (typeof value === 'number' && value === Number(cond.value)) return false;
+      if (typeof cond.value === 'number' && Number(value) === cond.value && value !== '' && value != null) return false;
+      return true;
+    }
     case 'contains':           return typeof value === 'string' && value.toLowerCase().includes(String(cond.value).toLowerCase());
-    case 'not_contains':       return typeof value === 'string' && !value.toLowerCase().includes(String(cond.value).toLowerCase());
+    case 'not_contains':       return typeof value !== 'string' || !value.toLowerCase().includes(String(cond.value).toLowerCase());
     case 'greater_than':       return typeof value === 'number' && value > Number(cond.value);
     case 'less_than':          return typeof value === 'number' && value < Number(cond.value);
-    case 'between':            return typeof value === 'number' && value >= Number(cond.value) && value <= Number(cond.value2);
+    case 'between': {
+      if (typeof value !== 'number') return false;
+      const lower = Number(cond.value);
+      const upper = Number(cond.value2);
+      if (isNaN(lower) || isNaN(upper)) return false;
+      return value >= lower && value <= upper;
+    }
     case 'within_last_days': {
       if (typeof value !== 'number') return false;
       return value >= now - Number(cond.value) * 86400000;
@@ -231,7 +247,7 @@ function evaluateCondition(value: any, cond: SegmentCondition, now: number): boo
   }
 }
 
-function evaluateCampaignCondition(uid: string, cond: SegmentCondition, ctx: SegmentContext): boolean {
+export function evaluateCampaignCondition(uid: string, cond: SegmentCondition, ctx: SegmentContext): boolean {
   const userSends = ctx.sendLogByUser[uid] || [];
   const campaignId = String(cond.value || '');
   if (!campaignId) return false;
@@ -241,7 +257,7 @@ function evaluateCampaignCondition(uid: string, cond: SegmentCondition, ctx: Seg
   return cond.operator === 'was_sent' ? wasSent : !wasSent;
 }
 
-function evaluateRuleSet(uid: string, rules: SegmentRuleSet, ctx: SegmentContext): boolean {
+export function evaluateRuleSet(uid: string, rules: SegmentRuleSet, ctx: SegmentContext): boolean {
   const groupResults = rules.groups.map((group) => {
     const condResults = group.conditions.map((cond) => {
       const fieldDef = FIELD_MAP.get(cond.field);
