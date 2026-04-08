@@ -1,20 +1,12 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Google Mobile Ads SDK crashes on iOS 26 - disabled on iOS via react-native.config.js
-let InterstitialAd: any = null;
-let RewardedAd: any = null;
-let AdEventType: any = {};
-let RewardedAdEventType: any = {};
-let TestIds: any = { INTERSTITIAL: '', REWARDED: '' };
-if (Platform.OS !== 'ios') {
-  const ads = require('react-native-google-mobile-ads');
-  InterstitialAd = ads.InterstitialAd;
-  RewardedAd = ads.RewardedAd;
-  AdEventType = ads.AdEventType;
-  RewardedAdEventType = ads.RewardedAdEventType;
-  TestIds = ads.TestIds;
-}
+const ads = require('react-native-google-mobile-ads');
+const InterstitialAd = ads.InterstitialAd;
+const RewardedAd = ads.RewardedAd;
+const AdEventType = ads.AdEventType;
+const RewardedAdEventType = ads.RewardedAdEventType;
+const TestIds = ads.TestIds;
 
 const getInterstitialAdUnitId = () => {
   if (__DEV__) return TestIds.INTERSTITIAL;
@@ -62,7 +54,6 @@ class AdService {
    * Initialize and preload all ads
    */
   initialize(): void {
-    if (Platform.OS === 'ios') return; // Ads disabled on iOS due to SDK crash on iOS 26
     this.loadInterstitial();
     this.loadRewarded();
   }

@@ -4,6 +4,10 @@ const googleServicesPlist = process.env.GOOGLE_SERVICES_PLIST || "./GoogleServic
 const googleServicesJson = process.env.GOOGLE_SERVICES_JSON || "./google-services.json";
 
 module.exports = {
+  "react-native-google-mobile-ads": {
+    android_app_id: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
+    ios_app_id: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
+  },
   expo: {
     name: "Duet",
     slug: "duet",
@@ -21,7 +25,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "25",
+      buildNumber: "29",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -135,7 +139,8 @@ module.exports = {
       "expo-apple-authentication",
       "./plugins/withDuetAudio",
       "./plugins/withAndroidQueries",
-      "./plugins/withFmtFix"
+      "./plugins/withFmtFix",
+      "./plugins/withThirdPartyComponentsFix"
     ],
     extra: {
       eas: {

@@ -1,3 +1,8 @@
+// Must be the very first import – registers a stub RCTEventEmitter so that
+// native view-lifecycle events arriving before React Renderer initialises
+// don't crash the app on iOS 26.  See fixRCTEventEmitter.js for details.
+import './fixRCTEventEmitter';
+
 // Silence Firebase v22+ modular API deprecation warnings (namespaced API still works)
 // TODO: Migrate to modular API and remove this flag
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;

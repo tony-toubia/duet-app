@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 
-// Google Mobile Ads SDK crashes on iOS 26 — native module excluded on iOS via react-native.config.js
-const ads = Platform.OS !== 'ios' ? require('react-native-google-mobile-ads') : null;
-const NativeAd = ads?.NativeAd;
-const NativeAdView = ads?.NativeAdView;
-const NativeAsset = ads?.NativeAsset;
-const NativeAssetType = ads?.NativeAssetType ?? {};
-const NativeMediaAspectRatio = ads?.NativeMediaAspectRatio ?? {};
-const TestIds = ads?.TestIds ?? { NATIVE: '' };
+const ads = require('react-native-google-mobile-ads');
+const NativeAd = ads.NativeAd;
+const NativeAdView = ads.NativeAdView;
+const NativeAsset = ads.NativeAsset;
+const NativeAssetType = ads.NativeAssetType;
+const NativeMediaAspectRatio = ads.NativeMediaAspectRatio;
+const TestIds = ads.TestIds;
 import Constants from 'expo-constants';
 
 const getLobbyNativeAdUnitId = () => {

@@ -10,14 +10,13 @@ import {
   Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-// Google Mobile Ads SDK crashes on iOS 26 - disabled on iOS
-const _ads = Platform.OS !== 'ios' ? require('react-native-google-mobile-ads') : null;
-const NativeAd = _ads?.NativeAd;
-const NativeAdView = _ads?.NativeAdView;
-const NativeAsset = _ads?.NativeAsset;
-const NativeAssetType = _ads?.NativeAssetType ?? {};
-const NativeMediaAspectRatio = _ads?.NativeMediaAspectRatio ?? {};
-const TestIds = _ads?.TestIds ?? { NATIVE: '' };
+const ads = require('react-native-google-mobile-ads');
+const NativeAd = ads.NativeAd;
+const NativeAdView = ads.NativeAdView;
+const NativeAsset = ads.NativeAsset;
+const NativeAssetType = ads.NativeAssetType;
+const NativeMediaAspectRatio = ads.NativeMediaAspectRatio;
+const TestIds = ads.TestIds;
 import Constants from 'expo-constants';
 import { colors } from '@/theme';
 
