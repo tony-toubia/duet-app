@@ -22,10 +22,12 @@ module.exports = {
       backgroundColor: "#1a1a2e"
     },
     assetBundlePatterns: ["**/*"],
+    jsEngine: "jsc",
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "34",
+      buildNumber: "35",
+      jsEngine: "jsc",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -56,7 +58,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 34,
+      versionCode: 35,
       ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {
@@ -141,6 +143,7 @@ module.exports = {
       "./plugins/withDuetAudio",
       "./plugins/withAndroidQueries",
       "./plugins/withFmtFix",
+      "./plugins/withForceJSC",
       "./plugins/withThirdPartyComponentsFix"
     ],
     extra: {
