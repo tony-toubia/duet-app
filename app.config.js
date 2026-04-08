@@ -135,7 +135,8 @@ module.exports = {
       ],
       "expo-apple-authentication",
       "./plugins/withDuetAudio",
-      "./plugins/withAndroidQueries"
+      "./plugins/withAndroidQueries",
+      "./plugins/withFmtFix"
     ],
     extra: {
       eas: {
