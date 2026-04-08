@@ -25,7 +25,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "29",
+      buildNumber: "30",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -118,6 +118,7 @@ module.exports = {
             deploymentTarget: "15.1",
             useFrameworks: "static",
             newArchEnabled: false,
+            jsEngine: "jsc", // Hermes crashes on physical iOS 26 devices (PAC incompatibility) — use JSC until fixed
           }
         }
       ],
