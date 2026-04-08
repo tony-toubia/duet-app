@@ -11,14 +11,23 @@
  *    RCTEventEmitter.receiveEvent(). Module has not been registered as
  *    callable."
  *
- * Registering a no-op stub here makes the module callable immediately.  The
- * React Renderer overwrites it with the real implementation moments later, so
- * only events that arrive during the tiny startup window are silently dropped
- * (initial screen lifecycle events that are harmless to lose).
+ * This stub makes the module callable immediately.  The React Renderer
+ * overwrites it with the real implementation moments later.
  */
-const BatchedBridge = require('react-native/Libraries/BatchedBridge/BatchedBridge');
 
-BatchedBridge.registerCallableModule('RCTEventEmitter', {
-  receiveEvent: function () {},
-  receiveTouches: function () {},
-});
+// Try multiple ways to access BatchedBridge — the internal require path
+// may not resolve on all JS engines / bundler configurations.
+var bridge = null;
+try {
+  bridge = require('react-native/Libraries/BatchedBridge/BatchedBridge');
+} catch (e) {
+  // Fallback: the global reference set by React Native during init
+  bridge = global.__fbBatchedBridge;
+}
+
+if (bridge && typeof bridge.registerCallableModule === 'function') {
+  bridge.registerCallableModule('RCTEventEmitter', {
+    receiveEvent: function () {},
+    receiveTouches: function () {},
+  });
+}

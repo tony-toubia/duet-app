@@ -9,7 +9,10 @@ let lastStep = 'init';
 function step(label: string) { lastStep = label; }
 
 try {
-  step('1: Firebase flag');
+  step('1: fixRCTEventEmitter');
+  require('./fixRCTEventEmitter');
+
+  step('2: Firebase flag');
   (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
   step('3: @react-navigation/native');
