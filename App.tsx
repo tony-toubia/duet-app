@@ -4,28 +4,30 @@ import { View, Text, StyleSheet, ScrollView, Platform, AppRegistry } from 'react
 
 let AppContent: React.ComponentType | null = null;
 let loadError: string | null = null;
+let lastStep = 'init';
+
+function step(label: string) { lastStep = label; }
 
 try {
-  // Step 1: fixRCTEventEmitter stub
+  step('1: fixRCTEventEmitter');
   require('./fixRCTEventEmitter');
 
-  // Step 2: Firebase deprecation flag
+  step('2: Firebase flag');
   (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-  // Step 3: Load navigation + app
+  step('3: @react-navigation/native');
   const { NavigationContainer } = require('@react-navigation/native');
+
+  step('4: react-native-safe-area-context');
   const { SafeAreaProvider } = require('react-native-safe-area-context');
+
+  step('5: RootNavigator');
   const { RootNavigator } = require('./src/navigation/RootNavigator');
+
+  step('6: navigationRef');
   const { navigationRef } = require('./src/navigation/navigationRef');
 
-  // Step 4: Android headless task
-  if (Platform.OS === 'android') {
-    AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {
-      console.log('[DuetKeepAlive] Headless task started');
-      return new Promise<void>(() => {});
-    });
-  }
-
+  step('7: building AppContent');
   AppContent = () => (
     <SafeAreaProvider>
       <NavigationContainer ref={navigationRef}>
@@ -34,7 +36,7 @@ try {
     </SafeAreaProvider>
   );
 } catch (e: any) {
-  loadError = e?.message || String(e);
+  loadError = `FAILED AT STEP ${lastStep}\n\n${e?.message || String(e)}`;
   if (e?.stack) {
     loadError += '\n\n' + e.stack;
   }
