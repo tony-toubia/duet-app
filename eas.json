@@ -29,6 +29,12 @@
       }
     },
     "production": {
+      "cache": {
+        "disabled": true
+      },
+      "env": {
+        "EX_UPDATES_NATIVE_DEBUG": "0"
+      },
       "ios": {
         "simulator": false,
         "image": "macos-sequoia-15.6-xcode-26.0"

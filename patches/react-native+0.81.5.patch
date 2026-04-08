@@ -1,3 +1,15 @@
+diff --git a/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js b/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js
+index 298d2e9..b0bbb99 100644
+--- a/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js
++++ b/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js
+@@ -412,6 +412,7 @@ class MessageQueue {
+       }
+       const moduleMethods = this.getCallableModule(module);
+       if (!moduleMethods) {
++        return; /* iOS26_MQ_PATCHED */
+         const callableModuleNames = Object.keys(this._lazyCallableModules);
+         const n = callableModuleNames.length;
+         const callableModuleNameList = callableModuleNames.join(', ');
 diff --git a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
 index fdd7e95..8d77992 100644
 --- a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
