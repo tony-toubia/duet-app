@@ -25,7 +25,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "30",
+      buildNumber: "31",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
