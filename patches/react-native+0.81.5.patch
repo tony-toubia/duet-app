@@ -1,0 +1,29 @@
+diff --git a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
+index fdd7e95..8d77992 100644
+--- a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
++++ b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
+@@ -138,7 +138,7 @@ function generateRCTThirdPartyComponents(
+     .flatMap(library => {
+       const components = componentsInLibraries[library];
+       return components.map(({componentName, className}) => {
+-        return `\t\t@"${componentName}": NSClassFromString(@"${className}"), // ${library}`;
++        return `\t\t{ Class cls = NSClassFromString(@"${className}"); if (cls) components[@"${componentName}"] = cls; } // ${library}`;
+       });
+     })
+     .join('\n');
+diff --git a/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template b/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
+index 4ce5107..1d2dd2b 100644
+--- a/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
++++ b/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
+@@ -19,9 +19,9 @@
+   static dispatch_once_t nativeComponentsToken;
+ 
+   dispatch_once(&nativeComponentsToken, ^{
+-    thirdPartyComponents = @{
++    NSMutableDictionary<NSString *, Class<RCTComponentViewProtocol>> *components = [NSMutableDictionary new];
+ {thirdPartyComponentsMapping}
+-    };
++    thirdPartyComponents = [components copy];
+   });
+ 
+   return thirdPartyComponents;

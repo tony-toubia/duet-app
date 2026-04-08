@@ -21,7 +21,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "24",
+      buildNumber: "25",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
         "applinks:duet-33cf5.firebaseapp.com",
@@ -98,8 +98,7 @@ module.exports = {
     plugins: [
       "@react-native-firebase/app",
       "@react-native-firebase/crashlytics",
-      // "@react-native-google-signin/google-signin" — DISABLED: GoogleSignIn iOS SDK crashes on iOS 26.
-      // Android google-signin works via autolinking without this plugin.
+      "@react-native-google-signin/google-signin",
       [
         "expo-build-properties",
         {
