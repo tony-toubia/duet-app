@@ -10,6 +10,35 @@ index 298d2e9..b0bbb99 100644
          const callableModuleNames = Object.keys(this._lazyCallableModules);
          const n = callableModuleNames.length;
          const callableModuleNameList = callableModuleNames.join(', ');
+diff --git a/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp b/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp
+index 29d2910..2e364a2 100644
+--- a/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp
++++ b/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp
+@@ -293,22 +293,8 @@ void ReactInstance::callFunctionOnModule(
+         "methodName",
+         methodName);
+     auto it = callableModules_.find(moduleName);
+-    if (it == callableModules_.end()) {
+-      std::ostringstream knownModules;
+-      int i = 0;
+-      for (it = callableModules_.begin(); it != callableModules_.end();
+-           it++, i++) {
+-        const char* space = (i > 0 ? ", " : " ");
+-        knownModules << space << it->first;
+-      }
+-      throw jsi::JSError(
+-          runtime,
+-          "Failed to call into JavaScript module method " + moduleName + "." +
+-              methodName +
+-              "(). Module has not been registered as callable. Registered callable JavaScript modules (n = " +
+-              std::to_string(callableModules_.size()) +
+-              "):" + knownModules.str() +
+-              ". Did you forget to call `registerCallableModule`?");
++    if (it == callableModules_.end()) { /* iOS26_MQ_PATCHED */
++      return;
+     }
+ 
+     if (std::holds_alternative<jsi::Function>(it->second)) {
 diff --git a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
 index fdd7e95..8d77992 100644
 --- a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
