@@ -13,10 +13,8 @@ const path = require('path');
  * Native's MessageQueue.__callFunction throws an invariant error for
  * unregistered modules, which propagates as a fatal native exception.
  *
- * This plugin patches MessageQueue.js to silently ignore calls to
- * unregistered modules (specifically RCTEventEmitter) instead of
- * crashing. The events are harmless initial lifecycle events that
- * can safely be dropped.
+ * This plugin patches MessageQueue.js to silently return instead of
+ * crashing when a module isn't registered as callable.
  */
 function withMessageQueueFix(config) {
   return withDangerousMod(config, [
@@ -35,56 +33,51 @@ function withMessageQueueFix(config) {
       let src = fs.readFileSync(mqPath, 'utf8');
 
       // Already patched?
-      if (src.includes('iOS 26 fix: silently ignore')) {
+      if (src.includes('/* iOS26_MQ_PATCHED */')) {
         console.log('[withMessageQueueFix] Already patched');
         return config;
       }
 
-      // Find the pattern:
+      // Strategy: find "if (!moduleMethods) {" inside __callFunction and
+      // inject "return; /* iOS26_MQ_PATCHED */" as the first line of the block.
+      // This is whitespace-agnostic since we use a regex.
+
+      // The pattern we're looking for in __callFunction:
       //   const moduleMethods = this.getCallableModule(module);
       //   if (!moduleMethods) {
-      // And replace the body of the if block to return early instead of throwing
-      const oldPattern = `const moduleMethods = this.getCallableModule(module);
-      if (!moduleMethods) {`;
+      //     ... invariant(...) ...
+      //   }
+      // We replace it with:
+      //   const moduleMethods = this.getCallableModule(module);
+      //   if (!moduleMethods) {
+      //     return; /* iOS26_MQ_PATCHED */
+      //   }
 
-      const newPattern = `const moduleMethods = this.getCallableModule(module);
-      if (!moduleMethods) {
-        // iOS 26 fix: silently ignore calls to unregistered modules during startup.
-        // Native view lifecycle events fire before JS module registration on iOS 26.
-        return;`;
+      const regex = /(const moduleMethods\s*=\s*this\.getCallableModule\(module\);\s*if\s*\(!moduleMethods\)\s*\{)([\s\S]*?)(^\s*\})/m;
 
-      if (src.includes(oldPattern)) {
-        // We need to also remove the original body of the if block up to the closing }
-        // The old if block contains: variable declarations, invariant call, closing }
-        // We replace the entire if (!moduleMethods) { ... } block
-
-        // Find the start of the if block
-        const ifStart = src.indexOf(oldPattern);
-        const afterIfOpen = ifStart + oldPattern.length;
-
-        // Count braces to find the matching closing brace
-        let braceCount = 1;
-        let pos = afterIfOpen;
-        while (pos < src.length && braceCount > 0) {
-          if (src[pos] === '{') braceCount++;
-          if (src[pos] === '}') braceCount--;
-          pos++;
-        }
-        // pos now points to just after the closing brace of if (!moduleMethods) { ... }
-
-        const oldBlock = src.substring(ifStart, pos);
-        const newBlock = `const moduleMethods = this.getCallableModule(module);
-      if (!moduleMethods) {
-        // iOS 26 fix: silently ignore calls to unregistered modules during startup.
-        // Native view lifecycle events fire before JS module registration on iOS 26.
-        return;
-      }`;
-
-        src = src.replace(oldBlock, newBlock);
+      if (regex.test(src)) {
+        src = src.replace(regex, '$1\n        return; /* iOS26_MQ_PATCHED */\n$3');
         fs.writeFileSync(mqPath, src);
         console.log('[withMessageQueueFix] Successfully patched MessageQueue.js');
       } else {
-        console.warn('[withMessageQueueFix] Could not find expected pattern in MessageQueue.js');
+        // Fallback: simpler line-by-line approach
+        const lines = src.split('\n');
+        let patched = false;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('if (!moduleMethods)') && i > 0 && lines[i - 1].includes('getCallableModule')) {
+            // Found the right if block. Insert return as the next line after the opening brace.
+            // The opening brace is on the same line as the if.
+            lines.splice(i + 1, 0, '        return; /* iOS26_MQ_PATCHED */');
+            patched = true;
+            console.log('[withMessageQueueFix] Patched via line-by-line fallback at line', i + 1);
+            break;
+          }
+        }
+        if (patched) {
+          fs.writeFileSync(mqPath, lines.join('\n'));
+        } else {
+          console.error('[withMessageQueueFix] FAILED to find patch location in MessageQueue.js');
+        }
       }
 
       return config;
