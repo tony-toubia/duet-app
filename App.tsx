@@ -5,46 +5,32 @@ import 'react-native-gesture-handler';
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
 
-const Stack = createStackNavigator();
-
-function GreenScreen() {
+export default function App() {
   return (
-    <View style={styles.green}>
-      <Text style={styles.text}>BUILD 49 — JS Stack Navigator</Text>
-      <Text style={styles.sub}>If you see this, createStackNavigator works on iOS 26!</Text>
+    <View style={styles.red}>
+      <Text style={styles.text}>BUILD 50 — Gesture Handler Import Test</Text>
+      <Text style={styles.sub}>If you see this, react-native-gesture-handler import is safe on iOS 26</Text>
     </View>
   );
 }
 
-export default function App() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Test" component={GreenScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
-}
-
 const styles = StyleSheet.create({
-  green: {
+  red: {
     flex: 1,
-    backgroundColor: '#00ff00',
+    backgroundColor: '#ff0000',
     justifyContent: 'center',
     alignItems: 'center',
   },
   text: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#fff',
     textAlign: 'center',
   },
   sub: {
     fontSize: 18,
-    color: '#333',
+    color: '#fff',
     textAlign: 'center',
     marginTop: 10,
     paddingHorizontal: 20,
