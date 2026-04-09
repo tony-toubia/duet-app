@@ -1,28 +1,52 @@
 import './fixRCTEventEmitter';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-import 'react-native-gesture-handler'; // Required by @react-navigation/stack
+import 'react-native-gesture-handler';
 
 import React from 'react';
-import { Platform, AppRegistry } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { RootNavigator } from './src/navigation/RootNavigator';
-import { navigationRef } from './src/navigation/navigationRef';
+import { createStackNavigator } from '@react-navigation/stack';
 
-if (Platform.OS === 'android') {
-  AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {
-    console.log('[DuetKeepAlive] Headless task started');
-    return new Promise<void>(() => {});
-  });
+const Stack = createStackNavigator();
+
+function GreenScreen() {
+  return (
+    <View style={styles.green}>
+      <Text style={styles.text}>BUILD 49 — JS Stack Navigator</Text>
+      <Text style={styles.sub}>If you see this, createStackNavigator works on iOS 26!</Text>
+    </View>
+  );
 }
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <NavigationContainer ref={navigationRef}>
-        <RootNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Test" component={GreenScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  green: {
+    flex: 1,
+    backgroundColor: '#00ff00',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#000',
+    textAlign: 'center',
+  },
+  sub: {
+    fontSize: 18,
+    color: '#333',
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 20,
+  },
+});
