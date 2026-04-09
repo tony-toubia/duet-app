@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
-    "postinstall": "patch-package && node scripts/patch-messagequeue.js",
+    "postinstall": "patch-package && node scripts/patch-messagequeue.js && node scripts/patch-fabric-compat.js",
     "test": "jest"
   },
   "dependencies": {
