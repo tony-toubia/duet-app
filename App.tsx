@@ -10,7 +10,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 
 const Stack = createStackNavigator();
 
-// Error boundary that SHOWS the error
+// Error boundary that SHOWS the error (keep for diagnostics)
 class ErrorDisplay extends React.Component<{children: React.ReactNode}, {error: Error | null}> {
   constructor(props: any) {
     super(props);
@@ -23,7 +23,7 @@ class ErrorDisplay extends React.Component<{children: React.ReactNode}, {error: 
     if (this.state.error) {
       return (
         <ScrollView style={styles.errorContainer} contentContainerStyle={styles.errorContent}>
-          <Text style={styles.errorTitle}>BUILD 51 — CAUGHT ERROR</Text>
+          <Text style={styles.errorTitle}>BUILD 52 — CAUGHT ERROR</Text>
           <Text style={styles.errorName}>{this.state.error.name}</Text>
           <Text style={styles.errorMsg}>{this.state.error.message}</Text>
           <Text style={styles.errorStack}>{this.state.error.stack}</Text>
@@ -37,7 +37,8 @@ class ErrorDisplay extends React.Component<{children: React.ReactNode}, {error: 
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 51 — Navigator Working!</Text>
+      <Text style={styles.text}>BUILD 52 — Navigator + Fabric Fix</Text>
+      <Text style={styles.sub}>If you see this green screen, the nativeFabricUIManager fix works!</Text>
     </View>
   );
 }
@@ -66,6 +67,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#000',
     textAlign: 'center',
+  },
+  sub: {
+    fontSize: 18,
+    color: '#333',
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 20,
   },
   errorContainer: {
     flex: 1,

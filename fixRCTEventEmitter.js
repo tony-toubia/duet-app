@@ -31,3 +31,21 @@ if (bridge && typeof bridge.registerCallableModule === 'function') {
     receiveTouches: function () {},
   });
 }
+
+/**
+ * iOS 26 fix: Disable false Fabric detection.
+ *
+ * On iOS 26, global.nativeFabricUIManager is set even when Fabric (New
+ * Architecture) is disabled.  react-native-gesture-handler's isFabric()
+ * checks this global and, when truthy, calls
+ * RNGestureHandlerModule.install() — a TurboModule method that doesn't
+ * exist without Fabric.  This causes a crash:
+ *
+ *   "TypeError: undefined is not a function (at maybeInitializeFabric)"
+ *
+ * Since Fabric is explicitly disabled in this build, removing the false
+ * positive is safe and prevents the crash.
+ */
+if (global.nativeFabricUIManager) {
+  global.nativeFabricUIManager = undefined;
+}
