@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, View } from 'react-native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createStackNavigator } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthScreen } from '@/screens/AuthScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
@@ -19,7 +19,7 @@ import { RootStackParamList } from './types';
 import { parseDeepLink } from './deepLinkParser';
 import { navigationRef } from './navigationRef';
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const Stack = createStackNavigator<RootStackParamList>();
 
 function navigateFromDeepLink(action: { screen: string; params?: any }) {
   if (navigationRef.isReady()) {

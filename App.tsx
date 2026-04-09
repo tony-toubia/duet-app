@@ -1,8 +1,7 @@
 import './fixRCTEventEmitter';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-import { enableScreens } from 'react-native-screens';
-enableScreens(false); // Native screen containers broken on iOS 26 — use JS fallback
+import 'react-native-gesture-handler'; // Required by @react-navigation/stack
 
 import React from 'react';
 import { Platform, AppRegistry } from 'react-native';
