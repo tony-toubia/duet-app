@@ -1,26 +1,42 @@
 import './fixRCTEventEmitter';
-(globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
 import React from 'react';
-import { Platform, AppRegistry } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { RootNavigator } from './src/navigation/RootNavigator';
-import { navigationRef } from './src/navigation/navigationRef';
+import { View, Text, StyleSheet } from 'react-native';
 
-if (Platform.OS === 'android') {
-  AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {
-    console.log('[DuetKeepAlive] Headless task started');
-    return new Promise<void>(() => {});
-  });
-}
+console.error('[DIAG] App.tsx executing');
 
 export default function App() {
+  console.error('[DIAG] App component rendering');
   return (
-    <SafeAreaProvider>
-      <NavigationContainer ref={navigationRef}>
-        <RootNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <View style={styles.container}>
+      <Text style={styles.title}>DUET iOS 26</Text>
+      <Text style={styles.subtitle}>React Native is rendering!</Text>
+      <Text style={styles.info}>Build 43 - JSC Diagnostic</Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FF0000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  subtitle: {
+    fontSize: 24,
+    color: '#FFFFFF',
+    marginTop: 16,
+  },
+  info: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginTop: 32,
+    opacity: 0.8,
+  },
+});
