@@ -1,108 +1,29 @@
 import './fixRCTEventEmitter';
+import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-import 'react-native-gesture-handler';
+import 'react-native-gesture-handler'; // Required by @react-navigation/stack
 
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { Platform, AppRegistry } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { RootNavigator } from './src/navigation/RootNavigator';
+import { navigationRef } from './src/navigation/navigationRef';
 
-const Stack = createStackNavigator();
-
-// Error boundary that SHOWS the error (keep for diagnostics)
-class ErrorDisplay extends React.Component<{children: React.ReactNode}, {error: Error | null}> {
-  constructor(props: any) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <ScrollView style={styles.errorContainer} contentContainerStyle={styles.errorContent}>
-          <Text style={styles.errorTitle}>BUILD 52 — CAUGHT ERROR</Text>
-          <Text style={styles.errorName}>{this.state.error.name}</Text>
-          <Text style={styles.errorMsg}>{this.state.error.message}</Text>
-          <Text style={styles.errorStack}>{this.state.error.stack}</Text>
-        </ScrollView>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function GreenScreen() {
-  return (
-    <View style={styles.green}>
-      <Text style={styles.text}>BUILD 52 — Navigator + Fabric Fix</Text>
-      <Text style={styles.sub}>If you see this green screen, the nativeFabricUIManager fix works!</Text>
-    </View>
-  );
+if (Platform.OS === 'android') {
+  AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {
+    console.log('[DuetKeepAlive] Headless task started');
+    return new Promise<void>(() => {});
+  });
 }
 
 export default function App() {
   return (
-    <ErrorDisplay>
-      <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Test" component={GreenScreen} />
-        </Stack.Navigator>
+    <SafeAreaProvider>
+      <NavigationContainer ref={navigationRef}>
+        <RootNavigator />
       </NavigationContainer>
-    </ErrorDisplay>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  green: {
-    flex: 1,
-    backgroundColor: '#00ff00',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  text: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-  },
-  sub: {
-    fontSize: 18,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 20,
-  },
-  errorContainer: {
-    flex: 1,
-    backgroundColor: '#ff0000',
-  },
-  errorContent: {
-    padding: 40,
-    paddingTop: 80,
-  },
-  errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-  },
-  errorName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ffff00',
-    marginBottom: 10,
-  },
-  errorMsg: {
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 20,
-  },
-  errorStack: {
-    fontSize: 12,
-    color: '#ffcccc',
-    fontFamily: 'Courier',
-  },
-});

@@ -26,7 +26,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "52",
+      buildNumber: "53",
       jsEngine: "jsc",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
@@ -58,7 +58,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 52,
+      versionCode: 53,
       ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {

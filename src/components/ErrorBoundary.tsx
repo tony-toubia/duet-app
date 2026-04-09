@@ -42,8 +42,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.icon}>!</Text>
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message}>
-            {this.props.fallbackMessage || 'An unexpected error occurred. Please try again.'}
+            {this.state.error?.message || this.props.fallbackMessage || 'An unexpected error occurred. Please try again.'}
           </Text>
+          <Text style={styles.errorDetail}>{this.state.error?.stack}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={this.handleRetry}>
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>
@@ -99,5 +100,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: '600',
+  },
+  errorDetail: {
+    fontSize: 11,
+    color: '#ff6b6b',
+    fontFamily: 'Courier',
+    marginBottom: 16,
+    maxHeight: 200,
   },
 });
