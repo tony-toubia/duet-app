@@ -2,32 +2,35 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 61: DIAGNOSTIC — GestureHandlerRootView + PanGestureHandler isolation ===
-// Build 60 proved NavigationContainer renders fine.
-// Now test if GestureHandlerRootView + PanGestureHandler render without Stack.
+// === BUILD 62: Full Stack.Navigator test ===
+// Builds 59-61 proved all individual components work.
+// Now try the full Stack.Navigator rendering.
 import 'react-native-gesture-handler';
-import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
 
 import React from 'react';
-import { Animated, View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
-const _stack = createStackNavigator;
+const Stack = createStackNavigator();
+
+function GreenScreen() {
+  return (
+    <View style={styles.green}>
+      <Text style={styles.text}>BUILD 62 — Full Stack.Navigator</Text>
+      <Text style={styles.sub}>If you see this, createStackNavigator works on iOS 26!</Text>
+    </View>
+  );
+}
 
 export default function App() {
   return (
     <NavigationContainer>
-      <GestureHandlerRootView style={{flex: 1}}>
-        <PanGestureHandler enabled={false}>
-          <Animated.View style={styles.green}>
-            <Text style={styles.text}>BUILD 61 — GH RootView + PanGH</Text>
-            <Text style={styles.sub}>If you see this, GestureHandler components render on iOS 26</Text>
-          </Animated.View>
-        </PanGestureHandler>
-      </GestureHandlerRootView>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Test" component={GreenScreen} />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
