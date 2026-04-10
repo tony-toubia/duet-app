@@ -3,6 +3,8 @@ import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
 import 'react-native-gesture-handler';
+import { enableScreens } from 'react-native-screens';
+enableScreens(false); // iOS 26: native screen containers don't render — use JS fallback
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -14,8 +16,8 @@ const Stack = createStackNavigator();
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 54 — Navigator + Fabric Fix</Text>
-      <Text style={styles.sub}>If you see this green screen, createStackNavigator works!</Text>
+      <Text style={styles.text}>BUILD 56 — Navigator + enableScreens(false)</Text>
+      <Text style={styles.sub}>If you see this green screen, createStackNavigator works on iOS 26!</Text>
     </View>
   );
 }
