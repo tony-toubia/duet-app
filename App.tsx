@@ -2,29 +2,28 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 59: DIAGNOSTIC — all imports, NO navigation rendering ===
-// Goal: isolate whether SIGKILL comes from module initialization or rendering
+// === BUILD 60: DIAGNOSTIC — NavigationContainer only, no Stack ===
+// Build 59 proved imports are safe. Now test if NavigationContainer renders.
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-
-// Import navigation but DON'T render it
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// Force these to be evaluated (prevent tree-shaking)
-const _nav = NavigationContainer;
+// Keep Stack import evaluated but don't use it yet
 const _stack = createStackNavigator;
 
 export default function App() {
   return (
-    <View style={styles.green}>
-      <Text style={styles.text}>BUILD 59 — ALL IMPORTS, NO NAV RENDER</Text>
-      <Text style={styles.sub}>If you see this, module initialization is safe on iOS 26</Text>
-    </View>
+    <NavigationContainer>
+      <View style={styles.green}>
+        <Text style={styles.text}>BUILD 60 — NavigationContainer ONLY</Text>
+        <Text style={styles.sub}>If you see this, NavigationContainer renders on iOS 26</Text>
+      </View>
+    </NavigationContainer>
   );
 }
 
