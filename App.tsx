@@ -16,7 +16,7 @@ const Stack = createStackNavigator();
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 56 — Navigator + enableScreens(false)</Text>
+      <Text style={styles.text}>BUILD 57 — isFabric()=false + enableScreens(false)</Text>
       <Text style={styles.sub}>If you see this green screen, createStackNavigator works on iOS 26!</Text>
     </View>
   );

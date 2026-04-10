@@ -3,12 +3,17 @@
  * iOS 26 Fabric Compatibility Patches
  *
  * On iOS 26, nativeFabricUIManager is set even when newArchEnabled is false.
- * Third-party libraries detect Fabric and call JSI methods that don't exist
- * because native modules were compiled without Fabric support.
+ * Third-party libraries detect Fabric via isFabric() and use Fabric code paths
+ * that call JSI methods compiled out of the native modules (Paper/old arch build).
+ * These calls throw C++ exceptions that crash the app.
  *
- * This script patches the source files directly so Metro bundles the fixed
- * versions. Runtime monkey-patching doesn't work because Metro's module IDs
- * differ from require() paths in production bundles.
+ * The fix: patch isFabric() to return false in each affected library, so they
+ * use Paper (old arch) code paths throughout. React's core renderer still uses
+ * nativeFabricUIManager directly — it doesn't go through these libraries' isFabric().
+ *
+ * This script patches source files directly so Metro bundles the fixed versions.
+ * Runtime monkey-patching via require() doesn't work because Metro production
+ * bundles use numeric module IDs.
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,56 +21,44 @@ const path = require('path');
 const PATCH_MARKER = '/* iOS26_FABRIC_PATCHED */';
 
 // ---------------------------------------------------------------------------
-// 1. react-native-gesture-handler: maybeInitializeFabric
-//    Wraps RNGestureHandlerModule.install() in try-catch
+// 1. react-native-gesture-handler: Force isFabric() to return false
+//    This prevents ALL Fabric code paths: install(), ripple color processing,
+//    event config, view flattening checks, etc.
 // ---------------------------------------------------------------------------
-function patchGestureHandler() {
-  const paths = [
-    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'module', 'init.js'),
-    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'commonjs', 'init.js'),
-    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'src', 'init.ts'),
+function patchGestureHandlerIsFabric() {
+  const utilsPaths = [
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'module', 'utils.js'),
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'commonjs', 'utils.js'),
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'src', 'utils.ts'),
   ];
 
   let patched = 0;
-  for (const filePath of paths) {
+  for (const filePath of utilsPaths) {
     if (!fs.existsSync(filePath)) continue;
 
     let src = fs.readFileSync(filePath, 'utf8');
     if (src.includes(PATCH_MARKER)) {
-      console.log(`[patch-fabric] ${path.basename(filePath)} already patched`);
+      console.log(`[patch-fabric] ${path.basename(filePath)} (utils) already patched`);
       patched++;
       continue;
     }
 
-    // ESM version: RNGestureHandlerModule.install();
-    if (src.includes('RNGestureHandlerModule.install()')) {
-      src = src.replace(
-        'RNGestureHandlerModule.install();',
-        `${PATCH_MARKER} try { RNGestureHandlerModule.install(); } catch(e) { /* Fabric JSI unavailable */ }`
-      );
+    // Match the isFabric function body and replace with return false
+    // ESM/TS: export function isFabric() { ... return !!global?.nativeFabricUIManager; }
+    // CJS: function isFabric() { ... return !!global?.nativeFabricUIManager; }
+    const isFabricPattern = /(function isFabric\(\)\s*\{)[^}]*?(return\s+!!global\?\.nativeFabricUIManager;)\s*\}/;
+    if (isFabricPattern.test(src)) {
+      src = src.replace(isFabricPattern, `$1 ${PATCH_MARKER} return false; }`);
       fs.writeFileSync(filePath, src);
-      console.log(`[patch-fabric] Patched ${path.basename(filePath)} (ESM/TS)`);
+      console.log(`[patch-fabric] Patched isFabric() in ${path.basename(filePath)}`);
       patched++;
-      continue;
+    } else {
+      console.warn(`[patch-fabric] WARNING: Could not find isFabric() in ${path.basename(filePath)}`);
     }
-
-    // CJS version: _RNGestureHandlerModule.default.install();
-    if (src.includes('_RNGestureHandlerModule.default.install()')) {
-      src = src.replace(
-        '_RNGestureHandlerModule.default.install();',
-        `${PATCH_MARKER} try { _RNGestureHandlerModule.default.install(); } catch(e) { /* Fabric JSI unavailable */ }`
-      );
-      fs.writeFileSync(filePath, src);
-      console.log(`[patch-fabric] Patched ${path.basename(filePath)} (CJS)`);
-      patched++;
-      continue;
-    }
-
-    console.warn(`[patch-fabric] WARNING: Could not find install() call in ${path.basename(filePath)}`);
   }
 
   if (patched === 0) {
-    console.warn('[patch-fabric] WARNING: react-native-gesture-handler not found or no files patched');
+    console.warn('[patch-fabric] WARNING: react-native-gesture-handler utils not found');
   }
 }
 
@@ -110,6 +103,6 @@ function patchScreensGestureDetector() {
   }
 }
 
-patchGestureHandler();
+patchGestureHandlerIsFabric();
 patchScreensGestureDetector();
 console.log('[patch-fabric] Done');
