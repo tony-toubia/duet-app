@@ -136,7 +136,7 @@ export const RootNavigator = () => {
   return (
     <ErrorBoundary>
       <>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator screenOptions={{ headerShown: false }} detachInactiveScreens={false}>
           {user ? (
             <>
               <Stack.Screen name="Lobby" component={LobbyScreen} />
