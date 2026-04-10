@@ -2,33 +2,29 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
+// === BUILD 59: DIAGNOSTIC — all imports, NO navigation rendering ===
+// Goal: isolate whether SIGKILL comes from module initialization or rendering
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
-enableScreens(false); // iOS 26: native screen containers don't render — use JS fallback
+enableScreens(false);
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+
+// Import navigation but DON'T render it
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
-const Stack = createStackNavigator();
-
-function GreenScreen() {
-  return (
-    <View style={styles.green}>
-      <Text style={styles.text}>BUILD 58 — isFabric()=false + enableScreens(false)</Text>
-      <Text style={styles.sub}>If you see this green screen, createStackNavigator works on iOS 26!</Text>
-    </View>
-  );
-}
+// Force these to be evaluated (prevent tree-shaking)
+const _nav = NavigationContainer;
+const _stack = createStackNavigator;
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Test" component={GreenScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <View style={styles.green}>
+      <Text style={styles.text}>BUILD 59 — ALL IMPORTS, NO NAV RENDER</Text>
+      <Text style={styles.sub}>If you see this, module initialization is safe on iOS 26</Text>
+    </View>
   );
 }
 
