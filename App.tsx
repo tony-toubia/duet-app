@@ -2,10 +2,11 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 64: Stack.Navigator with useNativeDriver patched to false ===
-// Build 63 crashed even with gestureEnabled:false.
-// Card.js uses useNativeDriver:true for ALL animations (transitions + gestures).
-// Patching useNativeDriver=false in Card.js to test if native animations crash iOS 26.
+// === BUILD 65: detachInactiveScreens=false + useNativeDriver=false ===
+// ROOT CAUSE FOUND: CardStack.js defaults detachInactiveScreens=true on iOS,
+// which passes enabled:true to MaybeScreen/MaybeScreenContainer, OVERRIDING
+// enableScreens(false). Native ScreenNativeComponent renders → crashes on iOS 26.
+// Fix: detachInactiveScreens={false} prop + postinstall patch for CardStack.js
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
@@ -20,8 +21,8 @@ const Stack = createStackNavigator();
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 64 — Stack + useNativeDriver:false</Text>
-      <Text style={styles.sub}>If you see this, native-driven animations were the crash cause!</Text>
+      <Text style={styles.text}>BUILD 65 — detachInactiveScreens:false</Text>
+      <Text style={styles.sub}>If you see this, native screen components were the crash cause!</Text>
     </View>
   );
 }
@@ -29,7 +30,7 @@ function GreenScreen() {
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }} detachInactiveScreens={false}>
         <Stack.Screen name="Test" component={GreenScreen} />
       </Stack.Navigator>
     </NavigationContainer>

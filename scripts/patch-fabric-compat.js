@@ -162,7 +162,43 @@ function patchCardNativeDriver() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4. @react-navigation/stack CardStack.js: Force detachInactiveScreens = false
+//    On iOS 26, detachInactiveScreens defaults to true, which passes enabled:true
+//    to MaybeScreen/MaybeScreenContainer, OVERRIDING enableScreens(false).
+//    This causes native ScreenNativeComponent/ScreenContainerNativeComponent to
+//    render, which crash on iOS 26 with the Fabric false-positive.
+// ---------------------------------------------------------------------------
+function patchCardStackDetach() {
+  const cardStackPaths = [
+    path.join(__dirname, '..', 'node_modules', '@react-navigation', 'stack', 'lib', 'module', 'views', 'Stack', 'CardStack.js'),
+    path.join(__dirname, '..', 'node_modules', '@react-navigation', 'stack', 'lib', 'commonjs', 'views', 'Stack', 'CardStack.js'),
+  ];
+
+  const target = "detachInactiveScreens = Platform.OS === 'web' || Platform.OS === 'android' || Platform.OS === 'ios'";
+  const replacement = `${PATCH_MARKER} detachInactiveScreens = false`;
+
+  for (const filePath of cardStackPaths) {
+    if (!fs.existsSync(filePath)) continue;
+
+    let src = fs.readFileSync(filePath, 'utf8');
+    if (src.includes(PATCH_MARKER)) {
+      console.log(`[patch-fabric] ${filePath} already patched`);
+      continue;
+    }
+
+    if (src.includes(target)) {
+      src = src.replace(target, replacement);
+      fs.writeFileSync(filePath, src);
+      console.log(`[patch-fabric] Patched detachInactiveScreens in ${filePath}`);
+    } else {
+      console.warn(`[patch-fabric] WARNING: Could not find detachInactiveScreens target in ${filePath}`);
+    }
+  }
+}
+
 patchGestureHandler();
 patchScreensGestureDetector();
 patchCardNativeDriver();
+patchCardStackDetach();
 console.log('[patch-fabric] Done');
