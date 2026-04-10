@@ -8,12 +8,7 @@
  * These calls throw C++ exceptions that crash the app.
  *
  * The fix: patch isFabric() to return false in each affected library, so they
- * use Paper (old arch) code paths throughout. React's core renderer still uses
- * nativeFabricUIManager directly — it doesn't go through these libraries' isFabric().
- *
- * This script patches source files directly so Metro bundles the fixed versions.
- * Runtime monkey-patching via require() doesn't work because Metro production
- * bundles use numeric module IDs.
+ * use Paper (old arch) code paths throughout.
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,43 +17,84 @@ const PATCH_MARKER = '/* iOS26_FABRIC_PATCHED */';
 
 // ---------------------------------------------------------------------------
 // 1. react-native-gesture-handler: Force isFabric() to return false
-//    This prevents ALL Fabric code paths: install(), ripple color processing,
-//    event config, view flattening checks, etc.
+//    This prevents ALL Fabric code paths: install(), ripple color, events, etc.
+//    Also wrap install() in try-catch as a safety net.
 // ---------------------------------------------------------------------------
-function patchGestureHandlerIsFabric() {
+function patchGestureHandler() {
+  // --- Patch isFabric() in utils files ---
   const utilsPaths = [
     path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'module', 'utils.js'),
     path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'commonjs', 'utils.js'),
     path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'src', 'utils.ts'),
   ];
 
-  let patched = 0;
   for (const filePath of utilsPaths) {
     if (!fs.existsSync(filePath)) continue;
 
     let src = fs.readFileSync(filePath, 'utf8');
     if (src.includes(PATCH_MARKER)) {
-      console.log(`[patch-fabric] ${path.basename(filePath)} (utils) already patched`);
-      patched++;
+      console.log(`[patch-fabric] ${filePath} already patched`);
       continue;
     }
 
-    // Match the isFabric function body and replace with return false
-    // ESM/TS: export function isFabric() { ... return !!global?.nativeFabricUIManager; }
-    // CJS: function isFabric() { ... return !!global?.nativeFabricUIManager; }
-    const isFabricPattern = /(function isFabric\(\)\s*\{)[^}]*?(return\s+!!global\?\.nativeFabricUIManager;)\s*\}/;
-    if (isFabricPattern.test(src)) {
-      src = src.replace(isFabricPattern, `$1 ${PATCH_MARKER} return false; }`);
+    // Simple string replacement — replace the isFabric return with false
+    const target = 'return !!global?.nativeFabricUIManager;';
+    if (src.includes(target)) {
+      src = src.replace(target, `${PATCH_MARKER} return false;`);
       fs.writeFileSync(filePath, src);
-      console.log(`[patch-fabric] Patched isFabric() in ${path.basename(filePath)}`);
-      patched++;
+      console.log(`[patch-fabric] Patched isFabric() in ${filePath}`);
     } else {
-      console.warn(`[patch-fabric] WARNING: Could not find isFabric() in ${path.basename(filePath)}`);
+      console.warn(`[patch-fabric] WARNING: Could not find isFabric target in ${filePath}`);
+      // Log what the file contains around "isFabric" for debugging
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        if (line.includes('isFabric')) {
+          console.log(`[patch-fabric]   line ${i + 1}: ${line.trim()}`);
+        }
+      });
     }
   }
 
-  if (patched === 0) {
-    console.warn('[patch-fabric] WARNING: react-native-gesture-handler utils not found');
+  // --- Also wrap install() in try-catch as safety net ---
+  const initPaths = [
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'module', 'init.js'),
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'lib', 'commonjs', 'init.js'),
+    path.join(__dirname, '..', 'node_modules', 'react-native-gesture-handler', 'src', 'init.ts'),
+  ];
+
+  for (const filePath of initPaths) {
+    if (!fs.existsSync(filePath)) continue;
+
+    let src = fs.readFileSync(filePath, 'utf8');
+    if (src.includes(PATCH_MARKER)) {
+      console.log(`[patch-fabric] ${filePath} already patched`);
+      continue;
+    }
+
+    let patched = false;
+
+    // ESM/TS: RNGestureHandlerModule.install();
+    if (src.includes('RNGestureHandlerModule.install();')) {
+      src = src.replace(
+        'RNGestureHandlerModule.install();',
+        `${PATCH_MARKER} try { RNGestureHandlerModule.install(); } catch(e) { /* Fabric JSI unavailable */ }`
+      );
+      patched = true;
+    }
+
+    // CJS: _RNGestureHandlerModule.default.install();
+    if (src.includes('_RNGestureHandlerModule.default.install();')) {
+      src = src.replace(
+        '_RNGestureHandlerModule.default.install();',
+        `${PATCH_MARKER} try { _RNGestureHandlerModule.default.install(); } catch(e) { /* Fabric JSI unavailable */ }`
+      );
+      patched = true;
+    }
+
+    if (patched) {
+      fs.writeFileSync(filePath, src);
+      console.log(`[patch-fabric] Patched install() in ${filePath}`);
+    }
   }
 }
 
@@ -67,42 +103,32 @@ function patchGestureHandlerIsFabric() {
 //    Wraps RNScreensTurboModule calls in null checks
 // ---------------------------------------------------------------------------
 function patchScreensGestureDetector() {
-  const filePath = path.join(
+  const basePath = path.join(
     __dirname, '..', 'node_modules', 'react-native-screens',
-    'lib', 'commonjs', 'gesture-handler', 'ScreenGestureDetector.js'
+    'lib'
   );
 
-  if (!fs.existsSync(filePath)) {
-    // Try module path
-    const altPath = filePath.replace('commonjs', 'module');
-    if (!fs.existsSync(altPath)) {
-      console.log('[patch-fabric] ScreenGestureDetector.js not found, skipping');
-      return;
-    }
-  }
-
-  // Check both paths
-  for (const p of [filePath, filePath.replace('commonjs', 'module')]) {
+  for (const variant of ['commonjs', 'module']) {
+    const p = path.join(basePath, variant, 'gesture-handler', 'ScreenGestureDetector.js');
     if (!fs.existsSync(p)) continue;
 
     let src = fs.readFileSync(p, 'utf8');
     if (src.includes(PATCH_MARKER)) {
-      console.log(`[patch-fabric] ${path.basename(p)} already patched`);
+      console.log(`[patch-fabric] ${p} already patched`);
       continue;
     }
 
-    // Add null guard before any RNScreensTurboModule method calls
     if (src.includes('RNScreensTurboModule') && src.includes('startTransition')) {
       src = src.replace(
         /RNScreensTurboModule\.startTransition/g,
         `${PATCH_MARKER} RNScreensTurboModule?.startTransition`
       );
       fs.writeFileSync(p, src);
-      console.log(`[patch-fabric] Patched ${path.basename(p)}`);
+      console.log(`[patch-fabric] Patched ${p}`);
     }
   }
 }
 
-patchGestureHandlerIsFabric();
+patchGestureHandler();
 patchScreensGestureDetector();
 console.log('[patch-fabric] Done');
