@@ -2,27 +2,32 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 60: DIAGNOSTIC — NavigationContainer only, no Stack ===
-// Build 59 proved imports are safe. Now test if NavigationContainer renders.
+// === BUILD 61: DIAGNOSTIC — GestureHandlerRootView + PanGestureHandler isolation ===
+// Build 60 proved NavigationContainer renders fine.
+// Now test if GestureHandlerRootView + PanGestureHandler render without Stack.
 import 'react-native-gesture-handler';
+import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Animated, View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// Keep Stack import evaluated but don't use it yet
 const _stack = createStackNavigator;
 
 export default function App() {
   return (
     <NavigationContainer>
-      <View style={styles.green}>
-        <Text style={styles.text}>BUILD 60 — NavigationContainer ONLY</Text>
-        <Text style={styles.sub}>If you see this, NavigationContainer renders on iOS 26</Text>
-      </View>
+      <GestureHandlerRootView style={{flex: 1}}>
+        <PanGestureHandler enabled={false}>
+          <Animated.View style={styles.green}>
+            <Text style={styles.text}>BUILD 61 — GH RootView + PanGH</Text>
+            <Text style={styles.sub}>If you see this, GestureHandler components render on iOS 26</Text>
+          </Animated.View>
+        </PanGestureHandler>
+      </GestureHandlerRootView>
     </NavigationContainer>
   );
 }
