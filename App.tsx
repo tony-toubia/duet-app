@@ -2,9 +2,10 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 62: Full Stack.Navigator test ===
-// Builds 59-61 proved all individual components work.
-// Now try the full Stack.Navigator rendering.
+// === BUILD 63: Stack.Navigator with gestureEnabled: false ===
+// Build 62 crashed. Theory: Card's Animated.event with useNativeDriver:true
+// creates NATIVE_ANIMATED_EVENT action type in PanGestureHandler, which crashes.
+// gestureEnabled:false makes onGestureEvent=undefined, bypassing native driver.
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
@@ -19,8 +20,8 @@ const Stack = createStackNavigator();
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 62 — Full Stack.Navigator</Text>
-      <Text style={styles.sub}>If you see this, createStackNavigator works on iOS 26!</Text>
+      <Text style={styles.text}>BUILD 63 — Stack + gestureEnabled:false</Text>
+      <Text style={styles.sub}>If you see this, native animated gesture events were the problem!</Text>
     </View>
   );
 }
@@ -28,7 +29,7 @@ function GreenScreen() {
 export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
         <Stack.Screen name="Test" component={GreenScreen} />
       </Stack.Navigator>
     </NavigationContainer>
