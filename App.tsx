@@ -2,10 +2,10 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 63: Stack.Navigator with gestureEnabled: false ===
-// Build 62 crashed. Theory: Card's Animated.event with useNativeDriver:true
-// creates NATIVE_ANIMATED_EVENT action type in PanGestureHandler, which crashes.
-// gestureEnabled:false makes onGestureEvent=undefined, bypassing native driver.
+// === BUILD 64: Stack.Navigator with useNativeDriver patched to false ===
+// Build 63 crashed even with gestureEnabled:false.
+// Card.js uses useNativeDriver:true for ALL animations (transitions + gestures).
+// Patching useNativeDriver=false in Card.js to test if native animations crash iOS 26.
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
@@ -20,8 +20,8 @@ const Stack = createStackNavigator();
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 63 — Stack + gestureEnabled:false</Text>
-      <Text style={styles.sub}>If you see this, native animated gesture events were the problem!</Text>
+      <Text style={styles.text}>BUILD 64 — Stack + useNativeDriver:false</Text>
+      <Text style={styles.sub}>If you see this, native-driven animations were the crash cause!</Text>
     </View>
   );
 }

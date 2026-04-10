@@ -129,6 +129,40 @@ function patchScreensGestureDetector() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 3. @react-navigation/stack Card.js: Force useNativeDriver = false
+//    On iOS 26, native-driven Animated.spring/timing animations in the Card
+//    component may crash. Force JS-driven animations as a workaround.
+// ---------------------------------------------------------------------------
+function patchCardNativeDriver() {
+  const cardPaths = [
+    path.join(__dirname, '..', 'node_modules', '@react-navigation', 'stack', 'lib', 'module', 'views', 'Stack', 'Card.js'),
+    path.join(__dirname, '..', 'node_modules', '@react-navigation', 'stack', 'lib', 'commonjs', 'views', 'Stack', 'Card.js'),
+  ];
+
+  const target = "const useNativeDriver = Platform.OS !== 'web';";
+  const replacement = `${PATCH_MARKER} const useNativeDriver = false;`;
+
+  for (const filePath of cardPaths) {
+    if (!fs.existsSync(filePath)) continue;
+
+    let src = fs.readFileSync(filePath, 'utf8');
+    if (src.includes(PATCH_MARKER)) {
+      console.log(`[patch-fabric] ${filePath} already patched`);
+      continue;
+    }
+
+    if (src.includes(target)) {
+      src = src.replace(target, replacement);
+      fs.writeFileSync(filePath, src);
+      console.log(`[patch-fabric] Patched useNativeDriver in ${filePath}`);
+    } else {
+      console.warn(`[patch-fabric] WARNING: Could not find useNativeDriver target in ${filePath}`);
+    }
+  }
+}
+
 patchGestureHandler();
 patchScreensGestureDetector();
+patchCardNativeDriver();
 console.log('[patch-fabric] Done');
