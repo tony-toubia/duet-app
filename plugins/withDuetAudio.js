@@ -1242,6 +1242,8 @@ class DuetAudioManager: RCTEventEmitter {
         audioConverter = nil
       }
 
+      print("[DuetAudio] About to installTap on inputNode (bufferSize will be \\(inputSampleRate != outputSampleRate ? 2048 : 960))")
+
       // Install tap on input (microphone) to capture audio
       // Use a larger buffer for resampling headroom
       let bufferSize: AVAudioFrameCount = inputSampleRate != outputSampleRate ? 2048 : 960
@@ -1250,13 +1252,22 @@ class DuetAudioManager: RCTEventEmitter {
         self?.processInputBuffer(buffer)
       }
 
+      print("[DuetAudio] installTap succeeded, about to start engine")
+
       // Start the engine
       try engine.start()
+
+      print("[DuetAudio] engine.start() succeeded, about to player.play()")
+
       player.play()
+
+      print("[DuetAudio] player.play() succeeded, about to startKeepAliveTimer")
 
       // Start keep-alive timer: schedules tiny silent buffers on the player
       // so iOS sees continuous audio output and won't suspend the app
       startKeepAliveTimer()
+
+      print("[DuetAudio] All audio startup complete, resolving promise")
 
       resolve(["success": true])
     } catch {
@@ -1332,7 +1343,13 @@ class DuetAudioManager: RCTEventEmitter {
 
   // MARK: - Audio Processing
 
+  private var tapCallbackCount = 0
+
   private func processInputBuffer(_ buffer: AVAudioPCMBuffer) {
+    tapCallbackCount += 1
+    if tapCallbackCount <= 3 {
+      print("[DuetAudio] processInputBuffer called (count=\\(tapCallbackCount), frames=\\(buffer.frameLength), format=\\(buffer.format))")
+    }
     guard !isMuted else { return }
 
     // Calculate RMS for VAD
