@@ -2,58 +2,41 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 71: ErrorBoundary only (no SafeAreaProvider) to isolate ===
+// iOS 26: Must import gesture handler before navigation
 import 'react-native-gesture-handler';
+// iOS 26: Disable native screen containers (they crash due to Fabric false-positive)
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Dimensions, Platform, AppRegistry } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { RootNavigator } from './src/navigation/RootNavigator';
+import { navigationRef } from './src/navigation/navigationRef';
 
-const Stack = createStackNavigator();
-
-function GreenScreen() {
-  return (
-    <View style={styles.green}>
-      <Text style={styles.text}>BUILD 71</Text>
-      <Text style={styles.sub}>ErrorBoundary only — no SafeAreaProvider</Text>
-    </View>
-  );
+if (Platform.OS === 'android') {
+  AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {
+    console.log('[DuetKeepAlive] Headless task started');
+    return new Promise<void>(() => {});
+  });
 }
+
+// iOS 26: SafeAreaProvider's native onInsetsChange event doesn't fire,
+// so without initialMetrics the children never render (insets stays null).
+// Provide fallback metrics so children render immediately.
+const { width, height } = Dimensions.get('window');
+const safeAreaMetrics = initialWindowMetrics ?? {
+  frame: { x: 0, y: 0, width, height },
+  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+};
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <ErrorBoundary>
-        <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }} detachInactiveScreens={false}>
-          <Stack.Screen name="Test" component={GreenScreen} />
-        </Stack.Navigator>
-      </ErrorBoundary>
-    </NavigationContainer>
+    <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+      <NavigationContainer ref={navigationRef}>
+        <RootNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  green: {
-    flex: 1,
-    backgroundColor: '#00ff00',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  text: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#000',
-    textAlign: 'center',
-  },
-  sub: {
-    fontSize: 18,
-    color: '#333',
-    textAlign: 'center',
-    marginTop: 10,
-    paddingHorizontal: 20,
-  },
-});

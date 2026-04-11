@@ -26,7 +26,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.duet.app",
-      buildNumber: "71",
+      buildNumber: "72",
       jsEngine: "jsc",
       ...(fs.existsSync(googleServicesPlist) ? { googleServicesFile: googleServicesPlist } : {}),
       associatedDomains: [
