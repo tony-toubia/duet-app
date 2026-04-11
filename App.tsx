@@ -2,34 +2,40 @@ import './fixRCTEventEmitter';
 import './fixFabricCompat';
 (globalThis as any).RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
 
-// === BUILD 69: Same as build 65 to verify rendering works ===
+// === BUILD 70: Add SafeAreaProvider + ErrorBoundary to isolate ===
 import 'react-native-gesture-handler';
 import { enableScreens } from 'react-native-screens';
 enableScreens(false);
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const Stack = createStackNavigator();
 
 function GreenScreen() {
   return (
     <View style={styles.green}>
-      <Text style={styles.text}>BUILD 69 — Same as 65</Text>
-      <Text style={styles.sub}>If you see this, basic rendering works on iOS 26</Text>
+      <Text style={styles.text}>BUILD 70</Text>
+      <Text style={styles.sub}>SafeAreaProvider + ErrorBoundary added</Text>
     </View>
   );
 }
 
 export default function App() {
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }} detachInactiveScreens={false}>
-        <Stack.Screen name="Test" component={GreenScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <ErrorBoundary>
+          <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }} detachInactiveScreens={false}>
+            <Stack.Screen name="Test" component={GreenScreen} />
+          </Stack.Navigator>
+        </ErrorBoundary>
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 
