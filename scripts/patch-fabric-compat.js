@@ -74,10 +74,13 @@ function patchGestureHandler() {
     let patched = false;
 
     // ESM/TS: RNGestureHandlerModule.install();
+    // iOS26: Completely disable install() — gesture-handler's Paper-mode install()
+    // sets up RNGestureHandlerRootHelper which conflicts with Fabric's
+    // RCTSurfaceTouchHandler, causing ALL touches on non-initial screens to be swallowed.
     if (src.includes('RNGestureHandlerModule.install();')) {
       src = src.replace(
         'RNGestureHandlerModule.install();',
-        `${PATCH_MARKER} try { RNGestureHandlerModule.install(); } catch(e) { /* Fabric JSI unavailable */ }`
+        `${PATCH_MARKER} /* install() disabled — Paper touch infra conflicts with Fabric RCTSurfaceTouchHandler */`
       );
       patched = true;
     }
@@ -86,7 +89,7 @@ function patchGestureHandler() {
     if (src.includes('_RNGestureHandlerModule.default.install();')) {
       src = src.replace(
         '_RNGestureHandlerModule.default.install();',
-        `${PATCH_MARKER} try { _RNGestureHandlerModule.default.install(); } catch(e) { /* Fabric JSI unavailable */ }`
+        `${PATCH_MARKER} /* install() disabled — Paper touch infra conflicts with Fabric RCTSurfaceTouchHandler */`
       );
       patched = true;
     }

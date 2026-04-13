@@ -313,27 +313,33 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           <View style={{ height: insets.bottom }} />
           <ReactionOverlay />
           {adTransitionOverlay}
-          <ShareModal
-            visible={showShareModal}
-            roomCode={roomCode}
-            onClose={() => setShowShareModal(false)}
-          />
-          <ConfirmModal
-            visible={showLeaveModal}
-            title="Leave Room"
-            message="Are you sure you want to disconnect?"
-            buttons={[
-              { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
-              { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
-            ]}
-            onClose={() => setShowLeaveModal(false)}
-          />
-          <InviteModal
-            visible={showInviteModal}
-            friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
-            onInvite={handleSendInvite}
-            onClose={() => setShowInviteModal(false)}
-          />
+          {showShareModal && (
+            <ShareModal
+              visible
+              roomCode={roomCode}
+              onClose={() => setShowShareModal(false)}
+            />
+          )}
+          {showLeaveModal && (
+            <ConfirmModal
+              visible
+              title="Leave Room"
+              message="Are you sure you want to disconnect?"
+              buttons={[
+                { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
+                { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
+              ]}
+              onClose={() => setShowLeaveModal(false)}
+            />
+          )}
+          {showInviteModal && (
+            <InviteModal
+              visible
+              friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
+              onInvite={handleSendInvite}
+              onClose={() => setShowInviteModal(false)}
+            />
+          )}
         </View>
       </ImageBackground>
     );
@@ -365,27 +371,33 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         </ScrollView>
         <ReactionOverlay />
         {adTransitionOverlay}
-        <ShareModal
-          visible={showShareModal}
-          roomCode={roomCode}
-          onClose={() => setShowShareModal(false)}
-        />
-        <ConfirmModal
-          visible={showLeaveModal}
-          title="Leave Room"
-          message="Are you sure you want to disconnect?"
-          buttons={[
-            { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
-            { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
-          ]}
-          onClose={() => setShowLeaveModal(false)}
-        />
-        <InviteModal
-          visible={showInviteModal}
-          friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
-          onInvite={handleSendInvite}
-          onClose={() => setShowInviteModal(false)}
-        />
+        {showShareModal && (
+          <ShareModal
+            visible
+            roomCode={roomCode}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
+        {showLeaveModal && (
+          <ConfirmModal
+            visible
+            title="Leave Room"
+            message="Are you sure you want to disconnect?"
+            buttons={[
+              { text: 'Leave', style: 'destructive', onPress: handleConfirmLeave },
+              { text: 'Cancel', style: 'cancel', onPress: () => setShowLeaveModal(false) },
+            ]}
+            onClose={() => setShowLeaveModal(false)}
+          />
+        )}
+        {showInviteModal && (
+          <InviteModal
+            visible
+            friends={useFriendsStore.getState().acceptedFriends().slice(0, 10)}
+            onInvite={handleSendInvite}
+            onClose={() => setShowInviteModal(false)}
+          />
+        )}
       </View>
     </ImageBackground>
   );
