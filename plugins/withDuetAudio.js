@@ -978,6 +978,34 @@ class DuetAudioManager: RCTEventEmitter {
     return ["onAudioData", "onVoiceActivity", "onConnectionStateChange", "onError"]
   }
 
+  // Track whether JS has registered event listeners.
+  // Sending events before JS calls addListener() throws an NSException in
+  // RCTEventEmitter. On iOS 26 this goes through TurboModule interop, which
+  // catches the exception and calls convertNSExceptionToJSError on the audio
+  // render thread — accessing jsi::Runtime from the wrong thread → SIGKILL.
+  private var hasListeners = false
+
+  override func startObserving() {
+    hasListeners = true
+    print("[DuetAudio] JS listeners registered (startObserving)")
+  }
+
+  override func stopObserving() {
+    hasListeners = false
+    print("[DuetAudio] JS listeners removed (stopObserving)")
+  }
+
+  /// Thread-safe event sending: guards against no-listener exception and
+  /// dispatches to the main queue so we never touch jsi::Runtime from the
+  /// audio render thread.
+  private func safeSendEvent(name: String, body: Any?) {
+    guard hasListeners else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, self.hasListeners else { return }
+      self.sendEvent(withName: name, body: body)
+    }
+  }
+
   // MARK: - Audio Session Setup
 
   @objc
@@ -1242,8 +1270,6 @@ class DuetAudioManager: RCTEventEmitter {
         audioConverter = nil
       }
 
-      print("[DuetAudio] About to installTap on inputNode (bufferSize will be \\(inputSampleRate != outputSampleRate ? 2048 : 960))")
-
       // Install tap on input (microphone) to capture audio
       // Use a larger buffer for resampling headroom
       let bufferSize: AVAudioFrameCount = inputSampleRate != outputSampleRate ? 2048 : 960
@@ -1252,22 +1278,16 @@ class DuetAudioManager: RCTEventEmitter {
         self?.processInputBuffer(buffer)
       }
 
-      print("[DuetAudio] installTap succeeded, about to start engine")
-
       // Start the engine
       try engine.start()
 
-      print("[DuetAudio] engine.start() succeeded, about to player.play()")
-
       player.play()
-
-      print("[DuetAudio] player.play() succeeded, about to startKeepAliveTimer")
 
       // Start keep-alive timer: schedules tiny silent buffers on the player
       // so iOS sees continuous audio output and won't suspend the app
       startKeepAliveTimer()
 
-      print("[DuetAudio] All audio startup complete, resolving promise")
+      print("[DuetAudio] All audio startup complete")
 
       resolve(["success": true])
     } catch {
@@ -1360,13 +1380,13 @@ class DuetAudioManager: RCTEventEmitter {
       silenceFrames = 0
       if !isSpeaking {
         isSpeaking = true
-        sendEvent(withName: "onVoiceActivity", body: ["speaking": true])
+        safeSendEvent(name: "onVoiceActivity", body: ["speaking": true])
       }
     } else {
       silenceFrames += 1
       if isSpeaking && silenceFrames > silenceThreshold {
         isSpeaking = false
-        sendEvent(withName: "onVoiceActivity", body: ["speaking": false])
+        safeSendEvent(name: "onVoiceActivity", body: ["speaking": false])
       }
     }
 
@@ -1387,7 +1407,7 @@ class DuetAudioManager: RCTEventEmitter {
       }
 
       if let data = bufferToBase64(outputBuffer) {
-        sendEvent(withName: "onAudioData", body: [
+        safeSendEvent(name: "onAudioData", body: [
           "audio": data,
           "sampleRate": outputSampleRate,  // Always send at standard rate
           "channels": channels
@@ -1507,7 +1527,7 @@ class DuetAudioManager: RCTEventEmitter {
     isMuted = muted
     if muted && isSpeaking {
       isSpeaking = false
-      sendEvent(withName: "onVoiceActivity", body: ["speaking": false])
+      safeSendEvent(name: "onVoiceActivity", body: ["speaking": false])
     }
   }
 
@@ -1676,7 +1696,7 @@ class DuetAudioManager: RCTEventEmitter {
     switch type {
     case .began:
       // Audio was interrupted (e.g., phone call)
-      sendEvent(withName: "onConnectionStateChange", body: ["state": "interrupted"])
+      safeSendEvent(name: "onConnectionStateChange", body: ["state": "interrupted"])
     case .ended:
       // Interruption ended — always try to resume the engine regardless of shouldResume flag.
       // Ad SDKs (AdMob) may interrupt audio without sending shouldResume, leaving the engine stopped.
@@ -1691,11 +1711,11 @@ class DuetAudioManager: RCTEventEmitter {
         try session.setActive(true)
         try audioEngine?.start()
         playerNode?.play()
-        sendEvent(withName: "onConnectionStateChange", body: ["state": "resumed"])
+        safeSendEvent(name: "onConnectionStateChange", body: ["state": "resumed"])
         print("[DuetAudio] Engine resumed after interruption")
       } catch {
         print("[DuetAudio] Failed to resume after interruption: \\(error)")
-        sendEvent(withName: "onError", body: ["message": "Failed to resume audio after interruption: \\(error.localizedDescription)"])
+        safeSendEvent(name: "onError", body: ["message": "Failed to resume audio after interruption: \\(error.localizedDescription)"])
       }
     @unknown default:
       break
@@ -1736,7 +1756,7 @@ class DuetAudioManager: RCTEventEmitter {
         reconfigureAudioSession()
       }
 
-      sendEvent(withName: "onConnectionStateChange", body: [
+      safeSendEvent(name: "onConnectionStateChange", body: [
         "state": "routeChanged",
         "reason": "deviceConnected",
         "isBluetoothA2DP": isBluetoothA2DP
@@ -1746,7 +1766,7 @@ class DuetAudioManager: RCTEventEmitter {
       // Audio device disconnected - update route and reconfigure
       print("[DuetAudio] Device disconnected, reconfiguring audio session")
       updateAudioRoute()
-      sendEvent(withName: "onConnectionStateChange", body: [
+      safeSendEvent(name: "onConnectionStateChange", body: [
         "state": "routeChanged",
         "reason": "deviceDisconnected"
       ])

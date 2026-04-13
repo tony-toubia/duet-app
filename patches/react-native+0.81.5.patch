@@ -1,3 +1,126 @@
+diff --git a/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.h b/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.h
+index 5fb3af2..b30906e 100644
+--- a/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.h
++++ b/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.h
+@@ -13,7 +13,7 @@
+ 
+ #import <memory>
+ 
+-#if USE_THIRD_PARTY_JSC != 1
++#if __has_include(<reacthermes/HermesExecutorFactory.h>)
+ #import <reacthermes/HermesExecutorFactory.h>
+ #endif
+ 
+diff --git a/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.mm b/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.mm
+index 2ffbbd0..2908e49 100644
+--- a/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.mm
++++ b/node_modules/react-native/Libraries/AppDelegate/RCTAppSetupUtils.mm
+@@ -11,6 +11,33 @@
+ #import <react/renderer/runtimescheduler/RuntimeScheduler.h>
+ #import <react/renderer/runtimescheduler/RuntimeSchedulerBinding.h>
+ 
++// iOS26_JSC_FIX: Include JSCRuntime for third-party JSC support
++#if USE_THIRD_PARTY_JSC == 1
++#import "JSCRuntime.h"
++#import <jsireact/JSIExecutor.h>
++#import <cxxreact/JSExecutor.h>
++
++namespace {
++class JSCExecutorFactory : public facebook::react::JSExecutorFactory {
++public:
++  explicit JSCExecutorFactory(facebook::react::JSIExecutor::RuntimeInstaller runtimeInstaller)
++      : runtimeInstaller_(std::move(runtimeInstaller)) {}
++
++  std::unique_ptr<facebook::react::JSExecutor> createJSExecutor(
++      std::shared_ptr<facebook::react::ExecutorDelegate> delegate,
++      std::shared_ptr<facebook::react::MessageQueueThread> jsQueue) override {
++    auto runtime = facebook::jsc::makeJSCRuntime();
++    return std::make_unique<facebook::react::JSIExecutor>(
++        std::move(runtime), delegate,
++        facebook::react::JSIExecutor::defaultTimeoutInvoker,
++        std::move(runtimeInstaller_));
++  }
++private:
++  facebook::react::JSIExecutor::RuntimeInstaller runtimeInstaller_;
++};
++}
++#endif
++
+ // Turbo Module
+ #import <React/RCTBundleAssetImageLoader.h>
+ #import <React/RCTDataRequestHandler.h>
+@@ -145,7 +172,11 @@ void RCTAppSetupPrepareApp(UIApplication *application, BOOL turboModuleEnabled)
+     }
+     [turboModuleManager installJSBindings:runtime];
+   };
+-#if USE_THIRD_PARTY_JSC != 1
++// iOS26_JSC_FIX: Use JSCExecutorFactory when third-party JSC is selected
++#if USE_THIRD_PARTY_JSC == 1
++  return std::make_unique<JSCExecutorFactory>(
++      facebook::react::RCTJSIExecutorRuntimeInstaller(runtimeInstallerLambda));
++#else
+   return std::make_unique<facebook::react::HermesExecutorFactory>(
+       facebook::react::RCTJSIExecutorRuntimeInstaller(runtimeInstallerLambda));
+ #endif
+@@ -163,7 +194,11 @@ void RCTAppSetupPrepareApp(UIApplication *application, BOOL turboModuleEnabled)
+       facebook::react::RuntimeSchedulerBinding::createAndInstallIfNeeded(runtime, runtimeScheduler);
+     }
+   };
+-#if USE_THIRD_PARTY_JSC != 1
++// iOS26_JSC_FIX: Use JSCExecutorFactory when third-party JSC is selected
++#if USE_THIRD_PARTY_JSC == 1
++  return std::make_unique<JSCExecutorFactory>(
++      facebook::react::RCTJSIExecutorRuntimeInstaller(runtimeInstallerLambda));
++#else
+   return std::make_unique<facebook::react::HermesExecutorFactory>(
+       facebook::react::RCTJSIExecutorRuntimeInstaller(runtimeInstallerLambda));
+ #endif
+diff --git a/node_modules/react-native/Libraries/AppDelegate/RCTDefaultReactNativeFactoryDelegate.mm b/node_modules/react-native/Libraries/AppDelegate/RCTDefaultReactNativeFactoryDelegate.mm
+index cac0bcd..5d51fad 100644
+--- a/node_modules/react-native/Libraries/AppDelegate/RCTDefaultReactNativeFactoryDelegate.mm
++++ b/node_modules/react-native/Libraries/AppDelegate/RCTDefaultReactNativeFactoryDelegate.mm
+@@ -9,7 +9,28 @@
+ #import <ReactCommon/RCTHost.h>
+ #import "RCTAppSetupUtils.h"
+ #import "RCTDependencyProvider.h"
+-#if USE_THIRD_PARTY_JSC != 1
++#if USE_THIRD_PARTY_JSC == 1
++// iOS26_JSC_FIX: JSC runtime factory for bridgeless mode
++#import <react/runtime/JSRuntimeFactory.h>
++#import <react/runtime/JSRuntimeFactoryCAPI.h>
++#if __has_include(<ReactJSC/JSCRuntime.h>)
++#import <ReactJSC/JSCRuntime.h>
++#elif __has_include("JSCRuntime.h")
++#import "JSCRuntime.h"
++#endif
++
++namespace {
++// iOS26_JSC_FIX: JSC factory implementing JSRuntimeFactory for bridgeless architecture
++class JSCRuntimeFactory : public facebook::react::JSRuntimeFactory {
++public:
++  std::unique_ptr<facebook::react::JSRuntime> createJSRuntime(
++      std::shared_ptr<facebook::react::MessageQueueThread> /* msgQueueThread */) noexcept override {
++    auto runtime = facebook::jsc::makeJSCRuntime();
++    return std::make_unique<facebook::react::JSIRuntimeHolder>(std::move(runtime));
++  }
++};
++} // anonymous namespace
++#else
+ #import <React/RCTHermesInstanceFactory.h>
+ #endif
+ 
+@@ -43,7 +64,10 @@ - (void)setRootView:(UIView *)rootView toRootViewController:(UIViewController *)
+ 
+ - (JSRuntimeFactoryRef)createJSRuntimeFactory
+ {
+-#if USE_THIRD_PARTY_JSC != 1
++#if USE_THIRD_PARTY_JSC == 1
++  // iOS26_JSC_FIX: JSC factory for bridgeless mode (bridgeless is used even with old arch on RN 0.81.5)
++  return reinterpret_cast<JSRuntimeFactoryRef>(new JSCRuntimeFactory());
++#else
+   return jsrt_create_hermes_factory();
+ #endif
+ }
 diff --git a/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js b/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js
 index 298d2e9..b0bbb99 100644
 --- a/node_modules/react-native/Libraries/BatchedBridge/MessageQueue.js
@@ -10,6 +133,355 @@ index 298d2e9..b0bbb99 100644
          const callableModuleNames = Object.keys(this._lazyCallableModules);
          const n = callableModuleNames.length;
          const callableModuleNameList = callableModuleNames.join(', ');
+diff --git a/node_modules/react-native/React/CxxBridge/RCTCxxBridge.mm b/node_modules/react-native/React/CxxBridge/RCTCxxBridge.mm
+index bab3910..0bed398 100644
+--- a/node_modules/react-native/React/CxxBridge/RCTCxxBridge.mm
++++ b/node_modules/react-native/React/CxxBridge/RCTCxxBridge.mm
+@@ -45,7 +45,10 @@
+ #import <react/utils/FollyConvert.h>
+ #import <reactperflogger/BridgeNativeModulePerfLogger.h>
+ 
+-#if !defined(USE_HERMES) || USE_HERMES == 1
++// iOS26_JSC_FIX: Use JSCRuntime when third-party JSC is selected
++#if USE_THIRD_PARTY_JSC == 1
++#import "JSCRuntime.h"
++#else
+ #import <reacthermes/HermesExecutorFactory.h>
+ #endif
+ #import "RCTJSIExecutorRuntimeInstaller.h"
+@@ -81,6 +84,29 @@ typedef NS_ENUM(NSInteger, RCTBridgeFields) {
+   RCTBridgeFieldCallID,
+ };
+ 
++// iOS26_JSC_FIX: Minimal JSC executor factory for old architecture (Bridge)
++#if USE_THIRD_PARTY_JSC == 1
++namespace {
++class JSCExecutorFactory : public facebook::react::JSExecutorFactory {
++public:
++  explicit JSCExecutorFactory(facebook::react::JSIExecutor::RuntimeInstaller runtimeInstaller)
++      : runtimeInstaller_(std::move(runtimeInstaller)) {}
++
++  std::unique_ptr<facebook::react::JSExecutor> createJSExecutor(
++      std::shared_ptr<facebook::react::ExecutorDelegate> delegate,
++      std::shared_ptr<facebook::react::MessageQueueThread> jsQueue) override {
++    auto runtime = facebook::jsc::makeJSCRuntime();
++    return std::make_unique<facebook::react::JSIExecutor>(
++        std::move(runtime), delegate,
++        facebook::react::JSIExecutor::defaultTimeoutInvoker,
++        std::move(runtimeInstaller_));
++  }
++private:
++  facebook::react::JSIExecutor::RuntimeInstaller runtimeInstaller_;
++};
++}
++#endif
++
+ namespace {
+ 
+ int32_t getUniqueId()
+@@ -469,7 +495,10 @@ - (void)start
+     }
+     if (!executorFactory) {
+       auto installBindings = RCTJSIExecutorRuntimeInstaller(nullptr);
+-#if !defined(USE_HERMES) || USE_HERMES == 1
++// iOS26_JSC_FIX: Use JSC executor factory when third-party JSC is selected
++#if USE_THIRD_PARTY_JSC == 1
++      executorFactory = std::make_shared<JSCExecutorFactory>(installBindings);
++#else
+       executorFactory = std::make_shared<HermesExecutorFactory>(installBindings);
+ #endif
+     }
+diff --git a/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewFactory.mm b/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewFactory.mm
+index 034f1a4..32f418b 100644
+--- a/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewFactory.mm
++++ b/node_modules/react-native/React/Fabric/Mounting/RCTComponentViewFactory.mm
+@@ -45,6 +45,23 @@
+ using namespace facebook;
+ using namespace facebook::react;
+ 
++// iOS26_DIAG: Safe string helper to prevent strlen(NULL) crashes
++static inline std::string safeStdString(const char *s) {
++  return s ? std::string(s) : std::string();
++}
++
++// iOS26_FABRIC_FIX: A UIView subclass that is completely transparent to touches.
++// Used as fallback for components registered via useFabricInterop that have no
++// native view class (e.g., SVG components with zero-init providers).
++@interface RCTTouchTransparentView : UIView
++@end
++
++@implementation RCTTouchTransparentView
++- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
++  return nil;
++}
++@end
++
+ @interface RCTComponentViewFactory ()
+ - (void)_registerComponentIfPossible:(const std::string &)name;
+ - (BOOL)_wasComponentRegistered:(const std::string &)name;
+@@ -121,7 +138,9 @@ - (BOOL)_wasComponentRegistered:(const std::string &)name
+ 
+ - (void)_registerComponentIfPossible:(const std::string &)name
+ {
++  fprintf(stderr, "[iOS26_DIAG] _registerComponentIfPossible: '%s'\n", name.c_str());
+   if (_registrationStatusMap.find(name) != _registrationStatusMap.end()) {
++    fprintf(stderr, "[iOS26_DIAG]   already registered, skipping\n");
+     return;
+   }
+ 
+@@ -165,12 +184,19 @@ - (void)_registerComponentIfPossible:(const std::string &)name
+     auto componentHandle = reinterpret_cast<ComponentHandle>(componentName);
+     auto constructor = [RCTLegacyViewManagerInteropComponentView componentDescriptorProvider].constructor;
+ 
+-    auto provider = ComponentDescriptorProvider{componentHandle, componentName, flavor, constructor};
+-
+-    _providerRegistry.add(provider);
+-    _componentViewClasses[componentHandle] =
+-        [self _componentViewClassDescriptorFromClass:[RCTLegacyViewManagerInteropComponentView class]];
+-    _registrationStatusMap.insert({provider.name, true});
++    // iOS26_FABRIC_FIX: Guard null constructor from class returning default zero-init provider
++    fprintf(stderr, "[iOS26_DIAG]   Fallback3 (interop): constructor=%p componentName=%p\n",
++            (const void *)constructor, (const void *)componentName);
++    if (constructor && componentName) {
++      auto provider = ComponentDescriptorProvider{componentHandle, componentName, flavor, constructor};
++      _providerRegistry.add(provider);
++      _componentViewClasses[componentHandle] =
++          [self _componentViewClassDescriptorFromClass:[RCTLegacyViewManagerInteropComponentView class]];
++      auto safeName = safeStdString(provider.name);
++      if (!safeName.empty()) {
++        _registrationStatusMap.insert({safeName, true});
++      }
++    }
+     return;
+   }
+ 
+@@ -179,12 +205,20 @@ - (void)_registerComponentIfPossible:(const std::string &)name
+   auto componentName = ComponentName{flavor->c_str()};
+   auto componentHandle = reinterpret_cast<ComponentHandle>(componentName);
+   auto constructor = [RCTUnimplementedViewComponentView componentDescriptorProvider].constructor;
+-  auto provider = ComponentDescriptorProvider{componentHandle, componentName, flavor, constructor};
+ 
+-  _providerRegistry.add(provider);
+-  _componentViewClasses[componentHandle] =
+-      [self _componentViewClassDescriptorFromClass:[RCTUnimplementedViewComponentView class]];
+-  _registrationStatusMap.insert({provider.name, false});
++  // iOS26_FABRIC_FIX: Guard null constructor
++  fprintf(stderr, "[iOS26_DIAG]   Fallback4 (unimplemented): constructor=%p componentName=%p\n",
++          (const void *)constructor, (const void *)componentName);
++  if (constructor && componentName) {
++    auto provider = ComponentDescriptorProvider{componentHandle, componentName, flavor, constructor};
++    _providerRegistry.add(provider);
++    _componentViewClasses[componentHandle] =
++        [self _componentViewClassDescriptorFromClass:[RCTUnimplementedViewComponentView class]];
++    auto safeName = safeStdString(provider.name);
++    if (!safeName.empty()) {
++      _registrationStatusMap.insert({safeName, false});
++    }
++  }
+ }
+ 
+ - (void)registerComponentViewClass:(Class<RCTComponentViewProtocol>)componentViewClass
+@@ -192,15 +226,42 @@ - (void)registerComponentViewClass:(Class<RCTComponentViewProtocol>)componentVie
+   RCTAssert(componentViewClass, @"RCTComponentViewFactory: Provided `componentViewClass` is `nil`.");
+   std::unique_lock lock(_mutex);
+ 
++  fprintf(stderr, "[iOS26_DIAG] registerComponentViewClass: %s\n",
++          componentViewClass ? class_getName(componentViewClass) : "(nil)");
++
+   auto provider = [componentViewClass componentDescriptorProvider];
++  fprintf(stderr, "[iOS26_DIAG]   provider.name=%p('%s') constructor=%p handle=%lld\n",
++          (const void *)provider.name,
++          provider.name ? provider.name : "(NULL)",
++          (const void *)provider.constructor,
++          (long long)provider.handle);
++  // iOS26_FABRIC_FIX: Guard against classes that return zero-initialized providers
++  // (e.g., default UIView+ComponentViewProtocol implementation returns {}).
++  if (!provider.constructor || !provider.name) {
++    fprintf(stderr, "[iOS26_DIAG]   SKIPPING: null constructor or name\n");
++    return;
++  }
+   _componentViewClasses[provider.handle] = [self _componentViewClassDescriptorFromClass:componentViewClass];
+   _providerRegistry.add(provider);
+-  _registrationStatusMap.insert({provider.name, true});
++  auto safeName = safeStdString(provider.name);
++  if (!safeName.empty()) {
++    _registrationStatusMap.insert({safeName, true});
++  }
+ 
+   auto supplementalComponentDescriptorProviders = [componentViewClass supplementalComponentDescriptorProviders];
+   for (const auto &supplementalProvider : supplementalComponentDescriptorProviders) {
++    fprintf(stderr, "[iOS26_DIAG]   supplemental: name=%p('%s') constructor=%p\n",
++            (const void *)supplementalProvider.name,
++            supplementalProvider.name ? supplementalProvider.name : "(NULL)",
++            (const void *)supplementalProvider.constructor);
++    if (!supplementalProvider.constructor || !supplementalProvider.name) {
++      continue;
++    }
+     _providerRegistry.add(supplementalProvider);
+-    _registrationStatusMap.insert({supplementalProvider.name, true});
++    auto safeSupName = safeStdString(supplementalProvider.name);
++    if (!safeSupName.empty()) {
++      _registrationStatusMap.insert({safeSupName, true});
++    }
+   }
+ }
+ 
+@@ -210,11 +271,19 @@ - (RCTComponentViewDescriptor)createComponentViewWithComponentHandle:(facebook::
+   std::shared_lock lock(_mutex);
+ 
+   auto iterator = _componentViewClasses.find(componentHandle);
+-  RCTAssert(
+-      iterator != _componentViewClasses.end(),
+-      @"ComponentView with componentHandle `%lli` (`%s`) not found.",
+-      componentHandle,
+-      (char *)componentHandle);
++  // iOS26_FABRIC_FIX: Components registered via useFabricInterop fallback in
++  // ComponentDescriptorRegistry::at() are only in C++ registries, not _componentViewClasses.
++  // Use a pass-through UIView so the component renders as empty without blocking touches.
++  if (iterator == _componentViewClasses.end()) {
++    fprintf(stderr, "[iOS26_DIAG] createComponentView: handle %lld NOT in _componentViewClasses, using touch-transparent fallback\n",
++            (long long)componentHandle);
++    return RCTComponentViewDescriptor{
++        .view = [RCTTouchTransparentView new],
++        .observesMountingTransactionWillMount = false,
++        .observesMountingTransactionDidMount = false,
++        .shouldBeRecycled = false,
++    };
++  }
+   auto componentViewClassDescriptor = iterator->second;
+   Class viewClass = componentViewClassDescriptor.viewClass;
+ 
+diff --git a/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorProviderRegistry.cpp b/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorProviderRegistry.cpp
+index 0a949f0..777750a 100644
+--- a/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorProviderRegistry.cpp
++++ b/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorProviderRegistry.cpp
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include "ComponentDescriptorProviderRegistry.h"
++#include <cstdio>
+ 
+ namespace facebook::react {
+ 
+@@ -13,6 +14,17 @@ void ComponentDescriptorProviderRegistry::add(
+     const ComponentDescriptorProvider& provider) const {
+   std::unique_lock lock(mutex_);
+ 
++  fprintf(stderr, "[iOS26_DIAG] CDProviderRegistry::add name=%p('%s') constructor=%p\n",
++          (const void *)provider.name,
++          provider.name ? provider.name : "(NULL)",
++          (const void *)provider.constructor);
++
++  // iOS26_FABRIC_FIX: Don't store or propagate providers with null fields.
++  if (!provider.constructor || !provider.name) {
++    fprintf(stderr, "[iOS26_DIAG]   CDProviderRegistry::add SKIPPING null field\n");
++    return;
++  }
++
+   /*
+   // TODO: T57583139
+   The assert is temporarily disabled to reduce the volume of the signal.
+diff --git a/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorRegistry.cpp b/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorRegistry.cpp
+index 469fc5c..a49f453 100644
+--- a/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorRegistry.cpp
++++ b/node_modules/react-native/ReactCommon/react/renderer/componentregistry/ComponentDescriptorRegistry.cpp
+@@ -16,6 +16,7 @@
+ #include <react/renderer/components/legacyviewmanagerinterop/UnstableLegacyViewManagerAutomaticShadowNode.h>
+ #include <react/renderer/core/PropsParserContext.h>
+ #include <react/renderer/core/ShadowNodeFragment.h>
++#include <cstdio>
+ #include <utility>
+ 
+ namespace facebook::react {
+@@ -32,10 +33,39 @@ void ComponentDescriptorRegistry::add(
+     ComponentDescriptorProvider componentDescriptorProvider) const {
+   std::unique_lock lock(mutex_);
+ 
+-  auto componentDescriptor = componentDescriptorProvider.constructor(
+-      {parameters_.eventDispatcher,
+-       parameters_.contextContainer,
+-       componentDescriptorProvider.flavor});
++  fprintf(stderr, "[iOS26_DIAG] CDRegistry::add name=%p('%s') constructor=%p\n",
++          (const void *)componentDescriptorProvider.name,
++          componentDescriptorProvider.name ? componentDescriptorProvider.name : "(NULL)",
++          (const void *)componentDescriptorProvider.constructor);
++
++  // iOS26_FABRIC_FIX: Guard against null/invalid provider fields.
++  if (!componentDescriptorProvider.constructor ||
++      !componentDescriptorProvider.name) {
++    fprintf(stderr, "[iOS26_DIAG]   CDRegistry::add SKIPPING null field\n");
++    return;
++  }
++
++  std::unique_ptr<const ComponentDescriptor> componentDescriptor;
++  try {
++    componentDescriptor = componentDescriptorProvider.constructor(
++        {parameters_.eventDispatcher,
++         parameters_.contextContainer,
++         componentDescriptorProvider.flavor});
++  } catch (...) {
++    fprintf(stderr, "[iOS26_DIAG]   CDRegistry::add constructor threw\n");
++    return;
++  }
++  if (!componentDescriptor) {
++    fprintf(stderr, "[iOS26_DIAG]   CDRegistry::add constructor returned null\n");
++    return;
++  }
++
++  // iOS26_FABRIC_FIX: Verify name is still valid after constructor
++  auto descriptorName = componentDescriptor->getComponentName();
++  fprintf(stderr, "[iOS26_DIAG]   CDRegistry::add descriptor.getName=%p('%s')\n",
++          (const void *)descriptorName,
++          descriptorName ? descriptorName : "(NULL)");
++
+   react_native_assert(
+       componentDescriptor->getComponentHandle() ==
+       componentDescriptorProvider.handle);
+@@ -47,16 +77,29 @@ void ComponentDescriptorRegistry::add(
+       std::move(componentDescriptor));
+   _registryByHandle[componentDescriptorProvider.handle] =
+       sharedComponentDescriptor;
+-  _registryByName[componentDescriptorProvider.name] = sharedComponentDescriptor;
++  // iOS26_FABRIC_FIX: Use safe string construction
++  if (componentDescriptorProvider.name) {
++    _registryByName[std::string(componentDescriptorProvider.name)] = sharedComponentDescriptor;
++  }
++  fprintf(stderr, "[iOS26_DIAG]   CDRegistry::add SUCCESS\n");
+ }
+ 
+ void ComponentDescriptorRegistry::registerComponentDescriptor(
+     const SharedComponentDescriptor& componentDescriptor) const {
++  if (!componentDescriptor) {
++    return;
++  }
+   ComponentHandle componentHandle = componentDescriptor->getComponentHandle();
+   _registryByHandle[componentHandle] = componentDescriptor;
+ 
+   ComponentName componentName = componentDescriptor->getComponentName();
+-  _registryByName[componentName] = componentDescriptor;
++  fprintf(stderr, "[iOS26_DIAG] registerComponentDescriptor: name=%p('%s')\n",
++          (const void *)componentName,
++          componentName ? componentName : "(NULL)");
++  // iOS26_FABRIC_FIX: Guard against null name from partially initialized descriptors
++  if (componentName) {
++    _registryByName[std::string(componentName)] = componentDescriptor;
++  }
+ }
+ 
+ const ComponentDescriptor& ComponentDescriptorRegistry::at(
+@@ -64,9 +107,12 @@ const ComponentDescriptor& ComponentDescriptorRegistry::at(
+   std::shared_lock lock(mutex_);
+ 
+   auto unifiedComponentName = componentNameByReactViewName(componentName);
++  fprintf(stderr, "[iOS26_DIAG] CDRegistry::at('%s') -> unified='%s'\n",
++          componentName.c_str(), unifiedComponentName.c_str());
+ 
+   auto it = _registryByName.find(unifiedComponentName);
+   if (it == _registryByName.end()) {
++    fprintf(stderr, "[iOS26_DIAG]   not found, requesting registration\n");
+     lock.unlock();
+     providerRegistry_.request(unifiedComponentName.c_str());
+     lock.lock();
 diff --git a/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp b/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp
 index 29d2910..2e364a2 100644
 --- a/node_modules/react-native/ReactCommon/react/runtime/ReactInstance.cpp
@@ -39,6 +511,21 @@ index 29d2910..2e364a2 100644
      }
  
      if (std::holds_alternative<jsi::Function>(it->second)) {
+diff --git a/node_modules/react-native/ReactCommon/react/utils/React-utils.podspec b/node_modules/react-native/ReactCommon/react/utils/React-utils.podspec
+index d3061f6..b83490c 100644
+--- a/node_modules/react-native/ReactCommon/react/utils/React-utils.podspec
++++ b/node_modules/react-native/ReactCommon/react/utils/React-utils.podspec
+@@ -47,7 +47,9 @@ Pod::Spec.new do |s|
+ 
+   s.dependency "React-jsi", version
+ 
+-  depend_on_js_engine(s)
++  # iOS26_JSC_FIX: Removed depend_on_js_engine(s) to break circular dependency:
++  # React-jsc → React-cxxreact → React-runtimeexecutor → React-utils → React-jsc
++  # React-utils only uses React-jsi (engine-agnostic), not JSC/Hermes directly.
+   add_rn_third_party_dependencies(s)
+   add_rncore_dependency(s)
+ 
 diff --git a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
 index fdd7e95..8d77992 100644
 --- a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
@@ -68,3 +555,32 @@ index 4ce5107..1d2dd2b 100644
    });
  
    return thirdPartyComponents;
+diff --git a/node_modules/react-native/scripts/react_native_pods.rb b/node_modules/react-native/scripts/react_native_pods.rb
+index e9f5a89..cf04bd2 100644
+--- a/node_modules/react-native/scripts/react_native_pods.rb
++++ b/node_modules/react-native/scripts/react_native_pods.rb
+@@ -71,9 +71,13 @@ def use_react_native! (
+   config_file_dir: '',
+   privacy_file_aggregation_enabled: true
+ )
+-  error_if_try_to_use_jsc_from_core()
++  # iOS26_JSC_FIX: Allow third-party JSC; only check core JSC error if not using third-party
++  if ENV['USE_THIRD_PARTY_JSC'] != '1'
++    error_if_try_to_use_jsc_from_core()
++  end
+ 
+-  hermes_enabled= true
++  # iOS26_JSC_FIX: Respect hermes_enabled parameter instead of forcing true
++  hermes_enabled = !use_third_party_jsc()
+   # Set the app_path as env variable so the podspecs can access it.
+   ENV['APP_PATH'] = app_path
+   ENV['REACT_NATIVE_PATH'] = path
+@@ -152,6 +156,8 @@ def use_react_native! (
+   if hermes_enabled
+     setup_hermes!(:react_native_path => prefix)
+   end
++  # iOS26_JSC_FIX: When USE_THIRD_PARTY_JSC=1, React-jsc pod is auto-linked by Expo
++  # from @react-native-community/javascriptcore — no explicit pod declaration needed.
+ 
+   pod 'React-jsiexecutor', :path => "#{prefix}/ReactCommon/jsiexecutor"
+   pod 'React-jsinspector', :path => "#{prefix}/ReactCommon/jsinspector-modern"

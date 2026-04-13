@@ -1,0 +1,44 @@
+diff --git a/node_modules/expo-modules-core/ios/FileSystemUtilities/FileSystemLegacyUtilities.swift b/node_modules/expo-modules-core/ios/FileSystemUtilities/FileSystemLegacyUtilities.swift
+index 340b03b..61748d8 100644
+--- a/node_modules/expo-modules-core/ios/FileSystemUtilities/FileSystemLegacyUtilities.swift
++++ b/node_modules/expo-modules-core/ios/FileSystemUtilities/FileSystemLegacyUtilities.swift
+@@ -31,15 +31,14 @@ public class FileSystemLegacyUtilities: NSObject, EXInternalModule, EXFileSystem
+   }
+ 
+   required public override init() {
+-    let documentPaths = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)
+-    self.documentDirectory = documentPaths[0]
++    self.documentDirectory = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first
++      ?? NSHomeDirectory().appending("/Documents")
+ 
+-    let cachesPaths = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true)
+-    self.cachesDirectory = cachesPaths[0]
++    self.cachesDirectory = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first
++      ?? NSHomeDirectory().appending("/Library/Caches")
+ 
+-    let applicationSupportDirectoryPaths =
+-    NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true)
+-    self.applicationSupportDirectory = applicationSupportDirectoryPaths[0]
++    self.applicationSupportDirectory = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first
++      ?? NSHomeDirectory().appending("/Library/Application Support")
+ 
+     super.init()
+     ensureDirExists(withPath: self.cachesDirectory)
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
+index 4036062..31e84a5 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.mm
+@@ -1,7 +1,13 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
+ #import <jsi/jsi.h>
++#if __has_include(<hermes/hermes.h>)
+ #import <hermes/hermes.h>
++#elif __has_include(<ReactJSC/JSCRuntime.h>)
++#import <ReactJSC/JSCRuntime.h>
++#elif __has_include("JSCRuntime.h")
++#import "JSCRuntime.h"
++#endif
+ 
+ #import <ExpoModulesCore/EXJavaScriptRuntime.h>
+ #import <ExpoModulesCore/ExpoModulesHostObject.h>
