@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Text, Platform } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { AvatarCircle } from './AvatarCircle';
 import { colors } from '@/theme';
 
@@ -15,7 +15,6 @@ interface ParticipantGridProps {
 }
 
 export const ParticipantGrid = ({ participants }: ParticipantGridProps) => {
-  if (Platform.OS === 'ios') return null;
 
   return (
     <View style={styles.gridContainer}>

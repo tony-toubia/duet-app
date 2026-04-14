@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Linking } from 'react-native';
 import type { ContentItem } from '@/services/ContentService';
 import { colors } from '@/theme';
 
@@ -38,11 +38,9 @@ export const ContentCard = ({ item, onListenTogether }: ContentCardProps) => {
           <TouchableOpacity style={styles.openLocalBtn} onPress={handleOpenLocal}>
             <Text style={styles.openLocalText}>Open</Text>
           </TouchableOpacity>
-          {Platform.OS !== 'ios' && (
-            <TouchableOpacity style={styles.listenTogetherBtn} onPress={() => onListenTogether(item)}>
+          <TouchableOpacity style={styles.listenTogetherBtn} onPress={() => onListenTogether(item)}>
               <Text style={styles.listenTogetherText}>Listen Together</Text>
             </TouchableOpacity>
-          )}
         </View>
       </View>
     </View>

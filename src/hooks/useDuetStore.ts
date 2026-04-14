@@ -322,8 +322,6 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   },
 
   createPartyRoom: async () => {
-    // Only accessible visually from Android/Web
-    if (Platform.OS === 'ios') throw new Error("Party mode restricted on OS");
     
     const { initialize: initAudio } = get();
     

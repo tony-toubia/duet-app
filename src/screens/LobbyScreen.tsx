@@ -266,14 +266,12 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
           >
             <Text style={styles.friendsBtnText}>Friends</Text>
           </TouchableOpacity>
-          {Platform.OS !== 'ios' && (
-            <TouchableOpacity
-              style={[styles.friendsBtn, { marginLeft: 8 }]}
-              onPress={() => navigation.navigate('ContentHub')}
-            >
-              <Text style={styles.friendsBtnText}>Hub</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.friendsBtn, { marginLeft: 8 }]}
+            onPress={() => navigation.navigate('ContentHub')}
+          >
+            <Text style={styles.friendsBtnText}>Hub</Text>
+          </TouchableOpacity>
           <View style={{ flex: 1 }} />
           {isGuest ? (
             <TouchableOpacity
@@ -346,19 +344,17 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
               <Text style={styles.startRoomText}>Start a Room</Text>
             )}
           </TouchableOpacity>
-          {Platform.OS !== 'ios' && (
-            <TouchableOpacity
-              style={[styles.startRoomButton, { backgroundColor: '#4ade80' }]}
-              onPress={handleCreatePartyRoom}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <Text style={styles.startRoomText}>Start a Watch Party</Text>
-              )}
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.startRoomButton, { backgroundColor: '#4ade80' }]}
+            onPress={handleCreatePartyRoom}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={colors.text} />
+            ) : (
+              <Text style={styles.startRoomText}>Start a Watch Party</Text>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.joinRoomButton}
             onPress={() => setShowJoinInput(true)}
