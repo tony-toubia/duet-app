@@ -37,7 +37,11 @@
       },
       "ios": {
         "simulator": false,
-        "image": "macos-sequoia-15.6-xcode-26.0"
+        "image": "macos-sequoia-15.6-xcode-26.0",
+        "env": {
+          "USE_THIRD_PARTY_JSC": "1",
+          "USE_HERMES": "0"
+        }
       },
       "android": {
         "buildType": "app-bundle",
