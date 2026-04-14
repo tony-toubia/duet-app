@@ -15,7 +15,7 @@
         ".validate": "newData.hasChildren(['createdAt', 'createdBy'])",
 
         "createdAt": {
-          ".validate": "newData.isNumber() && newData.val() <= now"
+          ".validate": "newData.isNumber() && newData.val() <= now + 60000"
         },
 
         "createdBy": {

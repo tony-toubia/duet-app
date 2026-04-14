@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { database } from '@/lib/firebase';
+import { firebaseDb as database } from '@/services/firebase';
 import { ref, onValue, push, remove, set } from 'firebase/database';
 import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 import { Spinner } from '@/components/ui/Spinner';
