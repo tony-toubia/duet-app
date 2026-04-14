@@ -33,9 +33,7 @@
         "disabled": true
       },
       "env": {
-        "EX_UPDATES_NATIVE_DEBUG": "0",
-        "USE_THIRD_PARTY_JSC": "1",
-        "USE_HERMES": "0"
+        "EX_UPDATES_NATIVE_DEBUG": "0"
       },
       "ios": {
         "simulator": false,
