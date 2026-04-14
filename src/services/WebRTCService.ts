@@ -44,6 +44,7 @@ export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
   onReaction?: (emoji: string) => void;
+  onDeepLink?: (url: string) => void;
   onIceRestartOffer: (offer: RTCSessionDescription) => void;
   onError: (error: Error) => void;
 }
@@ -344,6 +345,14 @@ export class WebRTCService {
           sampleRate: parseInt(msg.substring(firstPipe, secondPipe), 10),
           channels: parseInt(msg.substring(secondPipe + 1, thirdPipe), 10),
         });
+        return;
+      }
+
+      if (msg.startsWith('C|')) {
+        const parts = msg.split('|');
+        if (parts.length >= 3) {
+           this.callbacks.onDeepLink?.(parts[2]);
+        }
         return;
       }
 

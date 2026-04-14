@@ -18,11 +18,13 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { invitationService } from '@/services/InvitationService';
 import { adService } from '@/services/AdService';
+import { ParticipantGrid } from '@/components/ParticipantGrid';
 import { AvatarCircle } from '@/components/AvatarCircle';
 import { MediaPlayer } from '@/components/MediaPlayer';
 import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
+import { MatchBanner } from '@/components/MatchBanner';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
 import { ReactionBar } from '@/components/ReactionBar';
 import { ReactionOverlay } from '@/components/ReactionOverlay';
@@ -63,6 +65,8 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     vadSensitivity,
     duckingEnabled,
     fromInvite,
+    roomType,
+    partyParticipants = [],
     leaveRoom,
     setMuted,
     setDeafened,
@@ -207,7 +211,9 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     </View>
   );
 
-  const avatars = (
+  const avatars = roomType === 'party' ? (
+    <ParticipantGrid participants={[{uid:'me', isSpeaking, isMuted, connectionState}, ...partyParticipants]} />
+  ) : (
     <View style={styles.avatarsRow}>
       <AvatarCircle label="You" initials="Y" isSpeaking={isSpeaking} isMuted={isMuted} />
       <AvatarCircle label="Partner" initials="P" isSpeaking={isPartnerSpeaking} isDeafened={isDeafened} />
@@ -294,6 +300,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       >
         <View style={styles.roomOverlay}>
           <StatusBar style="light" />
+          <MatchBanner />
           {topBar}
           <View style={styles.twoColContainer}>
             <View style={styles.twoColLeft}>
@@ -354,6 +361,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     >
       <View style={styles.roomOverlay}>
         <StatusBar style="light" />
+        <MatchBanner />
         <ScrollView
           contentContainerStyle={[styles.roomScroll, { paddingBottom: insets.bottom + 16 }]}
           showsVerticalScrollIndicator={false}

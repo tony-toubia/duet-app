@@ -7,6 +7,7 @@ export type RootStackParamList = {
   Room: undefined;
   Profile: undefined;
   Friends: undefined;
+  ContentHub: undefined;
 };
 
 export type OnboardingScreenProps = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
@@ -15,3 +16,4 @@ export type LobbyScreenProps = NativeStackScreenProps<RootStackParamList, 'Lobby
 export type RoomScreenProps = NativeStackScreenProps<RootStackParamList, 'Room'>;
 export type ProfileScreenProps = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 export type FriendsScreenProps = NativeStackScreenProps<RootStackParamList, 'Friends'>;
+export type ContentHubScreenProps = NativeStackScreenProps<RootStackParamList, 'ContentHub'>;

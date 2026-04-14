@@ -5,6 +5,7 @@ import { WebRTCService, ConnectionState } from '../services/webrtc';
 import { DuetAudio } from '../native/DuetAudio';
 import { useDuetStore } from '../services/store';
 import { signIn, createRoom, joinRoom } from '../services/firebase';
+import { callForegroundService } from '../services/CallForegroundService';
 
 export function useDuetConnection() {
   const webrtcRef = useRef<WebRTCService | null>(null);
@@ -60,6 +61,7 @@ export function useDuetConnection() {
       await createRoom(roomCode, oderId);
       setRoomId(roomCode);
       await webrtcRef.current.createRoom(roomCode, oderId);
+      await callForegroundService.start();
     } catch (err: any) {
       setError(err.message || 'Failed to create room');
     }
@@ -73,6 +75,7 @@ export function useDuetConnection() {
       await joinRoom(roomCode, oderId);
       setRoomId(roomCode);
       await webrtcRef.current.joinRoom(roomCode, oderId);
+      await callForegroundService.start();
     } catch (err: any) {
       setError(err.message || 'Failed to join room');
     }
@@ -86,6 +89,7 @@ export function useDuetConnection() {
     setRoomId(null);
     setRemoteStream(null);
     setLocalStream(null);
+    await callForegroundService.stop();
   }, [setRoomId, setRemoteStream, setLocalStream]);
 
   useEffect(() => {

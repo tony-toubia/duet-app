@@ -14,6 +14,13 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
+import notifee from '@notifee/react-native';
+
+notifee.registerForegroundService((notification) => {
+  return new Promise(() => {
+    console.log('[ForegroundService] running for background audio');
+  });
+});
 
 if (Platform.OS === 'android') {
   AppRegistry.registerHeadlessTask('DuetKeepAlive', () => async () => {

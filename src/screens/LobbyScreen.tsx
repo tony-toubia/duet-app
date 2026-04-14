@@ -22,6 +22,7 @@ import { adService } from '@/services/AdService';
 import { invitationService } from '@/services/InvitationService';
 import { LobbyNativeAd } from '@/components/LobbyNativeAd';
 import { ShareModal } from '@/components/ShareModal';
+import { MatchBanner } from '@/components/MatchBanner';
 import { colors } from '@/theme';
 import type { LobbyScreenProps } from '@/navigation/types';
 
@@ -37,6 +38,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     roomCode,
     initialize,
     createRoom,
+    createPartyRoom,
     joinRoom,
     startAudio,
   } = useDuetStore();
@@ -118,19 +120,38 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       const code = await createRoom();
-      // Show pre-roll ad before starting mic
       if (adService.isPreRollReady) {
         setShowingAd(true);
         await adService.showPreRoll();
         setShowingAd(false);
       }
-      // Start mic after ad dismisses so user isn't recorded during ad
       await startAudio();
       setAudioReady(true);
       setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
-      Alert.alert('Error', error?.message || 'Failed to create room. Please restart the app and try again.');
+      Alert.alert('Error', error?.message || 'Failed to create room.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreatePartyRoom = async () => {
+    setIsLoading(true);
+    try {
+      if (!createPartyRoom) throw new Error("Feature unavailable");
+      const code = await createPartyRoom();
+      if (adService.isPreRollReady) {
+        setShowingAd(true);
+        await adService.showPreRoll();
+        setShowingAd(false);
+      }
+      await startAudio();
+      setAudioReady(true);
+      setShareCode(code);
+    } catch (error: any) {
+      console.error('[Lobby] Create party failed:', error);
+      Alert.alert('Error', error?.message || 'Failed to create party.');
     } finally {
       setIsLoading(false);
     }
@@ -245,6 +266,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
           >
             <Text style={styles.friendsBtnText}>Friends</Text>
           </TouchableOpacity>
+          {Platform.OS !== 'ios' && (
+            <TouchableOpacity
+              style={[styles.friendsBtn, { marginLeft: 8 }]}
+              onPress={() => navigation.navigate('ContentHub')}
+            >
+              <Text style={styles.friendsBtnText}>Hub</Text>
+            </TouchableOpacity>
+          )}
           <View style={{ flex: 1 }} />
           {isGuest ? (
             <TouchableOpacity
@@ -271,6 +300,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             resizeMode="contain"
           />
         </View>
+        <MatchBanner />
         <View style={{ flex: 1 }} />
         <View style={styles.lobbyButtons}>
           {persistentRoom && (
@@ -316,6 +346,19 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
               <Text style={styles.startRoomText}>Start a Room</Text>
             )}
           </TouchableOpacity>
+          {Platform.OS !== 'ios' && (
+            <TouchableOpacity
+              style={[styles.startRoomButton, { backgroundColor: '#4ade80' }]}
+              onPress={handleCreatePartyRoom}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.startRoomText}>Start a Watch Party</Text>
+              )}
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.joinRoomButton}
             onPress={() => setShowJoinInput(true)}

@@ -8,6 +8,7 @@ import { LobbyScreen } from '@/screens/LobbyScreen';
 import { RoomScreen } from '@/screens/RoomScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { FriendsScreen } from '@/screens/FriendsScreen';
+import { ContentHubScreen } from '@/screens/ContentHubScreen';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
@@ -143,6 +144,7 @@ export const RootNavigator = () => {
               <Stack.Screen name="Room" component={RoomScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Friends" component={FriendsScreen} />
+              <Stack.Screen name="ContentHub" component={ContentHubScreen} />
             </>
           ) : showOnboarding ? (
             <>

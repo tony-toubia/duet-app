@@ -1,14 +1,17 @@
 import { create } from 'zustand';
-import { Platform, PermissionsAndroid } from 'react-native';
+import { Platform, PermissionsAndroid, Linking } from 'react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import { DuetAudio } from '@/native/DuetAudio';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
+import { PartyWebRTCService } from '@/services/PartyWebRTCService';
+import { PartySignalingService } from '@/services/PartySignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { friendsService } from '@/services/FriendsService';
 import { eventTrackingService } from '@/services/EventTrackingService';
+import { LocationService } from '@/services/LocationService';
 import { navigationRef } from '@/navigation/navigationRef';
 
 export interface PendingAlert {
@@ -24,6 +27,8 @@ interface DuetState {
   isHost: boolean;
   partnerId: string | null;
   roomDeleted: boolean;
+  roomType: 'duet' | 'party';
+  partyParticipants: { uid: string; isSpeaking: boolean; isMuted: boolean; connectionState: string }[];
 
   // Audio controls
   isMuted: boolean;
@@ -34,7 +39,8 @@ interface DuetState {
   // Reactions
   incomingReaction: { emoji: string; id: number } | null;
 
-  // Alerts (surfaced from PushNotificationService)
+  // Context & Settings
+  userCity: string | null;
   pendingAlert: PendingAlert | null;
 
   // Invite tracking (suppress share modal when room originated from friend invite)
@@ -48,10 +54,13 @@ interface DuetState {
   // Services (non-serialized)
   webrtc: WebRTCService | null;
   signaling: SignalingService | null;
+  partyWebrtc: PartyWebRTCService | null;
+  partySignaling: PartySignalingService | null;
 
   // Actions
   initialize: () => Promise<void>;
   createRoom: () => Promise<string>;
+  createPartyRoom?: () => Promise<string>;
   joinRoom: (code: string) => Promise<void>;
   startAudio: () => Promise<void>;
   leaveRoom: () => Promise<void>;
@@ -72,6 +81,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   isHost: false,
   partnerId: null,
   roomDeleted: false,
+  roomType: 'duet',
+  partyParticipants: [],
   
   isMuted: false,
   isDeafened: false,
@@ -80,6 +91,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   incomingReaction: null,
 
+  userCity: null,
   pendingAlert: null,
 
   fromInvite: false,
@@ -90,6 +102,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   
   webrtc: null,
   signaling: null,
+  partyWebrtc: null,
+  partySignaling: null,
   
   // =====================
   // INITIALIZATION
@@ -97,6 +111,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   
   initialize: async () => {
     try {
+      // Async start geolocation fetching to prevent app pipeline blockage
+      LocationService.fetchCity().then(city => set({ userCity: city }));
+
       // Initialize Crashlytics first for error tracking
       await crashlyticsService.initialize();
       crashlyticsService.log('[Store] Initializing...');
@@ -303,6 +320,86 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     return roomCode;
   },
+
+  createPartyRoom: async () => {
+    // Only accessible visually from Android/Web
+    if (Platform.OS === 'ios') throw new Error("Party mode restricted on OS");
+    
+    const { initialize: initAudio } = get();
+    
+    const partySignaling = new PartySignalingService({
+      onOffer: async (fromUid, offer) => {
+        const { partyWebrtc } = get();
+        if (partyWebrtc) {
+          const answer = await partyWebrtc.handleOffer(fromUid, offer);
+          await partySignaling.sendAnswer(fromUid, answer);
+        }
+      },
+      onAnswer: async (fromUid, answer) => {
+        await get().partyWebrtc?.handleAnswer(fromUid, answer);
+      },
+      onIceCandidate: async (fromUid, candidate) => {
+        await get().partyWebrtc?.addIceCandidate(fromUid, candidate);
+      },
+      onParticipantJoined: async (uid) => {
+        const { partyWebrtc } = get();
+        if (partyWebrtc) {
+          set((state) => ({ partyParticipants: [...state.partyParticipants, { uid, isSpeaking: false, isMuted: false, connectionState: 'connecting' }] }));
+          const offer = await partyWebrtc.createOffer(uid);
+          await partySignaling.sendOffer(uid, offer);
+        }
+      },
+      onParticipantLeft: (uid) => {
+        get().partyWebrtc?.removePeer(uid);
+        set((state) => ({ partyParticipants: state.partyParticipants.filter(p => p.uid !== uid) }));
+      },
+      onRoomDeleted: () => {
+        set({ roomDeleted: true, connectionState: 'disconnected' });
+      },
+      onError: (err) => console.error(err),
+    });
+
+    const partyWebrtc = new PartyWebRTCService({
+      onConnectionStateChange: (uid, state) => {
+        set((prev) => ({
+          partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, connectionState: state } : p)
+        }));
+      },
+      onAudioData: async (uid, packet) => {
+        await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
+        set((prev) => ({
+          partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, isSpeaking: true } : p)
+        }));
+        setTimeout(() => {
+          set((prev) => ({
+            partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, isSpeaking: false } : p)
+          }));
+        }, 500);
+      },
+      onIceRestartOffer: async (uid, offer) => {
+        await partySignaling.sendOffer(uid, offer);
+      },
+      onDeepLink: async (uid, url) => {
+        try {
+          if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+        } catch (e) {
+          console.warn("[PartyWebRTC] Unhandled universal link", url);
+        }
+      },
+      onError: (err) => console.error(err),
+    });
+
+    set({ partySignaling, partyWebrtc, isHost: true, roomType: 'party' });
+    await partySignaling.initialize();
+    
+    partyWebrtc.onLocalIceCandidate = (uid, candidate) => {
+      partySignaling.sendIceCandidate(uid, candidate);
+    };
+
+    const roomCode = await partySignaling.createRoom();
+    set({ roomCode });
+    return roomCode;
+  },
   
   joinRoom: async (code: string) => {
     // Create signaling service
@@ -375,6 +472,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         if (signaling) {
           console.log('[Store] Answerer sending ICE restart offer via signaling');
           await signaling.sendOffer(offer);
+        }
+      },
+      onDeepLink: async (url) => {
+        try {
+          if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+        } catch (e) {
+          console.warn("[WebRTC] Unhandled universal link", url);
         }
       },
       onError: (error) => {
@@ -479,9 +583,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     crashlyticsService.logAudioEngineStop();
     DuetAudio.removeAllListeners();
 
-    // Close connections
     webrtc?.close();
     await signaling?.leave();
+    partyWebrtc?.close();
+    await partySignaling?.leave();
 
     crashlyticsService.logRoomLeft();
 
@@ -499,6 +604,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       isPartnerSpeaking: false,
       incomingReaction: null,
       fromInvite: false,
+      userCity: get().userCity, // Preserve city across re-renders
+      roomType: 'duet',
+      partyParticipants: [],
+      partyWebrtc: null,
+      partySignaling: null,
     });
   },
   
