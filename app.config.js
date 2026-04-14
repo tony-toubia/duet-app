@@ -18,7 +18,7 @@ module.exports = {
     userInterfaceStyle: "automatic",
     splash: {
       image: "./assets/splash.png",
-      resizeMode: "contain",
+      resizeMode: "cover",
       backgroundColor: "#1a1a2e"
     },
     assetBundlePatterns: ["**/*"],
@@ -58,7 +58,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 69,
+      versionCode: 70,
       ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {

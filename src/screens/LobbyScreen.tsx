@@ -60,8 +60,10 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     return unsub;
   }, []);
 
+  const currentUid = auth().currentUser?.uid;
+
   const onlineFriends = acceptedFriends().filter(
-    (f) => statuses[f.uid]?.state === 'online'
+    (f) => f.uid !== currentUid && statuses[f.uid]?.state === 'online'
   );
 
   const [persistentRoom, setPersistentRoom] = useState<{
@@ -95,7 +97,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
       .once('value')
       .then((snap) => {
         const data = snap.val();
-        if (data && data.partnerUid && data.partnerName) {
+        if (data && data.partnerUid && data.partnerName && data.partnerUid !== user.uid) {
           setPersistentRoom(data);
         }
       })
@@ -524,7 +526,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   reconnectButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 28,
     alignItems: 'center',
