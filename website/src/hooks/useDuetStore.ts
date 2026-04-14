@@ -3,6 +3,8 @@ import { ref, get as firebaseGet } from 'firebase/database';
 import { firebaseDb } from '@/services/firebase';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
+import { PartySignalingService } from '@/services/PartySignalingService';
+import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
 import { friendsService } from '@/services/FriendsService';
 import { useAuthStore } from './useAuthStore';
@@ -25,10 +27,13 @@ interface DuetState {
 
   webrtc: WebRTCService | null;
   signaling: SignalingService | null;
+  partySignaling: PartySignalingService | null;
+  partyWebrtc: PartyWebRTCService | null;
   audioEngine: WebAudioEngine | null;
 
   initialize: () => Promise<void>;
   createRoom: () => Promise<string>;
+  createPartyRoom: () => Promise<string>;
   joinRoom: (code: string) => Promise<void>;
   leaveRoom: () => Promise<void>;
   setMuted: (muted: boolean) => void;
@@ -83,6 +88,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   webrtc: null,
   signaling: null,
+  partySignaling: null,
+  partyWebrtc: null,
   audioEngine: null,
 
   initialize: async () => {
@@ -182,6 +189,91 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     } catch (e) {
       console.warn('[Store] Audio engine failed to start:', e);
       // Room still usable — user can see connection but won't have audio
+    }
+
+    return roomCode;
+  },
+
+  createPartyRoom: async () => {
+    const partySignaling = new PartySignalingService({
+      onOffer: async (fromUid, offer) => {
+        const { partyWebrtc, partySignaling: ps } = get();
+        if (partyWebrtc && ps) {
+          const answer = await partyWebrtc.handleOffer(fromUid, offer);
+          await ps.sendAnswer(fromUid, answer);
+        }
+      },
+      onAnswer: async (fromUid, answer) => {
+        await get().partyWebrtc?.handleAnswer(fromUid, answer);
+      },
+      onIceCandidate: async (fromUid, candidate) => {
+        await get().partyWebrtc?.addIceCandidate(fromUid, candidate);
+      },
+      onParticipantJoined: async (uid) => {
+        console.log('[PartyStore] Participant joined:', uid);
+        const { partyWebrtc, partySignaling: ps } = get();
+        if (partyWebrtc && ps) {
+          try {
+            const offer = await partyWebrtc.createOffer(uid);
+            await ps.sendOffer(uid, offer);
+          } catch (e) {
+            console.error('[PartyStore] Failed to create offer for', uid, e);
+          }
+        }
+      },
+      onParticipantLeft: (uid) => {
+        console.log('[PartyStore] Participant left:', uid);
+        get().partyWebrtc?.removePeer(uid);
+      },
+      onRoomDeleted: () => {
+        console.log('[PartyStore] Room was deleted');
+        set({ roomDeleted: true, connectionState: 'disconnected' });
+      },
+      onError: (error) => {
+        console.error('[PartySignaling] Error:', error);
+      },
+    });
+
+    const partyWebrtc = new PartyWebRTCService({
+      onConnectionStateChange: (uid, state) => {
+        console.log(`[PartyWebRTC] ${uid} -> ${state}`);
+        // Update overall connection state based on any connected peer
+        if (state === 'connected') {
+          set({ connectionState: 'connected' });
+        }
+      },
+      onAudioData: (_uid, packet) => {
+        const { audioEngine } = get();
+        audioEngine?.playAudio(packet.audio, packet.sampleRate, packet.channels);
+        set({ isPartnerSpeaking: true });
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+      },
+      onReaction: (_uid, emoji) => {
+        set({ incomingReaction: { emoji, id: Date.now() } });
+      },
+      onError: (error) => {
+        console.error('[PartyWebRTC] Error:', error);
+      },
+    });
+
+    set({ partySignaling, partyWebrtc, isHost: true });
+
+    const uid = useAuthStore.getState().user?.uid;
+    await partySignaling.initialize(uid);
+
+    partyWebrtc.onLocalIceCandidate = (toUid, candidate) => {
+      partySignaling.sendIceCandidate(toUid, candidate);
+    };
+
+    const roomCode = await partySignaling.createRoom();
+    set({ roomCode });
+
+    // Start audio engine
+    try {
+      const engine = await createAndStartAudioEngine(set, get);
+      set({ audioEngine: engine });
+    } catch (e) {
+      console.warn('[PartyStore] Audio engine failed to start:', e);
     }
 
     return roomCode;
@@ -300,9 +392,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     webrtc?.close();
     await signaling?.leave();
 
+    const { partyWebrtc, partySignaling } = get();
+    partyWebrtc?.close();
+    await partySignaling?.leave();
+
     set({
       webrtc: null,
       signaling: null,
+      partySignaling: null,
+      partyWebrtc: null,
       audioEngine: null,
       roomCode: null,
       isHost: false,

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { ShareModal } from './ShareModal';
+import { MatchBanner } from './MatchBanner';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function LobbyScreen() {
@@ -18,7 +19,7 @@ export function LobbyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const { roomCode, initialize, createRoom, joinRoom } = useDuetStore();
+  const { roomCode, initialize, createRoom, joinRoom, createPartyRoom } = useDuetStore();
   const userProfile = useAuthStore((s) => s.userProfile);
   const isGuest = useAuthStore((s) => s.isGuest);
   const promptUpgrade = useAuthStore((s) => s.promptUpgrade);
@@ -69,6 +70,19 @@ export function LobbyScreen() {
     }
   };
 
+  const handleCreatePartyRoom = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const code = await createPartyRoom();
+      setShareCode(code);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to create party room.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleJoinWithCode = async (code: string) => {
     if (code.length !== 6) {
       setError('Please enter a 6-character room code.');
@@ -108,6 +122,12 @@ export function LobbyScreen() {
             >
               Friends
             </button>
+            <button
+              onClick={() => router.push('/app/hub')}
+              className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
+            >
+              Hub
+            </button>
             <div className="flex-1" />
             {isGuest ? (
               <button
@@ -136,6 +156,8 @@ export function LobbyScreen() {
           />
         </div>
 
+        <MatchBanner />
+
         <div className="flex-1" />
 
         {/* Buttons */}
@@ -158,6 +180,14 @@ export function LobbyScreen() {
               className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
             >
               {isLoading ? 'Creating...' : 'Start a Room'}
+            </button>
+
+            <button
+              onClick={handleCreatePartyRoom}
+              disabled={isLoading}
+              className="bg-[#4ade80] text-white py-4 rounded-full text-lg font-semibold hover:bg-[#22c55e] transition-colors disabled:opacity-50"
+            >
+              {isLoading ? 'Creating...' : 'Start a Watch Party'}
             </button>
 
             <button
