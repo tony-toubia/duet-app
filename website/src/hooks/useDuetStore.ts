@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { ref, get as firebaseGet } from 'firebase/database';
-import { firebaseDb } from '@/services/firebase';
+import { ref, get as firebaseGet, set as firebaseSet, serverTimestamp } from 'firebase/database';
+import { firebaseAuth, firebaseDb } from '@/services/firebase';
 import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { PartySignalingService } from '@/services/PartySignalingService';
@@ -381,6 +381,30 @@ export const useDuetStore = create<DuetState>((set, get) => ({
             profile.avatarUrl || null,
             roomCode
           );
+
+          // Save as persistent room for quick reconnect (only if changed)
+          const currentUser = firebaseAuth.currentUser;
+          if (currentUser) {
+            try {
+              const persistentSnap = await firebaseGet(
+                ref(firebaseDb, `/users/${currentUser.uid}/persistentRoom`)
+              );
+              const existing = persistentSnap.val();
+              if (!existing || existing.partnerUid !== partnerId) {
+                await firebaseSet(
+                  ref(firebaseDb, `/users/${currentUser.uid}/persistentRoom`),
+                  {
+                    partnerUid: partnerId,
+                    partnerName: profile.displayName || 'Duet User',
+                    partnerAvatar: profile.avatarUrl || null,
+                  }
+                );
+                console.log('[Store] Saved persistent room partner:', partnerId);
+              }
+            } catch (e) {
+              console.warn('[Store] Failed to save persistent room:', e);
+            }
+          }
         }
       } catch (e) {
         console.warn('[Store] Failed to record recent connection:', e);

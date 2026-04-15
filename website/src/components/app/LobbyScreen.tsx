@@ -2,8 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { ref, get as firebaseGet } from 'firebase/database';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useFriendsStore } from '@/hooks/useFriendsStore';
+import { invitationService } from '@/services/InvitationService';
+import { firebaseAuth, firebaseDb } from '@/services/firebase';
 import { ShareModal } from './ShareModal';
 import { MatchBanner } from './MatchBanner';
 import { Spinner } from '@/components/ui/Spinner';
@@ -23,6 +27,44 @@ export function LobbyScreen() {
   const userProfile = useAuthStore((s) => s.userProfile);
   const isGuest = useAuthStore((s) => s.isGuest);
   const promptUpgrade = useAuthStore((s) => s.promptUpgrade);
+
+  // Online friends for quick connect
+  const acceptedFriends = useFriendsStore((s) => s.acceptedFriends);
+  const statuses = useFriendsStore((s) => s.statuses);
+
+  // Subscribe to friends on mount
+  useEffect(() => {
+    const unsub = useFriendsStore.getState().subscribe();
+    return unsub;
+  }, []);
+
+  const currentUid = firebaseAuth.currentUser?.uid;
+
+  const onlineFriends = acceptedFriends().filter(
+    (f) => f.uid !== currentUid && statuses[f.uid]?.state === 'online'
+  );
+
+  // Persistent room for quick reconnect
+  const [persistentRoom, setPersistentRoom] = useState<{
+    partnerUid: string;
+    partnerName: string;
+    partnerAvatar?: string | null;
+  } | null>(null);
+
+  // Fetch persistent room entry when initialized
+  useEffect(() => {
+    if (!isInitialized) return;
+    const user = firebaseAuth.currentUser;
+    if (!user) return;
+    firebaseGet(ref(firebaseDb, `/users/${user.uid}/persistentRoom`))
+      .then((snap) => {
+        const data = snap.val();
+        if (data && data.partnerUid && data.partnerName && data.partnerUid !== user.uid) {
+          setPersistentRoom(data);
+        }
+      })
+      .catch((e) => console.warn('[Lobby] Failed to load persistent room:', e));
+  }, [isInitialized]);
 
   // Show notice from query params (e.g., after room deletion)
   useEffect(() => {
@@ -95,6 +137,35 @@ export function LobbyScreen() {
       setShowJoinInput(false);
     } catch (err: any) {
       setError(err?.message || 'Failed to join room.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickConnect = async (friendUid: string, friendName: string) => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const code = await createRoom();
+      await invitationService.sendInvitation(friendUid, code);
+      setShareCode(code);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to connect. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    if (!persistentRoom) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      const code = await createRoom();
+      await invitationService.sendInvitation(persistentRoom.partnerUid, code);
+      setShareCode(code);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reconnect. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -174,6 +245,36 @@ export function LobbyScreen() {
               </div>
             )}
 
+            {/* Persistent room reconnect */}
+            {persistentRoom && (
+              <button
+                onClick={handleReconnect}
+                disabled={isLoading}
+                className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
+              >
+                {isLoading ? 'Connecting...' : `Reconnect with ${persistentRoom.partnerName}`}
+              </button>
+            )}
+
+            {/* Online friends quick connect */}
+            {onlineFriends.length > 0 && !showJoinInput && (
+              <div className="flex flex-row gap-2 justify-center flex-wrap">
+                {onlineFriends.slice(0, 3).map((friend) => (
+                  <button
+                    key={friend.uid}
+                    onClick={() => handleQuickConnect(friend.uid, friend.displayName)}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-full py-2 px-3.5 hover:bg-white/25 transition-colors disabled:opacity-50"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#4ade80]" />
+                    <span className="text-white text-sm font-medium max-w-[80px] truncate">
+                      {friend.displayName.split(' ')[0]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <button
               onClick={handleCreateRoom}
               disabled={isLoading}
@@ -232,3 +333,4 @@ export function LobbyScreen() {
       </div>
   );
 }
+
