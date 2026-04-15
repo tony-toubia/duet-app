@@ -1,12 +1,15 @@
 /**
  * TheSportsDB Syndication Source
  *
- * Fetches live and upcoming sports events from TheSportsDB API.
- * Free tier: thesportsdb.com/api/v1/json/{api_key}/...
+ * Fetches upcoming sports events from TheSportsDB API.
+ * Free API key: '123' (no signup required)
+ * Docs: https://www.thesportsdb.com/api.php
  *
- * Supported endpoints:
- * - livescore.php — currently live events
+ * Free v1 endpoints used:
  * - eventsnextleague.php?id={leagueId} — next 15 events for a league
+ * - eventsseason.php?id={leagueId}&s={season} — events by season
+ *
+ * Note: livescore.php is premium-only (v2). We skip it on the free tier.
  */
 
 import { type RawSyndicatedItem } from '../normalizer';
@@ -48,8 +51,11 @@ interface SportsDBEvent {
   intAwayScore?: string;
 }
 
+/** Free API key — no signup required */
+const FREE_API_KEY = '123';
+
 interface SportsDBConfig {
-  apiKey: string;
+  apiKey?: string;
   leagues?: string[];
 }
 
@@ -65,8 +71,15 @@ async function fetchJSON(url: string): Promise<any> {
 
 /**
  * Fetch live events across all sports.
+ * Note: livescore.php requires a premium (v2) API key.
+ * On the free tier this will return empty — that's expected.
  */
 async function fetchLiveEvents(apiKey: string): Promise<SportsDBEvent[]> {
+  // livescore is v2/premium only — skip on free key
+  if (apiKey === FREE_API_KEY) {
+    console.log('[SportsDB] Skipping livescore (premium-only on free key)');
+    return [];
+  }
   try {
     const data = await fetchJSON(
       `https://www.thesportsdb.com/api/v2/json/${apiKey}/livescore.php?s=Soccer`
@@ -154,7 +167,7 @@ function eventToItem(event: SportsDBEvent, isLive: boolean): RawSyndicatedItem {
 export async function fetchSportsContent(
   config: SportsDBConfig
 ): Promise<RawSyndicatedItem[]> {
-  const { apiKey, leagues = DEFAULT_LEAGUES } = config;
+  const { apiKey = FREE_API_KEY, leagues = DEFAULT_LEAGUES } = config;
   const items: RawSyndicatedItem[] = [];
 
   // 1. Fetch live events

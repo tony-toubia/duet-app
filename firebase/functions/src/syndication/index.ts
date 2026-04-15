@@ -5,6 +5,11 @@
  * normalizes it, and writes to Firebase RTDB.
  *
  * Runs every 6 hours. Can also be triggered manually via HTTPS callable.
+ *
+ * Secret requirements:
+ * - SportsDB: NONE (free API key '123' used by default)
+ * - Podcast Index: PODCAST_INDEX_API_KEY, PODCAST_INDEX_API_SECRET
+ * - Spotify: SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET (optional — skipped if not set)
  */
 
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -25,8 +30,8 @@ import { fetchPodcastContent } from './sources/podcastindex';
 import { fetchSpotifyContent } from './sources/spotify';
 
 // ─── Secrets ─────────────────────────────────────────────────────────
+// SportsDB uses free key '123' — no secret needed.
 
-const sportsdbApiKey = defineSecret('SPORTSDB_API_KEY');
 const podcastIndexApiKey = defineSecret('PODCAST_INDEX_API_KEY');
 const podcastIndexApiSecret = defineSecret('PODCAST_INDEX_API_SECRET');
 const spotifyClientId = defineSecret('SPOTIFY_CLIENT_ID');
@@ -68,18 +73,31 @@ async function loadConfig(): Promise<SourceConfig> {
   return config;
 }
 
+/**
+ * Safely read a secret value, returning empty string if not configured.
+ */
+function safeSecret(secret: ReturnType<typeof defineSecret>): string {
+  try {
+    const val = secret.value();
+    // Reject empty or placeholder values
+    if (!val || val === 'placeholder') return '';
+    return val;
+  } catch {
+    return '';
+  }
+}
+
 // ─── Sync logic ─────────────────────────────────────────────────────
 
 async function runSync(): Promise<Record<string, any>> {
   const config = await loadConfig();
   const results: Record<string, any> = {};
 
-  // 1. TheSportsDB
+  // 1. TheSportsDB — no secret needed, uses free key '123'
   if (config.sportsdb?.enabled !== false) {
     try {
       console.log('[Syndication] Syncing TheSportsDB...');
       const raw = await fetchSportsContent({
-        apiKey: sportsdbApiKey.value(),
         leagues: config.sportsdb?.leagues,
       });
       const normalized = deduplicate(normalize(raw, 'sportsdb'));
@@ -96,45 +114,61 @@ async function runSync(): Promise<Record<string, any>> {
 
   // 2. Podcast Index
   if (config.podcastindex?.enabled !== false) {
-    try {
-      console.log('[Syndication] Syncing Podcast Index...');
-      const raw = await fetchPodcastContent({
-        apiKey: podcastIndexApiKey.value(),
-        apiSecret: podcastIndexApiSecret.value(),
-        categories: config.podcastindex?.categories,
-        maxItems: config.podcastindex?.maxItems,
-      });
-      const normalized = deduplicate(normalize(raw, 'podcastindex'));
-      const result = await mergeAndWrite(normalized, 'podcastindex');
-      await updateSyncStatus('podcastindex', result);
-      results.podcastindex = result;
-      console.log(`[Syndication] PodcastIndex: ${result.written} written, ${result.removed} removed`);
-    } catch (e: any) {
-      console.error('[Syndication] PodcastIndex failed:', e);
-      await updateSyncStatus('podcastindex', { written: 0, removed: 0, error: e.message });
-      results.podcastindex = { error: e.message };
+    const piKey = safeSecret(podcastIndexApiKey);
+    const piSecret = safeSecret(podcastIndexApiSecret);
+
+    if (!piKey || !piSecret) {
+      console.warn('[Syndication] Podcast Index secrets not configured, skipping');
+      results.podcastindex = { skipped: true, reason: 'secrets not configured' };
+    } else {
+      try {
+        console.log('[Syndication] Syncing Podcast Index...');
+        const raw = await fetchPodcastContent({
+          apiKey: piKey,
+          apiSecret: piSecret,
+          categories: config.podcastindex?.categories,
+          maxItems: config.podcastindex?.maxItems,
+        });
+        const normalized = deduplicate(normalize(raw, 'podcastindex'));
+        const result = await mergeAndWrite(normalized, 'podcastindex');
+        await updateSyncStatus('podcastindex', result);
+        results.podcastindex = result;
+        console.log(`[Syndication] PodcastIndex: ${result.written} written, ${result.removed} removed`);
+      } catch (e: any) {
+        console.error('[Syndication] PodcastIndex failed:', e);
+        await updateSyncStatus('podcastindex', { written: 0, removed: 0, error: e.message });
+        results.podcastindex = { error: e.message };
+      }
     }
   }
 
-  // 3. Spotify
+  // 3. Spotify — optional, skipped if secrets not configured
   if (config.spotify?.enabled !== false) {
-    try {
-      console.log('[Syndication] Syncing Spotify...');
-      const raw = await fetchSpotifyContent({
-        clientId: spotifyClientId.value(),
-        clientSecret: spotifyClientSecret.value(),
-        categories: config.spotify?.categories,
-        maxItems: config.spotify?.maxItems,
-      });
-      const normalized = deduplicate(normalize(raw, 'spotify'));
-      const result = await mergeAndWrite(normalized, 'spotify');
-      await updateSyncStatus('spotify', result);
-      results.spotify = result;
-      console.log(`[Syndication] Spotify: ${result.written} written, ${result.removed} removed`);
-    } catch (e: any) {
-      console.error('[Syndication] Spotify failed:', e);
-      await updateSyncStatus('spotify', { written: 0, removed: 0, error: e.message });
-      results.spotify = { error: e.message };
+    const spClientId = safeSecret(spotifyClientId);
+    const spClientSecret = safeSecret(spotifyClientSecret);
+
+    if (!spClientId || !spClientSecret) {
+      console.warn('[Syndication] Spotify secrets not configured, skipping');
+      results.spotify = { skipped: true, reason: 'secrets not configured' };
+    } else {
+      try {
+        console.log('[Syndication] Syncing Spotify...');
+        const raw = await fetchSpotifyContent({
+          clientId: spClientId,
+          clientSecret: spClientSecret,
+          categories: config.spotify?.categories,
+          maxItems: config.spotify?.maxItems,
+        });
+        const normalized = deduplicate(normalize(raw, 'spotify'));
+        const result = await mergeAndWrite(normalized, 'spotify');
+        await updateSyncStatus('spotify', result);
+        results.spotify = result;
+        console.log(`[Syndication] Spotify: ${result.written} written, ${result.removed} removed`);
+      } catch (e: any) {
+        console.error('[Syndication] Spotify failed:', e);
+        await updateSyncStatus('spotify', { written: 0, removed: 0, error: e.message });
+        results.spotify = { error: e.message };
+      }
     }
   }
 
@@ -154,13 +188,13 @@ async function runSync(): Promise<Record<string, any>> {
 
 /**
  * Runs every 6 hours to sync content from all enabled sources.
+ * Only secrets that are actually provisioned need to be listed here.
  */
 export const syncContentHub = onSchedule(
   {
     schedule: 'every 6 hours',
     region: 'us-central1',
     secrets: [
-      sportsdbApiKey,
       podcastIndexApiKey,
       podcastIndexApiSecret,
       spotifyClientId,
@@ -175,13 +209,11 @@ export const syncContentHub = onSchedule(
 
 /**
  * HTTPS endpoint to trigger a manual sync (from admin dashboard).
- * Requires admin UID check via query param for basic security.
  */
 export const triggerContentSync = onRequest(
   {
     region: 'us-central1',
     secrets: [
-      sportsdbApiKey,
       podcastIndexApiKey,
       podcastIndexApiSecret,
       spotifyClientId,
@@ -189,7 +221,7 @@ export const triggerContentSync = onRequest(
     ],
   },
   async (req, res) => {
-    // Basic admin check — in production you'd verify a Firebase Auth token
+    // Basic admin check
     const adminUids = (process.env.ADMIN_UIDS || '').split(',').filter(Boolean);
     const uid = req.query.uid as string | undefined;
 
