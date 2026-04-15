@@ -29,10 +29,14 @@
             ".validate": "newData.hasChildren(['role', 'joinedAt'])",
 
             "role": {
-              ".validate": "newData.isString() && (newData.val() == 'offerer' || newData.val() == 'answerer')"
+              ".validate": "newData.isString() && (newData.val() == 'offerer' || newData.val() == 'answerer' || newData.val() == 'host' || newData.val() == 'member')"
             },
 
             "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+
+            "heartbeat": {
               ".validate": "newData.isNumber()"
             }
           }

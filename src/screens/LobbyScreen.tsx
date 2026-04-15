@@ -223,17 +223,17 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         <View style={styles.lobbyTopBar}>
           <TouchableOpacity
             style={styles.friendsBtn}
+            onPress={() => navigation.navigate('ContentHub')}
+          >
+            <Text style={styles.friendsBtnText}>Discover</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity
+            style={[styles.friendsBtn, { marginRight: 8 }]}
             onPress={() => navigation.navigate('Friends')}
           >
             <Text style={styles.friendsBtnText}>Friends</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.friendsBtn, { marginLeft: 8 }]}
-            onPress={() => navigation.navigate('ContentHub')}
-          >
-            <Text style={styles.friendsBtnText}>Hub</Text>
-          </TouchableOpacity>
-          <View style={{ flex: 1 }} />
           {isGuest ? (
             <TouchableOpacity
               style={styles.signInBtn}
@@ -291,7 +291,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             )}
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.startRoomButton, { backgroundColor: '#4ade80' }]}
+            style={[styles.startRoomButton, { backgroundColor: colors.primaryLight }]}
             onPress={handleCreatePartyRoom}
             disabled={isLoading}
           >

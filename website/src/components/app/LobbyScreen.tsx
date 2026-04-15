@@ -152,18 +152,18 @@ export function LobbyScreen() {
         <div className="flex justify-center w-full">
           <div className="w-full max-w-2xl flex items-center justify-between px-5 pt-4">
             <button
-              onClick={() => router.push('/app/friends')}
-              className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
-            >
-              Friends
-            </button>
-            <button
               onClick={() => router.push('/app/hub')}
               className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors"
             >
-              Hub
+              Discover
             </button>
             <div className="flex-1" />
+            <button
+              onClick={() => router.push('/app/friends')}
+              className="bg-glass border border-glass-border rounded-2xl py-1.5 px-3.5 text-text-main text-sm font-medium hover:bg-white/20 transition-colors mr-2"
+            >
+              Friends
+            </button>
             {isGuest ? (
               <button
                 onClick={() => promptUpgrade()}
@@ -239,7 +239,7 @@ export function LobbyScreen() {
             <button
               onClick={handleCreatePartyRoom}
               disabled={isLoading}
-              className="bg-[#4ade80] text-white py-4 rounded-full text-lg font-semibold hover:bg-[#22c55e] transition-colors disabled:opacity-50"
+              className="bg-primary-light text-white py-4 rounded-full text-lg font-semibold hover:bg-primary transition-colors disabled:opacity-50"
             >
               {isLoading ? 'Creating...' : 'Start a Party'}
             </button>
