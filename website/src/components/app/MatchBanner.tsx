@@ -18,7 +18,7 @@ export function MatchBanner() {
   return (
     <div className="bg-[rgba(232,115,74,0.1)] border-b border-[rgba(232,115,74,0.3)] py-2 px-4 flex flex-col items-center">
       <span className="text-[10px] font-bold text-[#e8734a] tracking-[2px] mb-1.5">
-        WORLD CUP 2026
+        LIVE
       </span>
       <div className="flex gap-4 justify-center w-full">
         {matches.slice(0, 2).map((m) => (

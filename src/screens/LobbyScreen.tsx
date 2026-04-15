@@ -66,11 +66,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     (f) => f.uid !== currentUid && statuses[f.uid]?.state === 'online'
   );
 
-  const [persistentRoom, setPersistentRoom] = useState<{
-    partnerUid: string;
-    partnerName: string;
-    partnerAvatar?: string | null;
-  } | null>(null);
+
 
   // Navigate to room when connected (gated by ad + audio readiness)
   useEffect(() => {
@@ -87,22 +83,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     }
   }, [route.params?.autoJoinCode, isInitialized]);
 
-  // Fetch persistent room entry when initialized
-  useEffect(() => {
-    if (!isInitialized) return;
-    const user = auth().currentUser;
-    if (!user) return;
-    database()
-      .ref(`/users/${user.uid}/persistentRoom`)
-      .once('value')
-      .then((snap) => {
-        const data = snap.val();
-        if (data && data.partnerUid && data.partnerName && data.partnerUid !== user.uid) {
-          setPersistentRoom(data);
-        }
-      })
-      .catch((e) => console.warn('[Lobby] Failed to load persistent room:', e));
-  }, [isInitialized]);
+
 
   useEffect(() => {
     const init = async () => {
@@ -209,29 +190,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     }
   };
 
-  const handleReconnect = async () => {
-    if (!persistentRoom) return;
-    setIsLoading(true);
-    try {
-      const code = await createRoom();
-      // Send invitation to persistent partner
-      await invitationService.sendInvitation(persistentRoom.partnerUid, code);
-      // Show pre-roll ad before starting mic
-      if (adService.isPreRollReady) {
-        setShowingAd(true);
-        await adService.showPreRoll();
-        setShowingAd(false);
-      }
-      await startAudio();
-      setAudioReady(true);
-      setShareCode(code);
-    } catch (error: any) {
-      console.error('[Lobby] Reconnect failed:', error);
-      Alert.alert('Error', error?.message || 'Failed to reconnect. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
 
   if (!isInitialized) {
     return (
@@ -254,7 +213,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         <Image
           source={require('../../assets/duet-home-bg.png')}
           style={styles.lobbyImage}
-          resizeMode="contain"
+          resizeMode="cover"
         />
       </View>
       <KeyboardAvoidingView
@@ -303,21 +262,6 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         <MatchBanner />
         <View style={{ flex: 1 }} />
         <View style={styles.lobbyButtons}>
-          {persistentRoom && (
-            <TouchableOpacity
-              style={styles.reconnectButton}
-              onPress={handleReconnect}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <Text style={styles.reconnectText}>
-                  Reconnect with {persistentRoom.partnerName}
-                </Text>
-              )}
-            </TouchableOpacity>
-          )}
           {onlineFriends.length > 0 && !showJoinInput && (
             <View style={styles.onlineFriendsRow}>
               {onlineFriends.slice(0, 3).map((friend) => (
@@ -354,7 +298,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
             {isLoading ? (
               <ActivityIndicator color={colors.text} />
             ) : (
-              <Text style={styles.startRoomText}>Start a Watch Party</Text>
+              <Text style={styles.startRoomText}>Start a Party</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -524,17 +468,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingBottom: 40,
     gap: 12,
-  },
-  reconnectButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 28,
-    alignItems: 'center',
-  },
-  reconnectText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '600',
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   startRoomButton: {
     backgroundColor: '#e8734a',

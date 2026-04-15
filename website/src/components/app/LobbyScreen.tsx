@@ -2,12 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ref, get as firebaseGet } from 'firebase/database';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { invitationService } from '@/services/InvitationService';
-import { firebaseAuth, firebaseDb } from '@/services/firebase';
+import { firebaseAuth } from '@/services/firebase';
 import { ShareModal } from './ShareModal';
 import { MatchBanner } from './MatchBanner';
 import { Spinner } from '@/components/ui/Spinner';
@@ -44,27 +43,6 @@ export function LobbyScreen() {
     (f) => f.uid !== currentUid && statuses[f.uid]?.state === 'online'
   );
 
-  // Persistent room for quick reconnect
-  const [persistentRoom, setPersistentRoom] = useState<{
-    partnerUid: string;
-    partnerName: string;
-    partnerAvatar?: string | null;
-  } | null>(null);
-
-  // Fetch persistent room entry when initialized
-  useEffect(() => {
-    if (!isInitialized) return;
-    const user = firebaseAuth.currentUser;
-    if (!user) return;
-    firebaseGet(ref(firebaseDb, `/users/${user.uid}/persistentRoom`))
-      .then((snap) => {
-        const data = snap.val();
-        if (data && data.partnerUid && data.partnerName && data.partnerUid !== user.uid) {
-          setPersistentRoom(data);
-        }
-      })
-      .catch((e) => console.warn('[Lobby] Failed to load persistent room:', e));
-  }, [isInitialized]);
 
   // Show notice from query params (e.g., after room deletion)
   useEffect(() => {
@@ -156,20 +134,6 @@ export function LobbyScreen() {
     }
   };
 
-  const handleReconnect = async () => {
-    if (!persistentRoom) return;
-    setError(null);
-    setIsLoading(true);
-    try {
-      const code = await createRoom();
-      await invitationService.sendInvitation(persistentRoom.partnerUid, code);
-      setShareCode(code);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to reconnect. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   if (!isInitialized) {
     return (
@@ -245,17 +209,6 @@ export function LobbyScreen() {
               </div>
             )}
 
-            {/* Persistent room reconnect */}
-            {persistentRoom && (
-              <button
-                onClick={handleReconnect}
-                disabled={isLoading}
-                className="bg-primary text-white py-4 rounded-full text-lg font-semibold hover:bg-primary-light transition-colors disabled:opacity-50"
-              >
-                {isLoading ? 'Connecting...' : `Reconnect with ${persistentRoom.partnerName}`}
-              </button>
-            )}
-
             {/* Online friends quick connect */}
             {onlineFriends.length > 0 && !showJoinInput && (
               <div className="flex flex-row gap-2 justify-center flex-wrap">
@@ -288,7 +241,7 @@ export function LobbyScreen() {
               disabled={isLoading}
               className="bg-[#4ade80] text-white py-4 rounded-full text-lg font-semibold hover:bg-[#22c55e] transition-colors disabled:opacity-50"
             >
-              {isLoading ? 'Creating...' : 'Start a Watch Party'}
+              {isLoading ? 'Creating...' : 'Start a Party'}
             </button>
 
             <button

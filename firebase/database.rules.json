@@ -11,8 +11,8 @@
         // Only authenticated users can create or modify rooms
         ".write": "auth != null",
 
-        // Validate room structure
-        ".validate": "newData.hasChildren(['createdAt', 'createdBy'])",
+        // Validate room structure (createdAt + createdBy required; additional fields allowed for party rooms)
+        ".validate": "newData.hasChild('createdAt') && newData.hasChild('createdBy')",
 
         "createdAt": {
           ".validate": "newData.isNumber() && newData.val() <= now + 60000"

@@ -47,7 +47,7 @@ export const ContentHubScreen = () => {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
-      <Text style={styles.headerTitle}>World Cup Content</Text>
+      <Text style={styles.headerTitle}>Content Hub</Text>
       
       {loading ? (
         <View style={styles.centerBox}>

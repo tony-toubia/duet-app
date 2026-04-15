@@ -32,7 +32,7 @@ export const MatchBanner = () => {
 
   return (
     <View style={styles.bannerContainer}>
-      <Text style={styles.bannerLabel}>WORLD CUP 2026</Text>
+      <Text style={styles.bannerLabel}>LIVE</Text>
       <View style={styles.matchesRow}>
         {matches.slice(0, 2).map((m) => (
           <View key={m.id} style={styles.matchItem}>
