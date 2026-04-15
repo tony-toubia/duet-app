@@ -348,6 +348,33 @@
       }
     },
 
+    // Content Hub — syndicated content
+    "content_hub": {
+      "items": {
+        // Anyone authenticated can read content
+        ".read": "auth != null",
+        // Only admin SDK / Cloud Functions can write
+        ".write": false
+      },
+      "config": {
+        // Admin SDK only
+        ".read": false,
+        ".write": false
+      },
+      "sync_status": {
+        // Authenticated users can read sync status (admin dashboard)
+        ".read": "auth != null",
+        // Only admin SDK can write
+        ".write": false
+      }
+    },
+
+    // Legacy World Cup content (kept for backwards compatibility)
+    "worldcup": {
+      ".read": "auth != null",
+      ".write": false
+    },
+
     // Deny access to everything else
     "$other": {
       ".read": false,

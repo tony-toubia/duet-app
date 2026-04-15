@@ -806,7 +806,6 @@ export const onInvitationRateLimit = onValueCreated(
 export const onRoomMemberAdded = onValueCreated(
   { ref: '/rooms/{roomCode}/members/{userId}', region: 'us-central1' },
   async (event) => {
-    const roomCode = event.params.roomCode;
     const userId = event.params.userId;
     
     // Have to guard against uninitialized parent bounds
@@ -954,35 +953,6 @@ export const onUserOnline = onValueWritten(
   }
 );
 
-/**
- * World Cup Scoreboard Synchronization Mock
- * Note: Simulating football-data.org API bindings for testing Live Room Banner state updates.
- */
-import { onSchedule } from "firebase-functions/v2/scheduler";
-export const syncWorldCupScores = onSchedule({ schedule: 'every 1 minutes', region: 'us-central1' }, async (event) => {
-  const matchesRef = admin.database().ref('worldcup/matches');
-  
-  // Generating a synthetic LIVE match state for the components to consume
-  const scoreData = {
-    "match_live_1": {
-      homeTeam: "USA",
-      awayTeam: "England",
-      homeScore: Math.floor(Math.random() * 3),
-      awayScore: Math.floor(Math.random() * 3),
-      status: "IN_PLAY",
-      minute: Math.floor(Math.random() * 90) + 1,
-      startTime: Date.now() - 3000000
-    },
-    "match_future_1": {
-      homeTeam: "Brazil",
-      awayTeam: "France",
-      homeScore: 0,
-      awayScore: 0,
-      status: "TIMED",
-      startTime: Date.now() + 86400000
-    }
-  };
+// ─── Content Hub Syndication ────────────────────────────────────────
+export { syncContentHub, triggerContentSync } from './syndication';
 
-  await matchesRef.set(scoreData);
-  console.log('[WorldCup] Scoreboard updated natively successfully.');
-});

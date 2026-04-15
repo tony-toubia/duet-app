@@ -58,7 +58,7 @@ module.exports = {
         backgroundColor: "#1a1a2e"
       },
       package: "com.duet.app",
-      versionCode: 71,
+      versionCode: 72,
       ...(fs.existsSync(googleServicesJson) ? { googleServicesFile: googleServicesJson } : {}),
       intentFilters: [
         {
@@ -115,6 +115,7 @@ module.exports = {
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             newArchEnabled: false,
+            jsEngine: "jsc", // Must match top-level — Hermes libhermes.so not bundled with JSC builds
           },
           ios: {
             deploymentTarget: "15.1",
