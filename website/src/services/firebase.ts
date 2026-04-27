@@ -38,7 +38,18 @@ export const firebaseAuth: Auth = new Proxy({} as Auth, {
 
 export const firebaseDb: Database = new Proxy({} as Database, {
   get(_, prop) {
-    if (!_db) _db = getDatabase(getApp());
+    if (!_db) {
+      // Initialize auth FIRST so the Database SDK's internal auth listener
+      // gets wired up at construction time. If the database is constructed
+      // before auth, getDatabase() registers no auth provider, the websocket
+      // connects unauthenticated, and subsequent sign-in events never reach
+      // the websocket — every read/write to an `auth != null` path then
+      // fails with permission_denied. Fresh Playwright contexts hit this
+      // every run because they have no cached auth state to prime auth
+      // before any UI component (e.g. MatchBanner) touches the database.
+      if (!_auth) _auth = getAuth(getApp());
+      _db = getDatabase(getApp());
+    }
     return (_db as any)[prop];
   },
 });
