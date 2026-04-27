@@ -14,6 +14,7 @@ import { eventTrackingService } from '@/services/EventTrackingService';
 import { LocationService } from '@/services/LocationService';
 import { navigationRef } from '@/navigation/navigationRef';
 import { callForegroundService } from '@/services/CallForegroundService';
+import { lifecycle } from '@/services/LifecycleLog';
 
 export interface PendingAlert {
   title: string;
@@ -185,6 +186,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
       console.log('[Store] Initialized');
       crashlyticsService.log('[Store] Initialized successfully');
+      lifecycle('store.initialized');
     } catch (error) {
       console.error('[Store] Initialization failed:', error);
       crashlyticsService.recordError(error as Error, 'Store initialization');
@@ -318,6 +320,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     set({ roomCode });
     crashlyticsService.logRoomCreated(roomCode);
     eventTrackingService.track('room_created', { roomCode });
+    lifecycle('room.created', { roomCode, roomType: 'duet' });
 
     return roomCode;
   },
@@ -402,6 +405,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     const roomCode = await partySignaling.createRoom();
     set({ roomCode });
+    lifecycle('room.created', { roomCode, roomType: 'party' });
     return roomCode;
   },
   
@@ -509,6 +513,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     set({ partnerId: partnerUid || 'partner' });
     crashlyticsService.logRoomJoined(code);
     eventTrackingService.track('room_joined', { roomCode: code });
+    lifecycle('room.joined', { roomCode: code });
 
   },
 
@@ -547,6 +552,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Start audio engine
     await DuetAudio.startAudioEngine();
     crashlyticsService.logAudioEngineStart();
+    lifecycle('audio.engine.start');
   },
 
   leaveRoom: async () => {
@@ -616,6 +622,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     }
 
     crashlyticsService.logRoomLeft();
+    lifecycle('room.left', { roomCode: roomCode || '' });
 
     set({
       webrtc: null,

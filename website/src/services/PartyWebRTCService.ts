@@ -1,5 +1,6 @@
 import { getIceServers } from '@/config/turn';
 import type { AudioPacket } from './WebRTCService';
+import { lifecycle } from './LifecycleLog';
 
 export type PartyConnectionState =
   | 'disconnected'
@@ -93,6 +94,7 @@ export class PartyWebRTCService {
           this.cancelIceRestart(context);
           break;
       }
+      lifecycle('party.peer.state', { uid, state: context.state });
       this.callbacks.onConnectionStateChange(uid, context.state);
     };
 
@@ -257,6 +259,7 @@ export class PartyWebRTCService {
     }
     context.iceRestartCount++;
     console.log(`[PartyWebRTC] Attempting ICE restart for ${uid} (attempt ${context.iceRestartCount})`);
+    lifecycle('party.peer.ice.restart', { uid, attempt: context.iceRestartCount });
     try {
       const offer = await context.pc.createOffer({ iceRestart: true });
       await context.pc.setLocalDescription(offer);

@@ -5,6 +5,7 @@ import {
   RTCIceCandidate,
 } from 'react-native-webrtc';
 import { getIceServers } from '@/config/turn';
+import { lifecycle } from './LifecycleLog';
 
 // WebRTC configuration
 // ICE servers loaded from config for easy production deployment
@@ -82,6 +83,7 @@ export class WebRTCService {
   
   private setConnectionState(state: ConnectionState) {
     this._connectionState = state;
+    lifecycle('webrtc.state', { state });
     this.callbacks.onConnectionStateChange(state);
   }
   
@@ -425,6 +427,7 @@ export class WebRTCService {
 
     this.iceRestartCount++;
     console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
+    lifecycle('webrtc.ice.restart', { attempt: this.iceRestartCount });
     try {
       const offer = await this.peerConnection.createOffer({ iceRestart: true } as any);
       await this.peerConnection.setLocalDescription(offer);

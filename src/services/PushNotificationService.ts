@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventTrackingService } from './EventTrackingService';
 import { parseDeepLink } from '@/navigation/deepLinkParser';
 import { navigationRef } from '@/navigation/navigationRef';
+import { lifecycle } from './LifecycleLog';
 
 const DEVICE_ID_KEY = '@duet/deviceId';
 
@@ -221,6 +222,7 @@ class PushNotificationService {
     } catch {}
 
     console.log('[Push] Token saved to tokens/', deviceId);
+    lifecycle('push.token.registered', { deviceId });
   }
 
   /**

@@ -1,4 +1,5 @@
 import { getIceServers } from '@/config/turn';
+import { lifecycle } from './LifecycleLog';
 
 const getRtcConfig = (): RTCConfiguration => ({
   iceServers: getIceServers(),
@@ -49,6 +50,7 @@ export class WebRTCService {
 
   private setConnectionState(state: ConnectionState) {
     this._connectionState = state;
+    lifecycle('webrtc.state', { state });
     this.callbacks.onConnectionStateChange(state);
   }
 
@@ -291,6 +293,7 @@ export class WebRTCService {
 
     this.iceRestartCount++;
     console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
+    lifecycle('webrtc.ice.restart', { attempt: this.iceRestartCount });
     try {
       const offer = await this.peerConnection.createOffer({ iceRestart: true });
       await this.peerConnection.setLocalDescription(offer);

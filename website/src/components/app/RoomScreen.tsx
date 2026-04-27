@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
+import { lifecycle } from '@/services/LifecycleLog';
 import { ShareModal } from './ShareModal';
 import { GuestRoomTimer } from './GuestRoomTimer';
 import { ReactionBar } from './ReactionBar';
@@ -146,6 +147,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
     if (wasHidden.current && roomCode) {
       wasHidden.current = false;
       console.log('[Room] Tab returned to foreground, nudging reconnect');
+      lifecycle('webrtc.nudge', { reason: 'visibility' });
       nudgeReconnect();
     }
   }, [isVisible, roomCode, nudgeReconnect]);

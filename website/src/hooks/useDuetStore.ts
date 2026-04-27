@@ -8,6 +8,7 @@ import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
 import { friendsService } from '@/services/FriendsService';
 import { useAuthStore } from './useAuthStore';
+import { lifecycle } from '@/services/LifecycleLog';
 
 interface DuetState {
   connectionState: ConnectionState;
@@ -95,6 +96,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   initialize: async () => {
     console.log('[Store] Initialized (web)');
+    lifecycle('store.initialized');
   },
 
   createRoom: async () => {
@@ -197,11 +199,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     const roomCode = await signaling.createRoom();
     set({ roomCode });
+    lifecycle('room.created', { roomCode, roomType: 'duet' });
 
     // Start audio engine (mic capture + playback)
     try {
       const engine = await createAndStartAudioEngine(set, get);
       set({ audioEngine: engine });
+      lifecycle('audio.engine.start');
     } catch (e) {
       console.warn('[Store] Audio engine failed to start:', e);
       // Room still usable — user can see connection but won't have audio
@@ -290,11 +294,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     const roomCode = await partySignaling.createRoom();
     set({ roomCode });
+    lifecycle('room.created', { roomCode, roomType: 'party' });
 
     // Start audio engine
     try {
       const engine = await createAndStartAudioEngine(set, get);
       set({ audioEngine: engine });
+      lifecycle('audio.engine.start');
     } catch (e) {
       console.warn('[PartyStore] Audio engine failed to start:', e);
     }
@@ -380,6 +386,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       await signaling.joinRoom(code);
       // Only set roomCode after successful join
       set({ roomCode: code });
+      lifecycle('room.joined', { roomCode: code });
 
       // Resolve real partner UID from room members
       const partnerUid = await signaling.getPartnerUid();
@@ -389,6 +396,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       try {
         const engine = await createAndStartAudioEngine(set, get);
         set({ audioEngine: engine });
+        lifecycle('audio.engine.start');
       } catch (e) {
         console.warn('[Store] Audio engine failed to start:', e);
       }
@@ -454,6 +462,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const { partyWebrtc, partySignaling } = get();
     partyWebrtc?.close();
     await partySignaling?.leave();
+
+    lifecycle('room.left', { roomCode: roomCode || '' });
 
     set({
       webrtc: null,
