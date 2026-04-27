@@ -12,6 +12,37 @@ import {
 } from 'firebase/database';
 import { firebaseAuth, firebaseDb } from './firebase';
 
+/**
+ * Retry an RTDB write up to 3 times when it fails with permission_denied.
+ *
+ * The Firebase Auth state and the RTDB WebSocket auth token propagate
+ * separately; immediately after sign-in there's a brief window where a
+ * write can be evaluated against the prior (null) auth state. Real users
+ * rarely hit it because human click latency outpaces the propagation, but
+ * automated flows can race straight through. Same approach as
+ * AuthService.ensureProfile.
+ */
+async function withAuthRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const isPermDenied =
+        msg.includes('permission_denied') ||
+        msg.includes('PERMISSION_DENIED') ||
+        err?.code === 'PERMISSION_DENIED';
+      if (isPermDenied && attempt < 2) {
+        console.warn(`[Signaling] ${label} attempt ${attempt + 1} hit permission_denied, retrying...`);
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: retry exhausted`);
+}
+
 export interface SignalingCallbacks {
   onOffer: (offer: RTCSessionDescriptionInit) => void;
   onAnswer: (answer: RTCSessionDescriptionInit) => void;
@@ -61,16 +92,18 @@ export class SignalingService {
 
     const roomRef = ref(firebaseDb, `rooms/${this.roomCode}`);
 
-    await set(roomRef, {
-      createdAt: serverTimestamp(),
-      createdBy: this.userId,
-      members: {
-        [this.userId]: {
-          role: 'offerer',
-          joinedAt: serverTimestamp(),
+    await withAuthRetry('createRoom', () =>
+      set(roomRef, {
+        createdAt: serverTimestamp(),
+        createdBy: this.userId,
+        members: {
+          [this.userId!]: {
+            role: 'offerer',
+            joinedAt: serverTimestamp(),
+          },
         },
-      },
-    });
+      })
+    );
 
     // Remove self from members on disconnect
     const memberRef = child(roomRef, `members/${this.userId}`);
@@ -110,10 +143,12 @@ export class SignalingService {
     }
 
     const memberRef = child(roomRef, `members/${this.userId}`);
-    await set(memberRef, {
-      role: 'answerer',
-      joinedAt: serverTimestamp(),
-    });
+    await withAuthRetry('joinRoom', () =>
+      set(memberRef, {
+        role: 'answerer',
+        joinedAt: serverTimestamp(),
+      })
+    );
 
     onDisconnect(memberRef).remove();
 

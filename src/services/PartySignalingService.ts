@@ -3,6 +3,33 @@ import auth from '@react-native-firebase/auth';
 import { RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
 import { analyticsService } from './AnalyticsService';
 
+/**
+ * Retry an RTDB write up to 3 times on permission_denied. RTDB WebSocket
+ * auth state propagates separately from the Auth SDK and there's a brief
+ * window after sign-in where a write can be evaluated against null auth.
+ * Same approach as AuthService.ensureProfile.
+ */
+async function withAuthRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const isPermDenied =
+        msg.includes('permission_denied') ||
+        msg.includes('PERMISSION_DENIED') ||
+        err?.code === 'PERMISSION_DENIED';
+      if (isPermDenied && attempt < 2) {
+        console.warn(`[PartySignaling] ${label} attempt ${attempt + 1} hit permission_denied, retrying...`);
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: retry exhausted`);
+}
+
 export interface PartySignalingCallbacks {
   onOffer: (fromUid: string, offer: RTCSessionDescription) => void;
   onAnswer: (fromUid: string, answer: RTCSessionDescription) => void;
@@ -51,19 +78,21 @@ export class PartySignalingService {
     
     if (attempts >= 5) throw new Error('Failed to generate room code.');
 
-    await this.roomRef.set({
-      roomType: 'party',
-      maxParticipants: 6,
-      createdAt: database.ServerValue.TIMESTAMP,
-      createdBy: this.userId,
-      members: {
-        [this.userId]: {
-          role: 'host',
-          joinedAt: database.ServerValue.TIMESTAMP,
+    await withAuthRetry('createRoom', () =>
+      this.roomRef.set({
+        roomType: 'party',
+        maxParticipants: 6,
+        createdAt: database.ServerValue.TIMESTAMP,
+        createdBy: this.userId,
+        members: {
+          [this.userId!]: {
+            role: 'host',
+            joinedAt: database.ServerValue.TIMESTAMP,
+          },
         },
-      },
-      signaling: {}
-    });
+        signaling: {}
+      })
+    );
 
     this.setupRoomState();
     return this.roomCode;
@@ -92,10 +121,12 @@ export class PartySignalingService {
       throw new Error('Room is full (max 6 participants).');
     }
 
-    await this.roomRef.child('members').child(this.userId).set({
-      role: 'member',
-      joinedAt: database.ServerValue.TIMESTAMP,
-    });
+    await withAuthRetry('joinRoom', () =>
+      this.roomRef.child('members').child(this.userId).set({
+        role: 'member',
+        joinedAt: database.ServerValue.TIMESTAMP,
+      })
+    );
 
     this.setupRoomState();
     

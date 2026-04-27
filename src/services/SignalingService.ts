@@ -4,6 +4,33 @@ import { RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
 import { analyticsService } from './AnalyticsService';
 
 /**
+ * Retry an RTDB write up to 3 times on permission_denied. RTDB WebSocket
+ * auth state propagates separately from the Auth SDK and there's a brief
+ * window after sign-in where a write can be evaluated against null auth.
+ * Same approach as AuthService.ensureProfile.
+ */
+async function withAuthRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const isPermDenied =
+        msg.includes('permission_denied') ||
+        msg.includes('PERMISSION_DENIED') ||
+        err?.code === 'PERMISSION_DENIED';
+      if (isPermDenied && attempt < 2) {
+        console.warn(`[Signaling] ${label} attempt ${attempt + 1} hit permission_denied, retrying...`);
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: retry exhausted`);
+}
+
+/**
  * Firebase Signaling Service
  * 
  * Handles WebRTC signaling (offer/answer/ICE candidates) via Firebase Realtime Database.
@@ -85,16 +112,18 @@ export class SignalingService {
     }
     
     // Set up the room with you as the first member
-    await this.roomRef.set({
-      createdAt: database.ServerValue.TIMESTAMP,
-      createdBy: this.userId,
-      members: {
-        [this.userId]: {
-          role: 'offerer',
-          joinedAt: database.ServerValue.TIMESTAMP,
+    await withAuthRetry('createRoom', () =>
+      this.roomRef.set({
+        createdAt: database.ServerValue.TIMESTAMP,
+        createdBy: this.userId,
+        members: {
+          [this.userId!]: {
+            role: 'offerer',
+            joinedAt: database.ServerValue.TIMESTAMP,
+          },
         },
-      },
-    });
+      })
+    );
     
     // Remove yourself from members when you disconnect (not the whole room)
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();
@@ -147,10 +176,12 @@ export class SignalingService {
     }
 
     // Add yourself as a member
-    await this.roomRef.child('members').child(this.userId).set({
-      role: 'answerer',
-      joinedAt: database.ServerValue.TIMESTAMP,
-    });
+    await withAuthRetry('joinRoom', () =>
+      this.roomRef.child('members').child(this.userId).set({
+        role: 'answerer',
+        joinedAt: database.ServerValue.TIMESTAMP,
+      })
+    );
     
     // Remove yourself when you disconnect
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();

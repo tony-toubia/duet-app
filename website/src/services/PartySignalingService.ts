@@ -12,6 +12,33 @@ import {
 } from 'firebase/database';
 import { firebaseAuth, firebaseDb } from './firebase';
 
+/**
+ * Retry an RTDB write up to 3 times on permission_denied. RTDB WebSocket
+ * auth state propagates separately from the Auth SDK and there's a brief
+ * window after sign-in where a write can be evaluated against null auth.
+ * Same approach as AuthService.ensureProfile.
+ */
+async function withAuthRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const isPermDenied =
+        msg.includes('permission_denied') ||
+        msg.includes('PERMISSION_DENIED') ||
+        err?.code === 'PERMISSION_DENIED';
+      if (isPermDenied && attempt < 2) {
+        console.warn(`[PartySignaling] ${label} attempt ${attempt + 1} hit permission_denied, retrying...`);
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: retry exhausted`);
+}
+
 export interface PartySignalingCallbacks {
   onOffer: (fromUid: string, offer: RTCSessionDescriptionInit) => void;
   onAnswer: (fromUid: string, answer: RTCSessionDescriptionInit) => void;
@@ -59,19 +86,21 @@ export class PartySignalingService {
 
     if (attempts >= 5) throw new Error('Failed to generate room code.');
 
-    await set(roomRef!, {
-      roomType: 'party',
-      maxParticipants: 6,
-      createdAt: serverTimestamp(),
-      createdBy: this.userId,
-      members: {
-        [this.userId]: {
-          role: 'host',
-          joinedAt: serverTimestamp(),
+    await withAuthRetry('createRoom', () =>
+      set(roomRef!, {
+        roomType: 'party',
+        maxParticipants: 6,
+        createdAt: serverTimestamp(),
+        createdBy: this.userId,
+        members: {
+          [this.userId!]: {
+            role: 'host',
+            joinedAt: serverTimestamp(),
+          },
         },
-      },
-      signaling: {},
-    });
+        signaling: {},
+      })
+    );
 
     this.setupRoomState();
     return this.roomCode;
@@ -105,10 +134,12 @@ export class PartySignalingService {
       firebaseDb,
       `rooms/${this.roomCode}/members/${this.userId}`
     );
-    await set(memberRef, {
-      role: 'member',
-      joinedAt: serverTimestamp(),
-    });
+    await withAuthRetry('joinRoom', () =>
+      set(memberRef, {
+        role: 'member',
+        joinedAt: serverTimestamp(),
+      })
+    );
 
     this.setupRoomState();
 
