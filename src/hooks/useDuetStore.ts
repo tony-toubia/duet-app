@@ -13,6 +13,7 @@ import { friendsService } from '@/services/FriendsService';
 import { eventTrackingService } from '@/services/EventTrackingService';
 import { LocationService } from '@/services/LocationService';
 import { navigationRef } from '@/navigation/navigationRef';
+import { callForegroundService } from '@/services/CallForegroundService';
 
 export interface PendingAlert {
   title: string;
@@ -389,10 +390,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     set({ partySignaling, partyWebrtc, isHost: true, roomType: 'party' });
     await partySignaling.initialize();
-    
+
     partyWebrtc.onLocalIceCandidate = (uid, candidate) => {
       partySignaling.sendIceCandidate(uid, candidate);
     };
+
+    // Start the Android foreground-service notification so the room is visible
+    // in the notification shade and OEM background killers see legitimate mic
+    // usage. No-op on iOS — there the native DuetAudio module handles it.
+    await callForegroundService.start();
 
     const roomCode = await partySignaling.createRoom();
     set({ roomCode });
@@ -518,6 +524,23 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       );
       if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
         console.warn('[Store] Microphone permission denied');
+        const openSettings =
+          granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+        set({
+          pendingAlert: {
+            title: 'Microphone Required',
+            message: openSettings
+              ? "Duet needs microphone access. Open Settings to enable it."
+              : 'Duet needs microphone access to send your voice.',
+            buttons: openSettings
+              ? [
+                  { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                  { text: 'Cancel', style: 'cancel' },
+                ]
+              : [{ text: 'OK' }],
+          },
+        });
+        return;
       }
     }
 
@@ -527,7 +550,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   },
 
   leaveRoom: async () => {
-    const { webrtc, signaling, partnerId, roomCode } = get();
+    const { webrtc, signaling, partyWebrtc, partySignaling, partnerId, roomCode, roomType } = get();
 
     crashlyticsService.log('[Store] Leaving room...');
 
@@ -585,6 +608,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     await signaling?.leave();
     partyWebrtc?.close();
     await partySignaling?.leave();
+
+    // Stop the Android foreground service notification (no-op on iOS).
+    // Idempotent: safe to call whether the room was a duet or a party.
+    if (roomType === 'party') {
+      await callForegroundService.stop();
+    }
 
     crashlyticsService.logRoomLeft();
 
