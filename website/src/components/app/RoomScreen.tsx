@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDuetStore } from '@/hooks/useDuetStore';
+import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { ShareModal } from './ShareModal';
 import { GuestRoomTimer } from './GuestRoomTimer';
 import { ReactionBar } from './ReactionBar';
@@ -129,7 +130,25 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
     setDeafened,
     setVadSensitivity,
     joinRoom,
+    nudgeReconnect,
   } = useDuetStore();
+
+  const isVisible = useTabVisibility();
+  const wasHidden = useRef(false);
+
+  // When the tab becomes visible again after being hidden, nudge a reconnect.
+  // Browsers throttle background tabs, which can let WebRTC ICE keepalives lapse.
+  useEffect(() => {
+    if (!isVisible) {
+      wasHidden.current = true;
+      return;
+    }
+    if (wasHidden.current && roomCode) {
+      wasHidden.current = false;
+      console.log('[Room] Tab returned to foreground, nudging reconnect');
+      nudgeReconnect();
+    }
+  }, [isVisible, roomCode, nudgeReconnect]);
 
   // Auto-join from URL if not already in a room (only once)
   useEffect(() => {

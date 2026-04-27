@@ -31,6 +31,7 @@ export class SignalingService {
   private partnerEverJoined = false;
   private partnerPresent = false;
   private partnerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
@@ -77,6 +78,7 @@ export class SignalingService {
 
     // Re-add ourselves when Firebase reconnects (e.g., after tab hidden)
     this.listenForReconnect();
+    this.startHeartbeat();
 
     this.listenForPartner();
     this.listenForAnswer();
@@ -117,6 +119,7 @@ export class SignalingService {
 
     // Re-add ourselves when Firebase reconnects (e.g., after tab hidden)
     this.listenForReconnect();
+    this.startHeartbeat();
 
     this.listenForOffer();
     this.listenForIceCandidates('offerCandidates');
@@ -194,6 +197,28 @@ export class SignalingService {
       }
     });
     this.unsubscribers.push(unsub);
+  }
+
+  /**
+   * Periodic heartbeat to keep the Firebase socket alive, especially across
+   * background-tab throttling. Mirrors the mobile signaling heartbeat (10s).
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.roomCode || !this.userId) return;
+      const heartbeatRef = ref(firebaseDb, `rooms/${this.roomCode}/members/${this.userId}/heartbeat`);
+      set(heartbeatRef, serverTimestamp()).catch(() => {
+        // Failures are non-fatal; the listenForReconnect path will recover.
+      });
+    }, 10000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   /**
@@ -299,6 +324,7 @@ export class SignalingService {
       clearTimeout(this.partnerDebounceTimer);
       this.partnerDebounceTimer = null;
     }
+    this.stopHeartbeat();
     this.unsubscribers.forEach((unsub) => unsub());
     this.unsubscribers = [];
 
