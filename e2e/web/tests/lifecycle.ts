@@ -41,7 +41,7 @@ export function parseLifecycle(text: string): LifecycleEvent | null {
 export function recordLifecycle(page: Page) {
   const events: LifecycleEvent[] = [];
   const recentConsole: string[] = [];
-  const RECENT_LIMIT = 10;
+  const RECENT_LIMIT = 80;
 
   const handler = (msg: ConsoleMessage) => {
     const text = msg.text();
