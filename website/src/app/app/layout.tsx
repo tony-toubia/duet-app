@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/hooks/useAuthStore';
+import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
 import { AuthScreen } from '@/components/app/AuthScreen';
 import { Spinner } from '@/components/ui/Spinner';
@@ -12,12 +13,18 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   const { user, isLoading, showUpgradeAuth, initializeAuth, completeSignInWithEmailLink } = useAuthStore();
+  const initializeDuet = useDuetStore((s) => s.initialize);
   const [emailLinkError, setEmailLinkError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = initializeAuth();
     return unsub;
   }, [initializeAuth]);
+
+  // Initialize the duet store once on mount so cold-start telemetry fires.
+  useEffect(() => {
+    initializeDuet();
+  }, [initializeDuet]);
 
   // Handle email link sign-in when user arrives via the link
   useEffect(() => {

@@ -1,5 +1,5 @@
-import { test, expect, BrowserContext } from '@playwright/test';
-import { recordLifecycle } from './lifecycle';
+import { test, expect } from '@playwright/test';
+import { recordLifecycle, signInAsGuest } from './lifecycle';
 
 /**
  * Scenario: duet-002 — Joiner enters code and connects (web + web)
@@ -18,15 +18,15 @@ test('duet-002: two web tabs connect end-to-end', async ({ browser }) => {
     const joinerEvents = recordLifecycle(joiner);
 
     // Host opens app and creates a room.
-    await host.goto('/app');
+    await signInAsGuest(host);
     await hostEvents.waitFor('store.initialized');
     await host.getByText(/start a room/i).first().click();
     const created = await hostEvents.waitFor('room.created', 15_000);
     const roomCode = created.props.roomCode;
     expect(roomCode).toMatch(/^[A-Z0-9]{6}$/);
 
-    // Joiner opens deep link to the same room.
-    await joiner.goto(`/app/room/${roomCode}`);
+    // Joiner signs in as guest then deep-links into the host's room.
+    await signInAsGuest(joiner, `/app/room/${roomCode}`);
     await joinerEvents.waitFor('room.joined', 15_000);
 
     // Both sides must reach connected.

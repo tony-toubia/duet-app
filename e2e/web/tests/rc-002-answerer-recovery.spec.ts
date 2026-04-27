@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { recordLifecycle } from './lifecycle';
+import { recordLifecycle, signInAsGuest } from './lifecycle';
 
 /**
  * Scenario: rc-002 — Web answerer can recover when host's tab is hidden
@@ -21,13 +21,13 @@ test('rc-002: joiner can initiate ICE restart', async ({ browser }) => {
     const hostEvents = recordLifecycle(host);
     const joinerEvents = recordLifecycle(joiner);
 
-    await host.goto('/app');
+    await signInAsGuest(host);
     await hostEvents.waitFor('store.initialized');
     await host.getByText(/start a room/i).first().click();
     const created = await hostEvents.waitFor('room.created', 15_000);
     const roomCode = created.props.roomCode;
 
-    await joiner.goto(`/app/room/${roomCode}`);
+    await signInAsGuest(joiner, `/app/room/${roomCode}`);
     await joinerEvents.waitFor('room.joined');
 
     // Wait for initial connection.

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { recordLifecycle } from './lifecycle';
+import { recordLifecycle, signInAsGuest } from './lifecycle';
 
 /**
  * Scenario: auth-001 — Cold-start anonymous sign-in
@@ -7,8 +7,8 @@ import { recordLifecycle } from './lifecycle';
  */
 test('auth-001: cold-start renders lobby and emits store.initialized', async ({ page }) => {
   const events = recordLifecycle(page);
-  await page.goto('/app');
+  await signInAsGuest(page);
   await events.waitFor('store.initialized');
-  // Lobby controls visible — using the same labels the mobile lobby uses.
-  await expect(page.getByText(/start a room|create.*room/i).first()).toBeVisible({ timeout: 10_000 });
+  // signInAsGuest already verified "Start a Room" is visible.
+  expect(events.last('store.initialized')).not.toBeNull();
 });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { recordLifecycle } from './lifecycle';
+import { recordLifecycle, signInAsGuest } from './lifecycle';
 
 /**
  * Scenario: bg-004 — Web tab hidden then returned restores audio
@@ -19,13 +19,13 @@ test('bg-004: visibility return triggers reconnect nudge', async ({ browser }) =
     const hostEvents = recordLifecycle(host);
     const joinerEvents = recordLifecycle(joiner);
 
-    await host.goto('/app');
+    await signInAsGuest(host);
     await hostEvents.waitFor('store.initialized');
     await host.getByText(/start a room/i).first().click();
     const created = await hostEvents.waitFor('room.created', 15_000);
     const roomCode = created.props.roomCode;
 
-    await joiner.goto(`/app/room/${roomCode}`);
+    await signInAsGuest(joiner, `/app/room/${roomCode}`);
     await joinerEvents.waitFor('room.joined');
 
     // Wait for initial connection on the joiner side.
