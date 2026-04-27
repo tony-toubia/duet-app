@@ -1,0 +1,17 @@
+# Scenario: perm-003 — Mic granted on first prompt starts engine
+# Expected: tapping Allow on the system mic prompt lets the audio engine start.
+# The lifecycle event audio.engine.start should appear in the device log.
+#
+# Maestro tap on system permission dialog: button text differs by platform.
+# This flow tries both "Allow" (iOS) and "While using the app" (Android).
+appId: com.duet.app
+---
+- launchApp:
+    clearState: true
+- tapOn: "Start a Room"
+- tapOn:
+    text: "Allow|While using the app|Only this time"
+    optional: true
+- assertVisible:
+    text: "Leave"
+    timeout: 8000

@@ -1,0 +1,11 @@
+# Scenario: party-001 — Host creates party room
+# Expected: room created with roomType=party. On Android, foreground notification
+# appears in shade (not asserted here — Maestro can't reach the system shade
+# reliably; the lifecycle event covers it).
+appId: com.duet.app
+---
+- launchApp
+- tapOn: "Start a Party"
+- assertVisible:
+    text: "Leave"
+    timeout: 8000

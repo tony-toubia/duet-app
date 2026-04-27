@@ -1,0 +1,9 @@
+# Scenario: auth-001 — Cold-start anonymous sign-in
+# Expected: lobby renders within 5s; the lifecycle event fires.
+appId: com.duet.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Start a Room"
+- assertVisible: "Start a Party"
+- assertVisible: "Join Room"

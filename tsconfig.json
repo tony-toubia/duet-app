@@ -17,6 +17,7 @@
   "exclude": [
     "node_modules",
     "firebase/functions",
-    "website"
+    "website",
+    "e2e"
   ]
 }

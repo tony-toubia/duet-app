@@ -1,0 +1,18 @@
+# Scenario: duet-006 (host side) — Host leaves the room
+# Expected: tapping Leave returns the user to lobby.
+appId: com.duet.app
+---
+- launchApp
+- tapOn: "Start a Room"
+- assertVisible:
+    text: "Leave"
+    timeout: 8000
+- tapOn: "Leave"
+# Confirm dialog
+- tapOn:
+    text: "Leave"
+    index: 1
+    optional: true
+- assertVisible:
+    text: "Start a Room"
+    timeout: 5000

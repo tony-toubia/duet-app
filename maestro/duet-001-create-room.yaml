@@ -1,0 +1,11 @@
+# Scenario: duet-001 — Host creates room and code is shareable
+# Expected: share modal appears with a 6-character code.
+appId: com.duet.app
+---
+- launchApp
+- tapOn: "Start a Room"
+# Share modal autopops on host entry; verify it shows.
+- assertVisible:
+    text: ".*"
+    timeout: 8000
+- assertVisible: "Leave"

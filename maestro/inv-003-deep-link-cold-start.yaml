@@ -1,0 +1,16 @@
+# Scenario: inv-003 — Deep link cold-starts into auto-join
+# Expected: opening a duet:// URL after a force-quit lands the user in the
+# lobby with autoJoinCode pre-populated.
+#
+# Replace ABC123 with a real, currently-active room code from a partner device
+# before running. The flow itself just verifies routing; it does not assert
+# successful connection because that requires a live host.
+appId: com.duet.app
+---
+- launchApp:
+    clearState: true
+- stopApp
+- openLink: "duet://room/ABC123"
+- assertVisible:
+    text: "ABC123"
+    timeout: 8000
