@@ -45,8 +45,9 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
 
   acceptedFriends: () => {
     const { friends } = get();
+    const currentUid = firebaseAuth.currentUser?.uid;
     return Object.entries(friends)
-      .filter(([, f]) => f.status === 'accepted')
+      .filter(([fid, f]) => f.status === 'accepted' && fid !== currentUid)
       .map(([uid, f]) => ({ uid, ...f }));
   },
 

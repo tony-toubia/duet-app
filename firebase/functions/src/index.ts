@@ -53,6 +53,68 @@ async function sendWithRetry(message: Message, maxRetries = 2): Promise<string> 
   throw new Error('sendWithRetry: exhausted retries');
 }
 
+/**
+ * Send a notification to every device registered to a user. Reads the
+ * per-device map at `/users/{uid}/tokens/{deviceId}`, falling back to the
+ * legacy single-token field for clients that haven't upgraded yet.
+ *
+ * On invalid-token errors, removes only that specific entry so the rest of
+ * the user's devices keep working.
+ */
+async function sendToUserDevices(
+  uid: string,
+  buildMessage: (token: string) => Message,
+  label: string
+): Promise<void> {
+  const tokensSnap = await db.ref(`/users/${uid}/tokens`).once('value');
+  const tokens = (tokensSnap.val() || {}) as Record<string, { token: string; platform?: string }>;
+
+  const entries = Object.entries(tokens).filter(([, v]) => !!v?.token);
+
+  if (entries.length === 0) {
+    // Legacy fallback: older clients still write a single token at /users/{uid}/pushToken
+    const userSnap = await db.ref(`/users/${uid}`).once('value');
+    const userData = userSnap.val();
+    if (!userData?.pushToken) {
+      console.log(`[FCM:${label}] No tokens for user ${uid}`);
+      return;
+    }
+    try {
+      await sendWithRetry(buildMessage(userData.pushToken));
+      console.log(`[FCM:${label}] Sent to ${uid} via legacy token`);
+    } catch (error: any) {
+      if (
+        error.code === 'messaging/invalid-registration-token' ||
+        error.code === 'messaging/registration-token-not-registered'
+      ) {
+        await db.ref(`/users/${uid}/pushToken`).remove();
+      } else {
+        console.error(`[FCM:${label}] Error sending to ${uid}:`, error);
+      }
+    }
+    return;
+  }
+
+  await Promise.all(
+    entries.map(async ([deviceId, entry]) => {
+      try {
+        await sendWithRetry(buildMessage(entry.token));
+        console.log(`[FCM:${label}] Sent to ${uid}/${deviceId} (${entry.platform || 'unknown'})`);
+      } catch (error: any) {
+        if (
+          error.code === 'messaging/invalid-registration-token' ||
+          error.code === 'messaging/registration-token-not-registered'
+        ) {
+          console.log(`[FCM:${label}] Removing invalid token ${uid}/${deviceId}`);
+          await db.ref(`/users/${uid}/tokens/${deviceId}`).remove();
+        } else {
+          console.error(`[FCM:${label}] Error sending to ${uid}/${deviceId}:`, error);
+        }
+      }
+    })
+  );
+}
+
 // ─── Email helpers ────────────────────────────────────────────────────
 
 async function sendEmail(
@@ -152,65 +214,42 @@ export const onMemberLeft = onValueDeleted(
         return;
       }
 
-      const notifications = remainingMemberIds.map(async (remainingMemberId) => {
-        const userSnapshot = await db
-          .ref(`/users/${remainingMemberId}`)
-          .once('value');
-        const userData = userSnapshot.val();
-
-        if (!userData?.pushToken) {
-          console.log(`No push token for user ${remainingMemberId}`);
-          return;
-        }
-
-        const message: Message = {
-          token: userData.pushToken,
+      const buildPartnerLeftMessage = (token: string): Message => ({
+        token,
+        notification: {
+          title: 'Partner Disconnected',
+          body: 'Your duet partner has left the room.',
+        },
+        data: {
+          type: 'partner_left',
+          roomCode,
+        },
+        android: {
+          priority: 'high',
           notification: {
-            title: 'Partner Disconnected',
-            body: 'Your duet partner has left the room.',
-          },
-          data: {
-            type: 'partner_left',
-            roomCode,
-          },
-          android: {
+            channelId: 'duet_notifications',
             priority: 'high',
-            notification: {
-              channelId: 'duet_notifications',
-              priority: 'high',
-            },
           },
-          apns: {
-            payload: {
-              aps: {
-                alert: {
-                  title: 'Partner Disconnected',
-                  body: 'Your duet partner has left the room.',
-                },
-                sound: 'default',
-                badge: 1,
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: 'Partner Disconnected',
+                body: 'Your duet partner has left the room.',
               },
+              sound: 'default',
+              badge: 1,
             },
           },
-        };
-
-        try {
-          await sendWithRetry(message);
-          console.log(`Notification sent to ${remainingMemberId} (${userData.platform || 'unknown'})`);
-        } catch (error: any) {
-          if (
-            error.code === 'messaging/invalid-registration-token' ||
-            error.code === 'messaging/registration-token-not-registered'
-          ) {
-            console.log(`Removing invalid token for user ${remainingMemberId}`);
-            await db.ref(`/users/${remainingMemberId}/pushToken`).remove();
-          } else {
-            console.error(`Error sending notification to ${remainingMemberId} (${userData.platform || 'unknown'}):`, error);
-          }
-        }
+        },
       });
 
-      await Promise.all(notifications);
+      await Promise.all(
+        remainingMemberIds.map((remainingMemberId) =>
+          sendToUserDevices(remainingMemberId, buildPartnerLeftMessage, 'partner_left')
+        )
+      );
     } catch (error) {
       console.error('Error in onMemberLeft:', error);
       throw error;
@@ -261,17 +300,9 @@ export const onFriendRequestCreated = onValueCreated(
     // /friends/B/A has initiatedBy=A, so when userId(B) !== initiatedBy(A), B is the recipient.
     if (friendData.initiatedBy !== userId) {
       try {
-        const userSnapshot = await db.ref(`/users/${userId}`).once('value');
-        const userData = userSnapshot.val();
-
-        if (!userData?.pushToken) {
-          console.log(`No push token for user ${userId}`);
-          return;
-        }
-
         // displayName on this entry is the sender's name (stored from sender's perspective)
-        const message: Message = {
-          token: userData.pushToken,
+        const buildMessage = (token: string): Message => ({
+          token,
           notification: {
             title: 'Friend Request',
             body: `${friendData.displayName} wants to be your friend!`,
@@ -299,10 +330,9 @@ export const onFriendRequestCreated = onValueCreated(
               },
             },
           },
-        };
+        });
 
-        await sendWithRetry(message);
-        console.log(`Friend request notification sent to ${userId} (${userData.platform || 'unknown'})`);
+        await sendToUserDevices(userId, buildMessage, 'friend_request');
       } catch (error) {
         console.error('Error sending friend request notification:', error);
       }
@@ -321,16 +351,8 @@ export const onInvitationCreated = onValueCreated(
     if (!invitation?.toUid) return;
 
     try {
-      const userSnapshot = await db.ref(`/users/${invitation.toUid}`).once('value');
-      const userData = userSnapshot.val();
-
-      if (!userData?.pushToken) {
-        console.log(`No push token for user ${invitation.toUid}`);
-        return;
-      }
-
-      const message: Message = {
-        token: userData.pushToken,
+      const buildMessage = (token: string): Message => ({
+        token,
         notification: {
           title: 'Room Invitation',
           body: `${invitation.fromDisplayName} invited you to join their room!`,
@@ -359,11 +381,9 @@ export const onInvitationCreated = onValueCreated(
             },
           },
         },
-      };
+      });
 
-      console.log(`[FCM] Sending invitation to ${invitation.toUid} (${userData.platform || 'unknown'}), token: ${userData.pushToken.substring(0, 20)}...`);
-      await sendWithRetry(message);
-      console.log(`Room invitation notification sent to ${invitation.toUid} (${userData.platform || 'unknown'})`);
+      await sendToUserDevices(invitation.toUid, buildMessage, 'room_invite');
 
       // Clean up invitation after sending
       await event.data.ref.remove();
@@ -896,15 +916,18 @@ export const onUserOnline = onValueWritten(
         const friendSnap = await db.ref(`/users/${friendId}`).once('value');
         const friendData = friendSnap.val();
 
-        if (!friendData?.pushToken) return;
-        if (friendData.preferences?.pushOptIn === false) return;
+        if (friendData?.preferences?.pushOptIn === false) return;
+        const hasAnyToken =
+          (friendData?.tokens && Object.keys(friendData.tokens).length > 0) ||
+          !!friendData?.pushToken;
+        if (!hasAnyToken) return;
 
         // Rate limit: max 2 proactive pushes per friend per day
         const allowed = await checkRateLimit(friendId, 'proactive_push', 2, 24 * 60 * 60 * 1000);
         if (!allowed) return;
 
-        const message: Message = {
-          token: friendData.pushToken,
+        const buildMessage = (token: string): Message => ({
+          token,
           notification: {
             title: `${displayName} is online`,
             body: 'Start a duet together?',
@@ -931,19 +954,9 @@ export const onUserOnline = onValueWritten(
               },
             },
           },
-        };
+        });
 
-        try {
-          await sendWithRetry(message);
-          console.log(`[ProactivePush] Sent "friend online" to ${friendId}`);
-        } catch (error: any) {
-          if (
-            error.code === 'messaging/invalid-registration-token' ||
-            error.code === 'messaging/registration-token-not-registered'
-          ) {
-            await db.ref(`/users/${friendId}/pushToken`).remove();
-          }
-        }
+        await sendToUserDevices(friendId, buildMessage, 'friend_online');
       });
 
       await Promise.all(notifications);

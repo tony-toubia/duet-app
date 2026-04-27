@@ -150,6 +150,15 @@
           ".validate": "newData.isString() && (newData.val() == 'ios' || newData.val() == 'android')"
         },
 
+        "tokens": {
+          "$tokenId": {
+            ".validate": "newData.hasChildren(['token', 'platform'])",
+            "token": { ".validate": "newData.isString() && newData.val().length < 500" },
+            "platform": { ".validate": "newData.isString() && (newData.val() == 'ios' || newData.val() == 'android' || newData.val() == 'web')" },
+            "updatedAt": { ".validate": "newData.isNumber() || newData.val() == null" }
+          }
+        },
+
         "preferences": {
           "emailOptIn": {
             ".validate": "newData.isBoolean()"

@@ -85,6 +85,9 @@ export class PartySignalingService {
     }
 
     const members = roomData.members || {};
+    if (members[this.userId]) {
+      throw new Error('You are already in this room on another device. Please leave the room on the other device first.');
+    }
     if (Object.keys(members).length >= (roomData.maxParticipants || 6)) {
       throw new Error('Room is full (max 6 participants).');
     }

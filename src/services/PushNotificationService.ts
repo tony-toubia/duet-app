@@ -11,9 +11,25 @@ import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messag
 import notifee, { AndroidImportance, AndroidStyle, EventType } from '@notifee/react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { eventTrackingService } from './EventTrackingService';
 import { parseDeepLink } from '@/navigation/deepLinkParser';
 import { navigationRef } from '@/navigation/navigationRef';
+
+const DEVICE_ID_KEY = '@duet/deviceId';
+
+/**
+ * Get a stable per-install device identifier, persisted in AsyncStorage so
+ * multiple devices for the same account each get a distinct key under
+ * `users/{uid}/tokens/{deviceId}`.
+ */
+async function getDeviceId(): Promise<string> {
+  const existing = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (existing) return existing;
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+  return id;
+}
 
 export interface PushNotificationCallbacks {
   onPartnerLeft?: (roomCode: string) => void;
@@ -179,7 +195,9 @@ class PushNotificationService {
   }
 
   /**
-   * Save push token to Firebase Realtime Database
+   * Save push token to Firebase Realtime Database under a per-device key so
+   * the same account can be signed in on multiple devices and each receives
+   * notifications. Cloud Functions read `users/{uid}/tokens/*` and fan out.
    */
   private async saveTokenToDatabase(token: string): Promise<void> {
     const user = auth().currentUser;
@@ -188,12 +206,21 @@ class PushNotificationService {
       return;
     }
 
-    await database().ref(`/users/${user.uid}`).update({
-      pushToken: token,
+    const deviceId = await getDeviceId();
+    await database().ref(`/users/${user.uid}/tokens/${deviceId}`).set({
+      token,
       platform: Platform.OS,
       updatedAt: database.ServerValue.TIMESTAMP,
     });
-    console.log('[Push] Token saved to database');
+
+    // Best-effort: drop the legacy single-token field so the new map is the
+    // authoritative source. Failure is non-fatal — Cloud Functions still
+    // fall back to it for older clients.
+    try {
+      await database().ref(`/users/${user.uid}/pushToken`).remove();
+    } catch {}
+
+    console.log('[Push] Token saved to tokens/', deviceId);
   }
 
   /**
@@ -386,7 +413,10 @@ class PushNotificationService {
     try {
       const user = auth().currentUser;
       if (user) {
-        await database().ref(`/users/${user.uid}/pushToken`).remove();
+        const deviceId = await getDeviceId();
+        await database().ref(`/users/${user.uid}/tokens/${deviceId}`).remove();
+        // Also clear the legacy field if it still exists from older builds.
+        await database().ref(`/users/${user.uid}/pushToken`).remove().catch(() => {});
       }
       await messaging().deleteToken();
       console.log('[Push] Token removed');

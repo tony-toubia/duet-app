@@ -5,6 +5,19 @@ import { SEGMENT_FIELDS } from './types';
 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
+/**
+ * True if the user has at least one push token registered. Newer clients
+ * write a per-device map at `users/{uid}/tokens/{deviceId}`; older clients
+ * still write a single `pushToken` field. Both are accepted for now.
+ */
+function hasAnyPushToken(u: any): boolean {
+  if (u?.pushToken) return true;
+  if (u?.tokens && typeof u.tokens === 'object') {
+    return Object.values(u.tokens).some((t: any) => t?.token);
+  }
+  return false;
+}
+
 // ─── Segment definitions ─────────────────────────────────────────────
 
 export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
@@ -55,11 +68,11 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
   {
     id: 'has_push_token',
     name: 'Has push token',
-    description: 'Users with a registered push notification token',
+    description: 'Users with at least one registered push notification token',
     compute: ({ users }) => {
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
-        if (u.pushToken) members.add(uid);
+        if (hasAnyPushToken(u)) members.add(uid);
       }
       return members;
     },
@@ -67,11 +80,11 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
   {
     id: 'push_opted_in',
     name: 'Push opted in',
-    description: 'Has push token and push opt-in enabled',
+    description: 'Has at least one push token and push opt-in enabled',
     compute: ({ users }) => {
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
-        if (u.pushToken && u.preferences?.pushOptIn !== false) {
+        if (hasAnyPushToken(u) && u.preferences?.pushOptIn !== false) {
           members.add(uid);
         }
       }
@@ -170,7 +183,7 @@ export const SEGMENT_DEFINITIONS: SegmentDefinition[] = [
       const members = new Set<string>();
       for (const [uid, u] of Object.entries(users)) {
         if (!u.profile?.email || u.profile.authProvider === 'anonymous') continue;
-        if (!u.pushToken) continue;
+        if (!hasAnyPushToken(u)) continue;
         if (u.preferences?.emailOptIn === false) continue;
         if (u.preferences?.pushOptIn === false) continue;
         const es = emailStates[uid];
