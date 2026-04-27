@@ -35,7 +35,9 @@ export class WebRTCService {
   private pendingCandidates: RTCIceCandidateInit[] = [];
   private remoteDescriptionSet = false;
   private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private iceRestartCount = 0;
   private isOfferer = false;
+  private onlineHandler: (() => void) | null = null;
 
   constructor(callbacks: WebRTCCallbacks) {
     this.callbacks = callbacks;
@@ -73,6 +75,7 @@ export class WebRTCService {
         switch (state) {
           case 'connected':
             this.cancelIceRestart();
+            this.iceRestartCount = 0;
             this.setConnectionState('connected');
             break;
           case 'disconnected':
@@ -102,6 +105,16 @@ export class WebRTCService {
       pc.ondatachannel = (event) => {
         this.setupDataChannel(event.channel);
       };
+
+      // Nudge a reconnect when the browser reports the network came back.
+      // Only attached on web (window check guards SSR / non-browser contexts).
+      if (typeof window !== 'undefined') {
+        this.onlineHandler = () => {
+          console.log('[WebRTC] Network back online, nudging reconnect');
+          this.nudgeReconnect();
+        };
+        window.addEventListener('online', this.onlineHandler);
+      }
 
       console.log('[WebRTC] Initialized successfully');
     } catch (error) {
@@ -246,10 +259,12 @@ export class WebRTCService {
 
   private scheduleIceRestart(): void {
     this.cancelIceRestart();
+    // Exponential backoff: 3s, 6s, 12s, 24s, capped at 30s
+    const delay = Math.min(3000 * Math.pow(2, this.iceRestartCount), 30000);
     this.iceRestartTimer = setTimeout(() => {
       this.attemptIceRestart();
-    }, 3000);
-    console.log('[WebRTC] ICE restart scheduled in 3s');
+    }, delay);
+    console.log(`[WebRTC] ICE restart scheduled in ${delay / 1000}s (attempt ${this.iceRestartCount + 1})`);
   }
 
   private cancelIceRestart(): void {
@@ -268,25 +283,45 @@ export class WebRTCService {
       return;
     }
 
-    if (!this.isOfferer) {
-      console.log('[WebRTC] Answerer waiting for ICE restart offer from host');
+    if (this.iceRestartCount >= 5) {
+      console.log('[WebRTC] Max ICE restart attempts reached, giving up');
+      this.setConnectionState('failed');
       return;
     }
 
-    console.log('[WebRTC] Attempting ICE restart...');
+    this.iceRestartCount++;
+    console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
     try {
       const offer = await this.peerConnection.createOffer({ iceRestart: true });
       await this.peerConnection.setLocalDescription(offer);
       console.log('[WebRTC] ICE restart offer created, sending via signaling');
       this.callbacks.onIceRestartOffer(offer);
+      this.scheduleIceRestart();
     } catch (e) {
       console.error('[WebRTC] ICE restart failed:', e);
+      this.scheduleIceRestart();
     }
+  }
+
+  /**
+   * External nudge to attempt reconnect, e.g. when the tab returns to foreground
+   * or the network comes back online. Only acts when the connection isn't healthy.
+   */
+  nudgeReconnect(): void {
+    if (!this.peerConnection) return;
+    const state = this.peerConnection.connectionState;
+    if (state === 'connected' || state === 'connecting') return;
+    console.log('[WebRTC] External reconnect nudge received');
+    this.attemptIceRestart();
   }
 
   close(): void {
     console.log('[WebRTC] Closing connection');
     this.cancelIceRestart();
+    if (this.onlineHandler && typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onlineHandler);
+      this.onlineHandler = null;
+    }
     this.dataChannel?.close();
     this.dataChannel = null;
 
@@ -295,6 +330,7 @@ export class WebRTCService {
 
     this.remoteDescriptionSet = false;
     this.pendingCandidates = [];
+    this.iceRestartCount = 0;
     this.isOfferer = false;
 
     this.setConnectionState('disconnected');

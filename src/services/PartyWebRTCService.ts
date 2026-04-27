@@ -35,6 +35,9 @@ class PeerContext {
   public state: PartyConnectionState = 'connecting';
   public pendingCandidates: RTCIceCandidate[] = [];
   public remoteDescriptionSet = false;
+  public isOfferer = false;
+  public iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  public iceRestartCount = 0;
 
   constructor(pc: RTCPeerConnection) {
     this.pc = pc;
@@ -71,15 +74,21 @@ export class PartyWebRTCService {
       switch (state) {
         case 'connected':
           context.state = 'connected';
+          this.cancelIceRestart(context);
+          context.iceRestartCount = 0;
           break;
         case 'disconnected':
           context.state = 'reconnecting';
+          this.scheduleIceRestart(uid, context);
           break;
         case 'failed':
           context.state = 'failed';
+          this.cancelIceRestart(context);
+          this.attemptIceRestart(uid, context);
           break;
         case 'closed':
           context.state = 'disconnected';
+          this.cancelIceRestart(context);
           break;
       }
       this.callbacks.onConnectionStateChange(uid, context.state);
@@ -97,7 +106,8 @@ export class PartyWebRTCService {
     if (!context) {
       context = this.createPeerConnection(toUid);
     }
-    
+
+    context.isOfferer = true;
     context.dataChannel = context.pc.createDataChannel('audio', {
       ordered: false,
       maxRetransmits: 0,
@@ -106,7 +116,7 @@ export class PartyWebRTCService {
 
     const offer = await context.pc.createOffer({} as any);
     await context.pc.setLocalDescription(offer);
-    
+
     return offer as RTCSessionDescription;
   }
 
@@ -174,10 +184,70 @@ export class PartyWebRTCService {
   removePeer(uid: string) {
     const context = this.peers.get(uid);
     if (context) {
+      this.cancelIceRestart(context);
       context.dataChannel?.close();
       context.pc.close();
       this.peers.delete(uid);
     }
+  }
+
+  /**
+   * Per-peer ICE restart with exponential backoff. Only the original offerer
+   * for that pair attempts restart, to avoid simultaneous offers colliding
+   * across the mesh. The other side renegotiates by handling the offer.
+   */
+  private scheduleIceRestart(uid: string, context: PeerContext): void {
+    if (!context.isOfferer) return;
+    this.cancelIceRestart(context);
+    const delay = Math.min(3000 * Math.pow(2, context.iceRestartCount), 30000);
+    context.iceRestartTimer = setTimeout(() => {
+      this.attemptIceRestart(uid, context);
+    }, delay);
+    console.log(`[PartyWebRTC] ICE restart for ${uid} in ${delay / 1000}s (attempt ${context.iceRestartCount + 1})`);
+  }
+
+  private cancelIceRestart(context: PeerContext): void {
+    if (context.iceRestartTimer) {
+      clearTimeout(context.iceRestartTimer);
+      context.iceRestartTimer = null;
+    }
+  }
+
+  private async attemptIceRestart(uid: string, context: PeerContext): Promise<void> {
+    if (!context.isOfferer) return;
+    if (context.pc.connectionState === 'connected') {
+      console.log(`[PartyWebRTC] ${uid} recovered, skipping ICE restart`);
+      return;
+    }
+    if (context.iceRestartCount >= 5) {
+      console.log(`[PartyWebRTC] Max ICE restart attempts for ${uid}, giving up`);
+      context.state = 'failed';
+      this.callbacks.onConnectionStateChange(uid, 'failed');
+      return;
+    }
+    context.iceRestartCount++;
+    console.log(`[PartyWebRTC] Attempting ICE restart for ${uid} (attempt ${context.iceRestartCount})`);
+    try {
+      const offer = await context.pc.createOffer({ iceRestart: true } as any);
+      await context.pc.setLocalDescription(offer);
+      this.callbacks.onIceRestartOffer(uid, offer as RTCSessionDescription);
+      this.scheduleIceRestart(uid, context);
+    } catch (e) {
+      console.error(`[PartyWebRTC] ICE restart failed for ${uid}:`, e);
+      this.scheduleIceRestart(uid, context);
+    }
+  }
+
+  /**
+   * External nudge to attempt reconnect for all unhealthy peers, e.g. after
+   * the app returns from background or a network change.
+   */
+  nudgeReconnect(): void {
+    this.peers.forEach((context, uid) => {
+      const state = context.pc.connectionState;
+      if (state === 'connected' || state === 'connecting') return;
+      this.attemptIceRestart(uid, context);
+    });
   }
 
   private setupDataChannel(uid: string, context: PeerContext, channel: RTCDataChannel) {
@@ -224,6 +294,7 @@ export class PartyWebRTCService {
 
   close(): void {
     this.peers.forEach((context) => {
+      this.cancelIceRestart(context);
       context.dataChannel?.close();
       context.pc.close();
     });

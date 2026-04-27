@@ -441,6 +441,18 @@ export class WebRTCService {
   }
 
   /**
+   * External nudge to attempt reconnect, e.g. when the app returns to foreground
+   * or a network change is detected. No-op if the connection is already healthy.
+   */
+  nudgeReconnect(): void {
+    if (!this.peerConnection) return;
+    const state = this.peerConnection.connectionState;
+    if (state === 'connected' || state === 'connecting') return;
+    console.log('[WebRTC] External reconnect nudge received');
+    this.attemptIceRestart();
+  }
+
+  /**
    * Get connection quality stats from the peer connection.
    */
   async getConnectionStats(): Promise<ConnectionQuality | null> {

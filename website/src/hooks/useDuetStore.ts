@@ -40,6 +40,7 @@ interface DuetState {
   setDeafened: (deafened: boolean) => void;
   setVadSensitivity: (sensitivity: number) => void;
   sendReaction: (emoji: string) => void;
+  nudgeReconnect: () => void;
 }
 
 async function createAndStartAudioEngine(
@@ -98,7 +99,22 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   createRoom: async () => {
     const signaling = new SignalingService({
-      onOffer: () => {},
+      onOffer: async (offer) => {
+        // Host can receive ICE restart offers from the joiner when its own
+        // device went dormant. Renegotiate by handling the offer and answering.
+        const { webrtc, signaling: sig, connectionState } = get();
+        if (connectionState === 'connected') return;
+        if (webrtc && sig) {
+          try {
+            console.log('[Store] Host received ICE restart offer from joiner');
+            set({ connectionState: 'connecting' });
+            const answer = await webrtc.handleOffer(offer);
+            await sig.sendAnswer(answer);
+          } catch (e) {
+            console.error('[Store] Failed to handle ICE restart offer:', e);
+          }
+        }
+      },
       onAnswer: async (answer) => {
         const { webrtc } = get();
         await webrtc?.handleAnswer(answer);
@@ -251,6 +267,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onReaction: (_uid, emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
+      onIceRestartOffer: async (uid, offer) => {
+        const { partySignaling: ps } = get();
+        if (ps) {
+          console.log('[PartyWebRTC] Sending ICE restart offer for', uid);
+          await ps.sendOffer(uid, offer);
+        }
+      },
       onError: (error) => {
         console.error('[PartyWebRTC] Error:', error);
       },
@@ -294,7 +317,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           }
         }
       },
-      onAnswer: () => {},
+      onAnswer: async (answer) => {
+        // Joiner receives answers when it initiates an ICE restart from its side.
+        const { webrtc } = get();
+        await webrtc?.handleAnswer(answer);
+      },
       onIceCandidate: async (candidate) => {
         const { webrtc } = get();
         await webrtc?.addIceCandidate(candidate);
@@ -325,7 +352,15 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
-      onIceRestartOffer: async () => {},
+      onIceRestartOffer: async (offer) => {
+        // Joiner can also initiate ICE restart when host device is dormant.
+        // Send the restart offer via signaling so the host can renegotiate.
+        const { signaling: sig } = get();
+        if (sig) {
+          console.log('[Store] Joiner sending ICE restart offer via signaling');
+          await sig.sendOffer(offer);
+        }
+      },
       onError: (error) => {
         console.error('[WebRTC] Error:', error);
       },
@@ -461,5 +496,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   sendReaction: (emoji: string) => {
     const { webrtc } = get();
     webrtc?.sendReaction(emoji);
+  },
+
+  nudgeReconnect: () => {
+    const { webrtc, partyWebrtc } = get();
+    webrtc?.nudgeReconnect();
+    partyWebrtc?.nudgeReconnect();
   },
 }));
