@@ -88,17 +88,28 @@ export function recordLifecycle(page: Page) {
  * Navigate to /app and click through the AuthScreen as an anonymous guest.
  * Returns when the lobby is rendered. Use this at the start of any test
  * that needs to interact with the lobby or beyond.
+ *
+ * Race-based: whichever of {Continue as Guest, Start a Room} appears first
+ * tells us where the auth state stands. If the lobby shows up first the
+ * user is already signed in (cached from a previous run) and we skip the
+ * guest click. Otherwise we click the button and wait for the lobby.
  */
 export async function signInAsGuest(page: Page, path: string = '/app'): Promise<void> {
-  await page.goto(path);
-  // The AuthScreen shows "Continue as Guest" until an anonymous Firebase
-  // user exists; if the user is already cached from a previous run the
-  // button will be absent and we go straight to the lobby.
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
+
   const guestBtn = page.getByRole('button', { name: /continue as guest/i });
-  if (await guestBtn.isVisible().catch(() => false)) {
-    await guestBtn.click();
-  }
-  await expect(
-    page.getByText(/start a room/i).first()
-  ).toBeVisible({ timeout: 20_000 });
+  const lobby = page.getByText(/start a room/i).first();
+
+  // Wait up to 20s for either the auth or lobby to render.
+  await Promise.race([
+    guestBtn.waitFor({ state: 'visible', timeout: 20_000 }).catch(() => null),
+    lobby.waitFor({ state: 'visible', timeout: 20_000 }).catch(() => null),
+  ]);
+
+  // If the lobby is already visible we're cached-in; skip the click.
+  if (await lobby.isVisible().catch(() => false)) return;
+
+  // Otherwise the auth screen is up — click guest and wait for the lobby.
+  await guestBtn.click();
+  await expect(lobby).toBeVisible({ timeout: 20_000 });
 }
