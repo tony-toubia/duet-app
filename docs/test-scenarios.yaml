@@ -1,0 +1,778 @@
+version: 1
+last_updated: 2026-04-27
+purpose: |
+  Canonical scenario matrix for cross-platform device testing of the Duet app.
+  Every scenario is independently verifiable, has explicit pass/fail criteria,
+  and a stable id so it can be wired into Maestro / Playwright / manual runs.
+
+  Severity ladder:
+    P0 - blocks ship. Core functionality broken on any supported platform.
+    P1 - high. Reproducible regression in a primary flow; user-visible.
+    P2 - medium. Edge case or UX polish that an attentive user would notice.
+    P3 - low. Nice-to-have / aesthetic.
+
+  Platform codes:
+    ios   - iPad / iPhone running production build
+    droid - Android phone running production build
+    web   - Desktop or laptop browser (Chromium/Safari/Firefox)
+
+  Roles per scenario:
+    Each scenario lists "actors" with role:platform pairs. role is informational
+    (host, joiner-1, joiner-2). platform is one of the codes above or "any" if
+    the scenario is platform-agnostic.
+
+  gap_ref points back to the parity-audit gap number (#1..#14) if the scenario
+  was created to verify a specific fix. Scenarios without gap_ref are baseline
+  happy-path coverage.
+
+conventions:
+  - Each step is an imperative the tester (or automation) executes.
+  - Each expected line is a checkable assertion. If any fails, the scenario fails.
+  - signals are stable log substrings or UI elements the run harness can grep
+    or assert against. They make automated triage feasible.
+  - timing notes use approximate seconds; tolerate +/- 30% drift.
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Authentication & sessions
+# ─────────────────────────────────────────────────────────────────────
+
+features:
+  - id: auth
+    name: Authentication & sessions
+    scenarios:
+      - id: auth-001
+        name: Cold-start anonymous sign-in
+        severity: P0
+        actors: [{ role: user, platform: any }]
+        preconditions:
+          - Fresh install or cleared storage
+        steps:
+          - Launch app
+          - Wait for lobby to appear
+        expected:
+          - Lobby renders within 5s
+          - User has anonymous uid in Firebase auth
+        signals:
+          - "[Store] Initialized"
+
+      - id: auth-002
+        name: Google sign-in upgrades anonymous account
+        severity: P0
+        actors: [{ role: user, platform: any }]
+        preconditions: [Anonymous user already signed in]
+        steps:
+          - Tap profile / sign in with Google
+          - Complete Google flow
+        expected:
+          - Same uid persists (linkWithCredential, not new signup)
+          - Friends list and persistent room state retained
+        signals:
+          - profile.authProvider == 'google'
+
+      - id: auth-003
+        name: Same account on two devices is allowed
+        severity: P1
+        gap_ref: "#5 (party signaling)"
+        actors:
+          - { role: device-a, platform: ios }
+          - { role: device-b, platform: droid }
+        preconditions: [Same Google account on both devices]
+        steps:
+          - Sign in on device-a, then device-b with same account
+          - Verify both show as online to a third friend
+        expected:
+          - Neither device signs the other out
+          - Presence shows the user as online (single record per uid)
+          - Both devices have a token entry under users/{uid}/tokens/{deviceId}
+        signals:
+          - users/{uid}/tokens/* has 2 children
+
+      - id: auth-004
+        name: Same-account-two-devices party-room collision is rejected
+        severity: P1
+        gap_ref: "#5"
+        actors:
+          - { role: host, platform: any }
+          - { role: same-account, platform: any, accountSame: true }
+        preconditions:
+          - host creates party room
+          - same-account user is signed in on a different device
+        steps:
+          - On the same-account device, attempt to join host's party room
+        expected:
+          - Join fails with "already in this room on another device"
+          - Original device's connection is unaffected
+        signals:
+          - Error message visible in UI
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Duet (1:1) lifecycle
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: duet
+    name: Duet (1:1) room lifecycle
+    scenarios:
+      - id: duet-001
+        name: Host creates room and code is shareable
+        severity: P0
+        actors: [{ role: host, platform: any }]
+        steps:
+          - Tap "Create Room" in lobby
+          - Wait for share modal
+        expected:
+          - 6-char code appears in modal
+          - Code matches what's stored at rooms/{code} in RTDB
+          - Host status indicator is yellow ("Waiting for partner")
+
+      - id: duet-002
+        name: Joiner enters code and connects
+        severity: P0
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        steps:
+          - host runs duet-001
+          - joiner taps "Join with Code" and enters host's code
+          - Both wait up to 15s for ICE
+        expected:
+          - Both devices show "Connected" within 15s
+          - Avatars render on both ends
+          - Each side's mic icon is unmuted
+        signals:
+          - "[WebRTC] Connection state changed: connected"
+
+      - id: duet-003
+        name: Audio round-trip works both directions
+        severity: P0
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-002 connected]
+        steps:
+          - Host speaks "test 1"
+          - Joiner speaks "test 2"
+        expected:
+          - Joiner hears host within 500ms
+          - Host hears joiner within 500ms
+          - Speaker pulse animation triggers on the listening side
+        signals:
+          - isPartnerSpeaking flips true within 500ms
+
+      - id: duet-004
+        name: Mute and deafen propagate visually
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-002 connected]
+        steps:
+          - Host taps Mute
+          - Joiner taps Deafen
+        expected:
+          - Host's avatar shows muted icon to host
+          - Joiner stops hearing host even if host speaks
+          - Joiner's avatar shows deafened icon to joiner
+
+      - id: duet-005
+        name: Reactions deliver under 1s with overlay animation
+        severity: P2
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-002 connected]
+        steps:
+          - Host taps an emoji in the reaction bar
+        expected:
+          - Joiner sees the same emoji animated on screen within 1s
+          - Reaction does not interrupt audio
+
+      - id: duet-006
+        name: Host leaving terminates the room
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-002 connected]
+        steps:
+          - Host taps Leave
+        expected:
+          - Joiner is auto-ejected to lobby with "room_closed" notice within 10s
+          - rooms/{code} is removed from RTDB
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Background / lock-screen audio
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: bg-audio
+    name: Background-audio survival
+    scenarios:
+      - id: bg-001
+        name: iOS lock screen during call keeps audio flowing
+        severity: P0
+        gap_ref: baseline (already fixed iOS-side)
+        actors:
+          - { role: host, platform: ios }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - Host presses power button to lock screen
+          - Wait 30s, both keep talking
+          - Host wakes screen
+        expected:
+          - Audio continues both directions throughout
+          - Connection state stays connected
+          - On wake, no ICE restart needed
+        signals:
+          - "[WebRTC] Connection state changed: connected" still latest
+
+      - id: bg-002
+        name: Android lock screen keeps audio flowing
+        severity: P0
+        gap_ref: baseline
+        actors:
+          - { role: host, platform: droid }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - Host presses power to lock
+          - Wait 30s; both keep talking
+          - Host wakes
+        expected:
+          - Audio continues; no notification dismissal kills the service
+          - "Duet In Progress" notification is visible in shade
+          - DuetAudioService still running per logcat
+        signals:
+          - "[CallForegroundService] started" present in logs
+
+      - id: bg-003
+        name: Android party mode keeps the foreground notification
+        severity: P1
+        gap_ref: "#7"
+        actors:
+          - { role: host, platform: droid }
+          - { role: joiner, platform: any }
+        preconditions: [host created a party room and joiner connected]
+        steps:
+          - Pull down notification shade on host
+        expected:
+          - "Duet In Progress" notification present (was missing pre-fix)
+          - Tapping returns to room screen
+
+      - id: bg-004
+        name: Web tab hidden then returned restores audio
+        severity: P0
+        gap_ref: "#1, #8"
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: web }
+        preconditions: [duet-003 connected]
+        steps:
+          - Joiner switches to another browser tab for 60s
+          - Both keep talking during the hidden window
+          - Joiner switches back to Duet tab
+        expected:
+          - On return, joiner's audio resumes within 5s (ICE restart nudge fires)
+          - "Reconnecting..." badge appears briefly, then "Connected"
+        signals:
+          - "[Room] Tab returned to foreground, nudging reconnect"
+          - "[WebRTC] Connection state changed: connected" appears after the nudge
+
+      - id: bg-005
+        name: iOS phone call interrupts and resumes
+        severity: P1
+        actors:
+          - { role: host, platform: ios }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - Place a real incoming phone call to the host
+          - Host declines after 5s
+        expected:
+          - Audio engine pauses on .began, resumes on .ended
+          - No crash, no permanent mute
+        signals:
+          - AVAudioSessionInterruptionNotification handled
+
+      - id: bg-006
+        name: Bluetooth headset connect mid-call swaps route
+        severity: P2
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected on speaker]
+        steps:
+          - Host connects a paired Bluetooth headset
+          - Continues speaking
+        expected:
+          - Audio routes to headset within 3s
+          - No mid-route audio glitch longer than 1s
+          - On disconnect, route falls back to speaker
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Reconnect after drop
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: reconnect
+    name: Reconnect after network drop
+    scenarios:
+      - id: rc-001
+        name: Joiner toggles airplane mode briefly
+        severity: P0
+        gap_ref: "#2 (web answerer)"
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - Joiner enables airplane mode for 8s
+          - Joiner disables airplane mode
+        expected:
+          - Both sides show "Reconnecting..." within 5s
+          - ICE restart triggers; "Connected" returns within 30s
+          - Audio resumes both directions
+        signals:
+          - "[WebRTC] Attempting ICE restart"
+
+      - id: rc-002
+        name: Web answerer can recover when host's tab is hidden
+        severity: P0
+        gap_ref: "#1, #2"
+        actors:
+          - { role: host, platform: web }
+          - { role: joiner, platform: web }
+        preconditions: [duet-003 connected]
+        steps:
+          - Host hides tab for 60s while joiner keeps talking
+          - Host returns tab
+        expected:
+          - Joiner does not stay stuck "Reconnecting" forever (the fix)
+          - Connection re-establishes within 30s of host's return
+
+      - id: rc-003
+        name: Mobile WiFi to cellular handoff
+        severity: P1
+        actors:
+          - { role: host, platform: droid }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 on WiFi]
+        steps:
+          - Host turns off WiFi, leaving cellular on
+          - Continue talking 30s
+        expected:
+          - Connection drops briefly, recovers on cellular
+          - ICE restart attempts visible in logs
+
+      - id: rc-004
+        name: Party peer drops and rejoins
+        severity: P1
+        gap_ref: "#3"
+        actors:
+          - { role: host, platform: any }
+          - { role: peer-1, platform: any }
+          - { role: peer-2, platform: any }
+        preconditions:
+          - host runs party-001
+          - peer-1 and peer-2 joined
+        steps:
+          - peer-2 toggles airplane mode for 8s
+        expected:
+          - host and peer-1 stay connected to each other
+          - peer-2 reappears with both connections re-meshed within 30s
+
+      - id: rc-005
+        name: Five rapid airplane-mode toggles trigger backoff cap
+        severity: P2
+        gap_ref: "#2"
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - Joiner toggles airplane mode 5x in quick succession
+        expected:
+          - After 5 attempts, connection state goes "failed"
+          - User-facing UI shows "Connection Failed"
+        signals:
+          - "Max ICE restart attempts reached"
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Party rooms
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: party
+    name: Party rooms (multi-participant)
+    scenarios:
+      - id: party-001
+        name: Host creates party room
+        severity: P0
+        actors: [{ role: host, platform: any }]
+        steps: [Tap "Watch Party" / party CTA in lobby]
+        expected:
+          - Room created with roomType=party in RTDB
+          - 6-char code shown
+          - On Android, foreground notification appears
+
+      - id: party-002
+        name: Three participants form full mesh
+        severity: P0
+        actors:
+          - { role: host, platform: ios }
+          - { role: peer-1, platform: droid }
+          - { role: peer-2, platform: web }
+        steps:
+          - host runs party-001
+          - peer-1 joins by code
+          - peer-2 joins by code
+        expected:
+          - All three see each other's avatars
+          - Each peer reports onConnectionStateChange=connected for both others
+          - Audio goes both directions among all three pairs
+          - Mesh count = 3 distinct PeerConnection instances per peer
+
+      - id: party-003
+        name: Party at capacity rejects 7th joiner
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { roles: peer-1..peer-5, platform: any }
+          - { role: peer-6, platform: any }
+        steps:
+          - Fill room to 6 participants
+          - peer-6 attempts to join
+        expected:
+          - peer-6 sees "Room is full (max 6 participants)"
+          - existing 6 are unaffected
+
+      - id: party-004
+        name: Host leaves; remaining peers are ejected
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { role: peer-1, platform: any }
+          - { role: peer-2, platform: any }
+        preconditions: [party-002 connected]
+        steps: [host taps Leave]
+        expected:
+          - rooms/{code} deleted
+          - peer-1 and peer-2 redirected to lobby with notice
+
+      - id: party-005
+        name: Late joiner gets re-meshed with all existing peers
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { role: peer-1, platform: any }
+          - { role: peer-2, platform: any }
+        preconditions: [host + peer-1 connected]
+        steps: [peer-2 joins]
+        expected:
+          - peer-2 forms direct connections to BOTH host and peer-1
+          - Audio is bidirectional with all three within 15s
+
+      - id: party-006
+        name: Cross-platform party (iOS + Android + web)
+        severity: P1
+        actors:
+          - { role: host, platform: ios }
+          - { role: peer-1, platform: droid }
+          - { role: peer-2, platform: web }
+        steps: [run party-002 with explicit cross-platform actors]
+        expected:
+          - Same as party-002. Verify nohost iceTransportPolicy (iOS) and all (Android/web) interoperate
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Invitations & deep links
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: invites
+    name: Invitations, deep links, push
+    scenarios:
+      - id: inv-001
+        name: Friend invites another friend to a duet
+        severity: P0
+        gap_ref: "#4 (FCM tokens)"
+        actors:
+          - { role: host, platform: any }
+          - { role: friend, platform: any }
+        preconditions:
+          - host and friend are mutual accepted friends
+          - friend has push enabled
+        steps:
+          - host opens friend list, taps friend's quick-connect
+          - friend's device receives push within 10s
+          - friend taps notification
+        expected:
+          - friend's app opens or navigates to host's room
+          - Connection establishes per duet-002
+
+      - id: inv-002
+        name: Friend signed in on iPad and Android receives invite on both
+        severity: P1
+        gap_ref: "#4"
+        actors:
+          - { role: host, platform: any }
+          - { role: friend-ipad, platform: ios, accountSame: true }
+          - { role: friend-android, platform: droid, accountSame: true }
+        preconditions:
+          - friend signed in on both devices, both have tokens registered
+        steps: [host invites friend]
+        expected:
+          - Push arrives on BOTH friend devices
+          - Whichever device taps first joins; the other sees a stale invite
+            that fails gracefully with "already in this room"
+
+      - id: inv-003
+        name: Deep-link from external app cold-starts into room
+        severity: P1
+        actors: [{ role: user, platform: any }]
+        preconditions: [App force-quit]
+        steps:
+          - Send https://getduet.app/app/room/ABC123 from another app
+          - User taps the link
+        expected:
+          - App cold-starts directly to lobby with autoJoinCode=ABC123
+          - Auto-join runs within 5s
+
+      - id: inv-004
+        name: Warm-start deep link routes correctly
+        severity: P2
+        actors: [{ role: user, platform: any }]
+        preconditions: [App backgrounded in another screen]
+        steps: [Tap a duet:// link]
+        expected:
+          - App foregrounds and navigates to lobby with autoJoinCode
+
+      - id: inv-005
+        name: Invalid / expired invitation cleans up
+        severity: P3
+        actors: [{ role: user, platform: any }]
+        steps: [Tap an invitation push for a room that has since been deleted]
+        expected:
+          - User lands on lobby with a friendly "room not available" notice
+          - No crash
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Media playback (mobile only currently)
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: media
+    name: Media playback controls
+    scenarios:
+      - id: media-001
+        name: Spotify ducks during partner speech (iOS)
+        severity: P2
+        actors:
+          - { role: host, platform: ios }
+          - { role: joiner, platform: any }
+        preconditions:
+          - duet-003 connected
+          - Spotify playing on host
+          - host has duckingEnabled=true
+        steps: [joiner speaks for 3s]
+        expected:
+          - Spotify volume reduces during speech
+          - Returns to full volume within 1s of silence
+
+      - id: media-002
+        name: Spotify ducks during partner speech (Android)
+        severity: P2
+        actors:
+          - { role: host, platform: droid }
+          - { role: joiner, platform: any }
+        preconditions:
+          - duet-003 connected
+          - Spotify playing on host
+        steps: [joiner speaks for 3s]
+        expected:
+          - Volume reduces (AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+          - Note: Spotify may pause instead of duck; that is acceptable per design
+
+      - id: media-003
+        name: Media play/pause control reaches OS player
+        severity: P2
+        actors: [{ role: user, platform: any }]
+        preconditions:
+          - Spotify or Apple Music has a track loaded but paused
+        steps: [Tap play in Duet's MediaPlayer component]
+        expected:
+          - OS player begins playback within 1s
+          - Status updates to "Playing" via getMediaPlaybackState polling
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Permissions & error UX
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: perms
+    name: Permissions and error UX
+    scenarios:
+      - id: perm-001
+        name: Mic denial during room join shows actionable alert
+        severity: P1
+        gap_ref: "#9"
+        actors: [{ role: user, platform: droid }]
+        preconditions: [Mic permission previously denied with NEVER_ASK_AGAIN]
+        steps: [Create or join a room]
+        expected:
+          - Alert appears with "Open Settings" button (the fix)
+          - Tapping Open Settings opens system settings page
+          - Audio engine is NOT started (returns early)
+
+      - id: perm-002
+        name: Notification permission denied still allows app use
+        severity: P2
+        actors: [{ role: user, platform: any }]
+        steps:
+          - Decline push permission on first launch
+          - Use the app normally
+        expected:
+          - Lobby and room flows still work
+          - User can later enable via Profile screen
+
+      - id: perm-003
+        name: Mic granted on first prompt starts engine
+        severity: P0
+        actors: [{ role: user, platform: any }]
+        preconditions: [Fresh install]
+        steps:
+          - Create a room
+          - Grant mic on prompt
+        expected:
+          - Audio engine starts within 3s
+          - VAD events begin firing
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Friends & presence
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: friends
+    name: Friends and presence
+    scenarios:
+      - id: fr-001
+        name: Friend request -> push -> accept round trip
+        severity: P0
+        gap_ref: "#4"
+        actors:
+          - { role: requester, platform: any }
+          - { role: target, platform: any }
+        steps:
+          - requester searches target by email or friend code
+          - requester sends friend request
+          - target receives push within 10s
+          - target opens app and accepts
+        expected:
+          - Both users see each other in accepted friends list
+          - target's friends list does not include themselves (web fix #13)
+
+      - id: fr-002
+        name: User does not see themselves in their own friends list (web)
+        severity: P3
+        gap_ref: "#13"
+        actors: [{ role: user, platform: web }]
+        steps: [Open Friends screen]
+        expected:
+          - Own uid is excluded from accepted list at the source
+
+      - id: fr-003
+        name: Friend's online status appears within 30s of their app launch
+        severity: P1
+        actors:
+          - { role: user, platform: any }
+          - { role: friend, platform: any }
+        preconditions: [Mutual friends; user is in lobby]
+        steps: [friend launches app]
+        expected:
+          - friend's online dot turns green within 30s
+          - "Online friends" quick-connect chip appears
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: Persistent rooms / quick reconnect
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: persistent
+    name: Persistent room / quick reconnect
+    scenarios:
+      - id: pr-001
+        name: Last partner appears as quick-reconnect chip after a duet
+        severity: P2
+        actors:
+          - { role: user-a, platform: any }
+          - { role: user-b, platform: any }
+        preconditions: [user-a and user-b just completed a duet and left]
+        steps:
+          - user-a opens lobby
+        expected:
+          - "Reconnect with {user-b}" chip is visible
+          - Tapping it creates a fresh room and invites user-b
+
+# ─────────────────────────────────────────────────────────────────────
+# Feature: App lifecycle (force quit, OS pressure)
+# ─────────────────────────────────────────────────────────────────────
+
+  - id: lifecycle
+    name: App lifecycle and OS pressure
+    scenarios:
+      - id: lc-001
+        name: Force-quit during call cleans up partner UI
+        severity: P1
+        actors:
+          - { role: host, platform: any }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps: [host swipes app away from app switcher]
+        expected:
+          - joiner sees "Partner left" within 30s (debounce window)
+          - joiner can leave and rejoin without stale state
+
+      - id: lc-002
+        name: Memory pressure / system kill of background app
+        severity: P2
+        actors: [{ role: user, platform: droid }]
+        preconditions: [User in a room, app backgrounded]
+        steps:
+          - Open many memory-heavy apps to force the OS to evict Duet
+        expected:
+          - Foreground service + wake lock keep the call alive
+          - If killed, on relaunch the user lands in lobby (not a stale room view)
+
+      - id: lc-003
+        name: iOS swipe to home does not stop audio
+        severity: P0
+        actors:
+          - { role: host, platform: ios }
+          - { role: joiner, platform: any }
+        preconditions: [duet-003 connected]
+        steps:
+          - host swipes up to home screen
+          - both keep talking 30s
+          - host returns to app
+        expected:
+          - Audio uninterrupted throughout
+          - On return, UI is in correct state
+
+# ─────────────────────────────────────────────────────────────────────
+# Suite definitions: which scenarios run in which contexts
+# ─────────────────────────────────────────────────────────────────────
+
+suites:
+  smoke:
+    description: P0 happy paths only; <10 min total to run
+    includes:
+      - auth-001
+      - duet-001
+      - duet-002
+      - duet-003
+      - bg-001
+      - bg-002
+      - rc-001
+      - party-001
+      - party-002
+      - inv-001
+      - perm-003
+
+  pre-ship:
+    description: Full P0 + P1 set; everything that should pass before App Store submit
+    includes_severity: [P0, P1]
+
+  weekly-regression:
+    description: All scenarios; expected to run on real devices weekly
+    includes_severity: [P0, P1, P2, P3]
