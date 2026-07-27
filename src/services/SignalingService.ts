@@ -352,6 +352,16 @@ export class SignalingService {
 
     const unsubscribe = connRef.on('value', async (snapshot: any) => {
       if (snapshot.val() === true && this.roomRef && this.userId) {
+        // The room may have been deleted while we were offline — re-adding our
+        // member entry would resurrect a zombie room with no createdAt or
+        // signaling state. Check before re-registering.
+        const createdAtSnap = await this.roomRef.child('createdAt').once('value');
+        if (!createdAtSnap.exists()) {
+          console.log('[Signaling] Room gone after reconnect — not re-registering');
+          this.partnerPresent = false;
+          this.callbacks.onRoomDeleted();
+          return;
+        }
         // Firebase just reconnected — re-add ourselves and re-register onDisconnect
         const memberRef = this.roomRef.child('members').child(this.userId);
         await memberRef.set({

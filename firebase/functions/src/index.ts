@@ -261,7 +261,7 @@ export const onMemberLeft = onValueDeleted(
  * Clean up room when all members leave — but only if the room is old enough.
  */
 export const onRoomEmpty = onValueWritten(
-  { ref: '/rooms/{roomCode}/members', region: 'us-central1' },
+  { ref: '/rooms/{roomCode}/members', region: 'us-central1', timeoutSeconds: 120 },
   async (event) => {
     const roomCode = event.params.roomCode;
 
@@ -275,12 +275,23 @@ export const onRoomEmpty = onValueWritten(
       const ageMs = Date.now() - createdAt;
       const GRACE_PERIOD_MS = 5 * 60 * 1000;
 
-      if (ageMs > GRACE_PERIOD_MS) {
-        console.log(`Room ${roomCode} is empty and ${Math.round(ageMs / 1000)}s old, cleaning up`);
-        await db.ref(`/rooms/${roomCode}`).remove();
-      } else {
+      if (ageMs <= GRACE_PERIOD_MS) {
         console.log(`Room ${roomCode} is empty but only ${Math.round(ageMs / 1000)}s old, keeping for grace period`);
+        return;
       }
+
+      // Both devices can disconnect at the same moment (simultaneous screen
+      // lock / network blip) and re-register within seconds. Wait and
+      // re-check before deleting so the room survives brief double-drops.
+      await new Promise((r) => setTimeout(r, 60_000));
+      const recheck = await db.ref(`/rooms/${roomCode}/members`).once('value');
+      if (recheck.exists() && recheck.hasChildren()) {
+        console.log(`Room ${roomCode} repopulated within grace window, keeping`);
+        return;
+      }
+
+      console.log(`Room ${roomCode} is empty and ${Math.round(ageMs / 1000)}s old, cleaning up`);
+      await db.ref(`/rooms/${roomCode}`).remove();
     }
   }
 );
