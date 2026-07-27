@@ -407,6 +407,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       signaling.sendIceCandidate(candidate);
     };
     
+    // Start the Android foreground-service notification so Doze / OEM
+    // background killers don't freeze the socket and mic when the screen
+    // locks. No-op on iOS.
+    await callForegroundService.start();
+
     // Create room
     const roomCode = await signaling.createRoom();
     set({ roomCode });
@@ -577,6 +582,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       signaling.sendIceCandidate(candidate);
     };
 
+    // Keep Android alive while in the room (no-op on iOS)
+    await callForegroundService.start();
+
     // Join room
     const { isRejoin } = await signaling.joinRoom(code);
     if (isRejoin) {
@@ -702,9 +710,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
     // Stop the Android foreground service notification (no-op on iOS).
     // Idempotent: safe to call whether the room was a duet or a party.
-    if (roomType === 'party') {
-      await callForegroundService.stop();
-    }
+    await callForegroundService.stop();
 
     crashlyticsService.logRoomLeft();
     lifecycle('room.left', { roomCode: roomCode || '' });
