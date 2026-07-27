@@ -114,10 +114,10 @@ export class PartySignalingService {
     }
 
     const members = roomData.members || {};
-    if (members[this.userId]) {
-      throw new Error('You are already in this room on another device. Please leave the room on the other device first.');
-    }
-    if (Object.keys(members).length >= (roomData.maxParticipants || 6)) {
+    // Our own uid in members is a stale entry from a crash or network drop —
+    // treat it as a rejoin and overwrite rather than locking the user out.
+    const isRejoin = !!members[this.userId];
+    if (!isRejoin && Object.keys(members).length >= (roomData.maxParticipants || 6)) {
       throw new Error('Room is full (max 6 participants).');
     }
 

@@ -507,7 +507,21 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     };
 
     // Join room
-    await signaling.joinRoom(code);
+    const { isRejoin } = await signaling.joinRoom(code);
+    if (isRejoin) {
+      // Our stale member entry meant the host never saw us leave, so it won't
+      // fire onPartnerJoined or create a fresh offer. Initiate the offer from
+      // this side — the host handles answerer-initiated offers via its ICE
+      // restart path.
+      try {
+        set({ connectionState: 'connecting' });
+        const offer = await webrtc.createOffer();
+        await signaling.sendOffer(offer);
+        console.log('[Store] Rejoin: sent answerer-initiated offer');
+      } catch (e) {
+        console.error('[Store] Failed to send rejoin offer:', e);
+      }
+    }
     // Resolve real partner UID from room members
     const partnerUid = await signaling.getPartnerUid();
     set({ partnerId: partnerUid || 'partner' });

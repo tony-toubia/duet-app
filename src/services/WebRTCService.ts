@@ -196,12 +196,16 @@ export class WebRTCService {
     this.isOfferer = true;
     this.setConnectionState('connecting');
 
-    // Create data channel for audio data
-    const channel = this.peerConnection.createDataChannel('audio', {
-      ordered: false, // Don't need ordering for real-time audio
-      maxRetransmits: 0, // No retransmits for lowest latency
-    });
-    this.setupDataChannel(channel as any);
+    // Create data channel for audio data. On renegotiation (partner rejoined)
+    // the existing channel stays valid on this peer connection — creating a
+    // second one would leak the old channel and orphan its handlers.
+    if (!this.dataChannel) {
+      const channel = this.peerConnection.createDataChannel('audio', {
+        ordered: false, // Don't need ordering for real-time audio
+        maxRetransmits: 0, // No retransmits for lowest latency
+      });
+      this.setupDataChannel(channel as any);
+    }
     
     // Create and set local offer (no audio/video tracks - using data channel only)
     const offer = await this.peerConnection.createOffer({} as any);

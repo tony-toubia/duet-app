@@ -151,9 +151,12 @@ export class SignalingService {
   }
   
   /**
-   * Join an existing room (you're the answerer)
+   * Join an existing room (you're the answerer).
+   * Returns { isRejoin: true } when our uid already had a (stale) member entry —
+   * in that case the host won't fire onPartnerJoined again, so the caller
+   * should initiate the offer from this side.
    */
-  async joinRoom(roomCode: string): Promise<void> {
+  async joinRoom(roomCode: string): Promise<{ isRejoin: boolean }> {
     if (!this.userId) {
       throw new Error('Not authenticated. Call initialize() first.');
     }
@@ -169,11 +172,32 @@ export class SignalingService {
       throw new Error('Room not found');
     }
 
-    // Check if this user is already in the room (same account on another device)
     const roomData = roomSnapshot.val();
-    if (roomData?.members && roomData.members[this.userId]) {
-      throw new Error('You are already in this room on another device. Please use a different account or leave the room on the other device first.');
+    const members = roomData?.members || {};
+    const otherMembers = Object.keys(members).filter((uid) => uid !== this.userId);
+    // Our own uid in members is a stale entry from a crash or network drop
+    // (onDisconnect hasn't fired yet, or the heartbeat recreated it) — treat
+    // it as a rejoin and overwrite rather than locking the user out.
+    const isRejoin = !!members[this.userId];
+
+    // A room with zero members is abandoned (host died and onDisconnect
+    // removed them) — joining would wait forever for a partner.
+    if (!isRejoin && otherMembers.length === 0) {
+      throw new Error('This room is no longer active. Ask your partner to start a new one.');
     }
+
+    // Duet rooms hold exactly two people
+    if (otherMembers.length >= 2) {
+      throw new Error('This room is full.');
+    }
+
+    // Clear signaling left over from a previous pairing BEFORE registering as
+    // a member, so the stale offer isn't replayed into our fresh peer
+    // connection. The host generates a new offer once our member entry lands.
+    await this.roomRef.child('offer').remove();
+    await this.roomRef.child('answer').remove();
+    await this.roomRef.child('offerCandidates').remove();
+    await this.roomRef.child('answerCandidates').remove();
 
     // Add yourself as a member
     await withAuthRetry('joinRoom', () =>
@@ -203,8 +227,9 @@ export class SignalingService {
     // Listen for partner leaving
     this.listenForPartner();
     
-    console.log('[Signaling] Joined room:', this.roomCode);
+    console.log('[Signaling] Joined room:', this.roomCode, isRejoin ? '(rejoin)' : '');
     analyticsService.logRoomJoined();
+    return { isRejoin };
   }
   
   /**
