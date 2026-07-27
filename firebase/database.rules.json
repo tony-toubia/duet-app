@@ -135,7 +135,7 @@
             ".validate": "newData.isNumber()"
           },
           "authProvider": {
-            ".validate": "newData.isString() && (newData.val() == 'google' || newData.val() == 'email' || newData.val() == 'anonymous')"
+            ".validate": "newData.isString() && (newData.val() == 'google' || newData.val() == 'apple' || newData.val() == 'email' || newData.val() == 'anonymous')"
           },
           "friendCode": {
             ".validate": "newData.isString() && newData.val().length == 8"
