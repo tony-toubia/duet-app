@@ -45,7 +45,6 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
 
   const userProfile = useAuthStore((s) => s.userProfile);
   const isGuest = useAuthStore((s) => s.isGuest);
-  const signOut = useAuthStore((s) => s.signOut);
 
   const [showingAd, setShowingAd] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
@@ -237,7 +236,7 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
           {isGuest ? (
             <TouchableOpacity
               style={styles.signInBtn}
-              onPress={() => signOut()}
+              onPress={() => navigation.navigate('Auth')}
             >
               <Text style={styles.signInBtnText}>Sign In</Text>
             </TouchableOpacity>

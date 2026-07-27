@@ -70,6 +70,12 @@ export const RootNavigator = () => {
       if (await authService.isSignInWithEmailLink(url)) {
         try {
           await completeSignInWithEmailLink(url);
+          // If a signed-in guest completed the link from the Auth screen, the
+          // navigator won't switch stacks (user was already set) — return to
+          // the Lobby explicitly.
+          if (navigationRef.isReady() && navigationRef.getCurrentRoute()?.name === 'Auth') {
+            navigationRef.navigate('Lobby' as never);
+          }
         } catch (error: any) {
           if (error.message === 'EMAIL_REQUIRED') {
             if (Platform.OS === 'ios') {
@@ -145,6 +151,9 @@ export const RootNavigator = () => {
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Friends" component={FriendsScreen} />
               <Stack.Screen name="ContentHub" component={ContentHubScreen} />
+              {/* Reachable while signed in so guests can LINK a real account
+                  instead of signing out and orphaning their anonymous data */}
+              <Stack.Screen name="Auth" component={AuthScreen} />
             </>
           ) : showOnboarding ? (
             <>

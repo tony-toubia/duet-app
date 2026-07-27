@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -61,6 +61,17 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
   const { signInWithGoogle, signInWithApple, signInWithEmail, signUpWithEmail, sendSignInLink, continueAsGuest } = useAuthStore();
   const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
 
+  // Guests reach this screen while still signed in (to LINK a real account
+  // rather than orphan their anonymous data). In that case the navigator
+  // won't switch stacks on success, so we return to the Lobby ourselves.
+  const wasSignedInAtMount = useRef(!!useAuthStore.getState().user);
+
+  const finishAuth = () => {
+    if (wasSignedInAtMount.current) {
+      navigation.navigate('Lobby');
+    }
+  };
+
   useEffect(() => {
     if (Platform.OS === 'ios') {
       AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
@@ -78,6 +89,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     setIsLoading(true);
     try {
       await signInWithApple();
+      finishAuth();
     } catch (error: any) {
       console.error('[Auth] Apple sign-in failed:', error);
       if (error?.code !== 'ERR_REQUEST_CANCELED') {
@@ -92,6 +104,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     setIsLoading(true);
     try {
       await signInWithGoogle();
+      finishAuth();
     } catch (error: any) {
       console.error('[Auth] Google sign-in failed:', error);
       if (error?.code !== 'SIGN_IN_CANCELLED') {
@@ -110,6 +123,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     setIsLoading(true);
     try {
       await signInWithEmail(email, password);
+      finishAuth();
     } catch (error: any) {
       console.error('[Auth] Email login failed:', error);
       const msg = error?.code === 'auth/invalid-credential'
@@ -137,6 +151,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     setIsLoading(true);
     try {
       await signUpWithEmail(email, password, displayName);
+      finishAuth();
     } catch (error: any) {
       console.error('[Auth] Email register failed:', error);
       Alert.alert('Registration Failed', error?.message || 'Could not create account. Please try again.');
@@ -149,6 +164,7 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
     setIsLoading(true);
     try {
       await continueAsGuest();
+      finishAuth();
     } catch (error: any) {
       console.error('[Auth] Guest sign-in failed:', error);
       Alert.alert('Error', 'Could not continue as guest. Please try again.');
@@ -285,10 +301,12 @@ export const AuthScreen = ({ navigation }: AuthScreenProps) => {
             </View>
             <TouchableOpacity
               style={styles.guestLink}
-              onPress={handleGuest}
+              onPress={wasSignedInAtMount.current ? () => navigation.navigate('Lobby') : handleGuest}
               disabled={isLoading}
             >
-              <Text style={styles.guestLinkText}>Continue as Guest</Text>
+              <Text style={styles.guestLinkText}>
+                {wasSignedInAtMount.current ? 'Not now' : 'Continue as Guest'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

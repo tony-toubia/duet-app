@@ -4,6 +4,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { adService } from '@/services/AdService';
 import { DuetAudio } from '@/native/DuetAudio';
+import { navigationRef } from '@/navigation/navigationRef';
 import { colors } from '@/theme';
 
 const GUEST_SESSION_SECONDS = 20 * 60; // 20 minutes
@@ -17,7 +18,6 @@ interface GuestRoomTimerProps {
 
 export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTimerProps) => {
   const isGuest = useAuthStore((s) => s.isGuest);
-  const signOut = useAuthStore((s) => s.signOut);
   const setMuted = useDuetStore((s) => s.setMuted);
   const setDeafened = useDuetStore((s) => s.setDeafened);
 
@@ -133,11 +133,21 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
     }
   };
 
-  const handleSignIn = () => {
+  const handleSignIn = async () => {
     if (graceIntervalRef.current) clearInterval(graceIntervalRef.current);
     onControlsLocked?.(false);
     setShowExpiredModal(false);
-    signOut();
+    // Leave the room BEFORE any auth change — signing out first made the
+    // RTDB cleanup writes fail and stranded our member entry for the partner.
+    // Then go to the Auth screen still signed in, so the anonymous account
+    // gets LINKED (keeping friends/room history) instead of orphaned.
+    await useDuetStore.getState().leaveRoom();
+    if (navigationRef.isReady()) {
+      navigationRef.resetRoot({
+        index: 1,
+        routes: [{ name: 'Lobby' }, { name: 'Auth' }],
+      });
+    }
   };
 
   const handleLeaveRoom = () => {
