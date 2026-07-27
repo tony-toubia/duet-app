@@ -76,6 +76,15 @@ const STUN_SERVERS: TurnServer[] = [
 ];
 
 /**
+ * Whether production TURN credentials are configured (vs. the free openrelay
+ * fallback). Surfaced in lifecycle logs so a build silently missing its EAS
+ * env vars is visible in the field.
+ */
+export function hasProductionTurn(): boolean {
+  return getProductionTurn().length > 0;
+}
+
+/**
  * Get the full ICE server configuration
  */
 export function getIceServers(): TurnServer[] {

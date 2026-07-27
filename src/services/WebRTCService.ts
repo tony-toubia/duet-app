@@ -4,7 +4,7 @@ import {
   RTCSessionDescription,
   RTCIceCandidate,
 } from 'react-native-webrtc';
-import { getIceServers } from '@/config/turn';
+import { getIceServers, hasProductionTurn } from '@/config/turn';
 import { lifecycle } from './LifecycleLog';
 
 // WebRTC configuration
@@ -94,6 +94,7 @@ export class WebRTCService {
     try {
       // Create peer connection
       this.peerConnection = new RTCPeerConnection(getRtcConfig());
+      lifecycle('webrtc.turn', { production: hasProductionTurn() });
       const pc = this.peerConnection as any;
 
       // Handle ICE candidates
