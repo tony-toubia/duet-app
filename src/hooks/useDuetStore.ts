@@ -65,7 +65,7 @@ interface DuetState {
   createPartyRoom?: () => Promise<string>;
   joinPartyRoom?: (code: string) => Promise<void>;
   joinRoom: (code: string) => Promise<void>;
-  startAudio: () => Promise<void>;
+  startAudio: () => Promise<boolean>;
   leaveRoom: () => Promise<void>;
   setMuted: (muted: boolean) => void;
   setDeafened: (deafened: boolean) => void;
@@ -81,6 +81,54 @@ interface DuetState {
 type StoreSet = {
   (partial: Partial<DuetState> | ((state: DuetState) => Partial<DuetState>)): void;
 };
+
+// Speaking-indicator debounce timers. Audio packets arrive dozens of times per
+// second; a single reusable timer (per peer) replaces a setTimeout per packet.
+// "No pending timer" doubles as "wasn't speaking", avoiding redundant set()s.
+let partnerSpeakingTimer: ReturnType<typeof setTimeout> | null = null;
+const partySpeakingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function markPartnerSpeaking(set: StoreSet): void {
+  if (partnerSpeakingTimer) {
+    clearTimeout(partnerSpeakingTimer);
+  } else {
+    set({ isPartnerSpeaking: true });
+  }
+  // Reset after delay matching the native ducking timeout (500ms)
+  partnerSpeakingTimer = setTimeout(() => {
+    partnerSpeakingTimer = null;
+    set({ isPartnerSpeaking: false });
+  }, 500);
+}
+
+function markPartyParticipantSpeaking(set: StoreSet, uid: string): void {
+  const existing = partySpeakingTimers.get(uid);
+  if (existing) {
+    clearTimeout(existing);
+  } else {
+    set((prev) => ({
+      partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: true } : p)),
+    }));
+  }
+  partySpeakingTimers.set(
+    uid,
+    setTimeout(() => {
+      partySpeakingTimers.delete(uid);
+      set((prev) => ({
+        partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: false } : p)),
+      }));
+    }, 500)
+  );
+}
+
+function clearSpeakingTimers(): void {
+  if (partnerSpeakingTimer) {
+    clearTimeout(partnerSpeakingTimer);
+    partnerSpeakingTimer = null;
+  }
+  partySpeakingTimers.forEach((t) => clearTimeout(t));
+  partySpeakingTimers.clear();
+}
 
 /**
  * Build the party-mode signaling + WebRTC service pair with identical wiring
@@ -133,14 +181,7 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
     },
     onAudioData: async (uid, packet) => {
       await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
-      set((prev) => ({
-        partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: true } : p)),
-      }));
-      setTimeout(() => {
-        set((prev) => ({
-          partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: false } : p)),
-        }));
-      }, 500);
+      markPartyParticipantSpeaking(set, uid);
     },
     onIceRestartOffer: async (uid, offer) => {
       await partySignaling.sendOffer(uid, offer);
@@ -374,10 +415,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onAudioData: async (packet) => {
         // Play received audio with proper sample rate (this triggers ducking in native code)
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
-        set({ isPartnerSpeaking: true });
-        // Reset after delay matching the native ducking timeout (500ms)
-        // This keeps UI in sync with audio ducking behavior
-        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+        markPartnerSpeaking(set);
       },
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
@@ -542,9 +580,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onAudioData: async (packet) => {
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
-        set({ isPartnerSpeaking: true });
-        // Match native ducking timeout (500ms)
-        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+        markPartnerSpeaking(set);
       },
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
@@ -625,11 +661,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         const openSettings =
           granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
         set({
+          // Reflect the listen-only session in the UI — the mic isn't running
+          isMuted: true,
           pendingAlert: {
             title: 'Microphone Required',
             message: openSettings
-              ? "Duet needs microphone access. Open Settings to enable it."
-              : 'Duet needs microphone access to send your voice.',
+              ? "Duet needs microphone access. Open Settings to enable it. You can still hear your partner in the meantime."
+              : 'Duet needs microphone access to send your voice. You can still hear your partner.',
             buttons: openSettings
               ? [
                   { text: 'Open Settings', onPress: () => Linking.openSettings() },
@@ -638,7 +676,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
               : [{ text: 'OK' }],
           },
         });
-        return;
+        return false;
       }
     }
 
@@ -646,6 +684,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     await DuetAudio.startAudioEngine();
     crashlyticsService.logAudioEngineStart();
     lifecycle('audio.engine.start');
+    return true;
   },
 
   leaveRoom: async () => {
@@ -697,6 +736,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         console.warn('[Store] Failed to record recent connection:', e);
       }
     }
+
+    clearSpeakingTimers();
 
     // Stop audio
     await DuetAudio.stopAudioEngine();

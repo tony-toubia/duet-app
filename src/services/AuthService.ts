@@ -30,9 +30,7 @@ class AuthService {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    const webClientId = Constants.expirationDate
-      ? '' // Expo Go fallback
-      : Constants.expoConfig?.extra?.googleWebClientId || '';
+    const webClientId = Constants.expoConfig?.extra?.googleWebClientId || '';
 
     if (webClientId && GoogleSignin) {
       GoogleSignin.configure({ webClientId });
@@ -95,9 +93,11 @@ class AuthService {
   }
 
   async signInWithApple(): Promise<FirebaseAuthTypes.User> {
-    // Generate a random nonce and hash it for Apple
-    const rawNonce = Math.random().toString(36).substring(2, 10) +
-                     Math.random().toString(36).substring(2, 10);
+    // Generate a cryptographically random nonce and hash it for Apple
+    const nonceBytes = await Crypto.getRandomBytesAsync(32);
+    const rawNonce = Array.from(nonceBytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
     const hashedNonce = await Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
       rawNonce

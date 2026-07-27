@@ -21,7 +21,6 @@ import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { adService } from '@/services/AdService';
 import { invitationService } from '@/services/InvitationService';
 import { LobbyNativeAd } from '@/components/LobbyNativeAd';
-import { ShareModal } from '@/components/ShareModal';
 import { MatchBanner } from '@/components/MatchBanner';
 import { colors } from '@/theme';
 import type { LobbyScreenProps } from '@/navigation/types';
@@ -31,7 +30,6 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const [joinCode, setJoinCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showJoinInput, setShowJoinInput] = useState(false);
-  const [shareCode, setShareCode] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   const {
@@ -101,15 +99,15 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
   const handleCreateRoom = async () => {
     setIsLoading(true);
     try {
-      const code = await createRoom();
+      await createRoom();
       if (adService.isPreRollReady) {
         setShowingAd(true);
         await adService.showPreRoll();
         setShowingAd(false);
       }
       await startAudio();
+      // RoomScreen auto-shows the share modal for hosts — don't double up here
       setAudioReady(true);
-      setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create room failed:', error);
       Alert.alert('Error', error?.message || 'Failed to create room.');
@@ -122,15 +120,15 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     setIsLoading(true);
     try {
       if (!createPartyRoom) throw new Error("Feature unavailable");
-      const code = await createPartyRoom();
+      await createPartyRoom();
       if (adService.isPreRollReady) {
         setShowingAd(true);
         await adService.showPreRoll();
         setShowingAd(false);
       }
       await startAudio();
+      // RoomScreen auto-shows the share modal for hosts — don't double up here
       setAudioReady(true);
-      setShareCode(code);
     } catch (error: any) {
       console.error('[Lobby] Create party failed:', error);
       Alert.alert('Error', error?.message || 'Failed to create party.');
@@ -335,11 +333,6 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
         </View>
         {!showJoinInput && <LobbyNativeAd />}
       </KeyboardAvoidingView>
-      <ShareModal
-        visible={!!shareCode && !showingAd}
-        roomCode={shareCode || ''}
-        onClose={() => setShareCode(null)}
-      />
     </View>
   );
 };
