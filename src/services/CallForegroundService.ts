@@ -25,7 +25,7 @@ class CallForegroundService {
           color: AndroidColor.WHITE,
           colorized: true,
           ongoing: true,
-          foregroundServiceTypes: [AndroidForegroundServiceType.MICROPHONE],
+          foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_MICROPHONE],
           pressAction: {
             id: 'default',
           },

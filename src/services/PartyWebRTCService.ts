@@ -110,11 +110,12 @@ export class PartyWebRTCService {
     }
 
     context.isOfferer = true;
-    context.dataChannel = context.pc.createDataChannel('audio', {
+    // react-native-webrtc's channel type doesn't match the DOM lib type
+    const channel = context.pc.createDataChannel('audio', {
       ordered: false,
       maxRetransmits: 0,
-    });
-    this.setupDataChannel(toUid, context, context.dataChannel);
+    }) as any;
+    this.setupDataChannel(toUid, context, channel);
 
     const offer = await context.pc.createOffer({} as any);
     await context.pc.setLocalDescription(offer);

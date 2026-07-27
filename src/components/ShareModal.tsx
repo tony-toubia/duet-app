@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import type { NativeAd as NativeAdType } from 'react-native-google-mobile-ads';
 const ads = require('react-native-google-mobile-ads');
 const NativeAd = ads.NativeAd;
 const NativeAdView = ads.NativeAdView;
@@ -49,7 +50,7 @@ export const ShareModal = ({ visible, roomCode, onClose }: ShareModalProps) => {
     NativeAd.createForAdRequest(SHARE_AD_UNIT_ID, {
       aspectRatio: NativeMediaAspectRatio.ANY,
     })
-      .then((loadedAd) => {
+      .then((loadedAd: NativeAdType) => {
         if (!destroyed) {
           adRef.current = loadedAd;
           setNativeAd(loadedAd);
@@ -58,7 +59,7 @@ export const ShareModal = ({ visible, roomCode, onClose }: ShareModalProps) => {
           loadedAd.destroy();
         }
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         console.log('[Ad] Share modal native ad failed:', err.message);
       });
 

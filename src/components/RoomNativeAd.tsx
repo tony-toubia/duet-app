@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+import type { NativeAd as NativeAdType } from 'react-native-google-mobile-ads';
 const ads = require('react-native-google-mobile-ads');
 const NativeAd = ads.NativeAd;
 const NativeAdView = ads.NativeAdView;
@@ -40,7 +41,7 @@ export const RoomNativeAd = () => {
     NativeAd.createForAdRequest(NATIVE_AD_UNIT_ID, {
       aspectRatio: NativeMediaAspectRatio.LANDSCAPE,
     })
-      .then((loadedAd) => {
+      .then((loadedAd: NativeAdType) => {
         if (!destroyed) {
           ad = loadedAd;
           setNativeAd(loadedAd);
@@ -49,7 +50,7 @@ export const RoomNativeAd = () => {
           loadedAd.destroy();
         }
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         console.log('[Ad] Native ad failed to load:', err.message);
       });
 

@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+// Type-only imports are erased at compile time — the runtime require() below
+// stays the only actual module load (ads are disabled on iOS).
+import type {
+  InterstitialAd as InterstitialAdType,
+  RewardedAd as RewardedAdType,
+} from 'react-native-google-mobile-ads';
 
 const ads = require('react-native-google-mobile-ads');
 const InterstitialAd = ads.InterstitialAd;
@@ -28,14 +34,14 @@ const INTERSTITIAL_AD_UNIT_ID = getInterstitialAdUnitId();
 const REWARDED_AD_UNIT_ID = getRewardedAdUnitId();
 
 class AdService {
-  private interstitial: InterstitialAd | null = null;
+  private interstitial: InterstitialAdType | null = null;
   private roomLeaveCount = 0;
   private isLoaded = false;
   private onClosedResolve: (() => void) | null = null;
   private interstitialRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private interstitialRetryCount = 0;
 
-  private rewarded: RewardedAd | null = null;
+  private rewarded: RewardedAdType | null = null;
   private rewardedLoaded = false;
   private rewardedEarned = false;
   private onRewardedClosedResolve: ((earned: boolean) => void) | null = null;
@@ -67,15 +73,16 @@ class AdService {
       this.interstitialRetryTimer = null;
     }
 
-    this.interstitial = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID);
+    const interstitial: InterstitialAdType = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID);
+    this.interstitial = interstitial;
 
-    this.interstitial.addAdEventListener(AdEventType.LOADED, () => {
+    interstitial.addAdEventListener(AdEventType.LOADED, () => {
       console.log('[Ad] Interstitial loaded');
       this.isLoaded = true;
       this.interstitialRetryCount = 0;
     });
 
-    this.interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+    interstitial.addAdEventListener(AdEventType.CLOSED, () => {
       console.log('[Ad] Interstitial closed');
       this.isLoaded = false;
       if (this.onClosedResolve) {
@@ -86,7 +93,7 @@ class AdService {
       this.loadInterstitial();
     });
 
-    this.interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
+    interstitial.addAdEventListener(AdEventType.ERROR, (error: unknown) => {
       console.log('[Ad] Interstitial error:', error);
       this.isLoaded = false;
       // Exponential backoff: 30s, 60s, 120s, 240s, capped at 5 min
@@ -96,7 +103,7 @@ class AdService {
       this.interstitialRetryTimer = setTimeout(() => this.loadInterstitial(), delay);
     });
 
-    this.interstitial.load();
+    interstitial.load();
   }
 
   /**
@@ -152,21 +159,22 @@ class AdService {
       this.rewardedRetryTimer = null;
     }
 
-    this.rewarded = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
+    const rewarded: RewardedAdType = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
+    this.rewarded = rewarded;
     this.rewardedEarned = false;
 
-    this.rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
+    rewarded.addAdEventListener(RewardedAdEventType.LOADED, () => {
       console.log('[Ad] Rewarded loaded');
       this.rewardedLoaded = true;
       this.rewardedRetryCount = 0;
     });
 
-    this.rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
+    rewarded.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
       console.log('[Ad] Reward earned');
       this.rewardedEarned = true;
     });
 
-    this.rewarded.addAdEventListener(AdEventType.CLOSED, () => {
+    rewarded.addAdEventListener(AdEventType.CLOSED, () => {
       console.log('[Ad] Rewarded closed, earned:', this.rewardedEarned);
       this.rewardedLoaded = false;
       if (this.onRewardedClosedResolve) {
@@ -177,7 +185,7 @@ class AdService {
       this.loadRewarded();
     });
 
-    this.rewarded.addAdEventListener(AdEventType.ERROR, (error) => {
+    rewarded.addAdEventListener(AdEventType.ERROR, (error: unknown) => {
       console.log('[Ad] Rewarded error:', error);
       this.rewardedLoaded = false;
       // Exponential backoff: 30s, 60s, 120s, 240s, capped at 5 min
@@ -187,7 +195,7 @@ class AdService {
       this.rewardedRetryTimer = setTimeout(() => this.loadRewarded(), delay);
     });
 
-    this.rewarded.load();
+    rewarded.load();
   }
 
   /**
