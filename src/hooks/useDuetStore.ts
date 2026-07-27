@@ -63,6 +63,7 @@ interface DuetState {
   initialize: () => Promise<void>;
   createRoom: () => Promise<string>;
   createPartyRoom?: () => Promise<string>;
+  joinPartyRoom?: (code: string) => Promise<void>;
   joinRoom: (code: string) => Promise<void>;
   startAudio: () => Promise<void>;
   leaveRoom: () => Promise<void>;
@@ -74,6 +75,86 @@ interface DuetState {
   sendReaction: (emoji: string) => void;
   dismissAlert: () => void;
   setFromInvite: (value: boolean) => void;
+}
+
+type StoreSet = {
+  (partial: Partial<DuetState> | ((state: DuetState) => Partial<DuetState>)): void;
+};
+
+/**
+ * Build the party-mode signaling + WebRTC service pair with identical wiring
+ * for both the host (createPartyRoom) and joiner (joinPartyRoom) paths.
+ * The mesh is symmetric: whoever is already in the room offers to newcomers.
+ */
+function buildPartyServices(set: StoreSet, get: () => DuetState) {
+  const partySignaling: PartySignalingService = new PartySignalingService({
+    onOffer: async (fromUid, offer) => {
+      const { partyWebrtc } = get();
+      if (partyWebrtc) {
+        const answer = await partyWebrtc.handleOffer(fromUid, offer);
+        await partySignaling.sendAnswer(fromUid, answer);
+      }
+    },
+    onAnswer: async (fromUid, answer) => {
+      await get().partyWebrtc?.handleAnswer(fromUid, answer);
+    },
+    onIceCandidate: async (fromUid, candidate) => {
+      await get().partyWebrtc?.addIceCandidate(fromUid, candidate);
+    },
+    onParticipantJoined: async (uid) => {
+      const { partyWebrtc } = get();
+      if (partyWebrtc) {
+        set((state) => ({
+          partyParticipants: [
+            ...state.partyParticipants.filter((p) => p.uid !== uid),
+            { uid, isSpeaking: false, isMuted: false, connectionState: 'connecting' },
+          ],
+        }));
+        const offer = await partyWebrtc.createOffer(uid);
+        await partySignaling.sendOffer(uid, offer);
+      }
+    },
+    onParticipantLeft: (uid) => {
+      get().partyWebrtc?.removePeer(uid);
+      set((state) => ({ partyParticipants: state.partyParticipants.filter((p) => p.uid !== uid) }));
+    },
+    onRoomDeleted: () => {
+      set({ roomDeleted: true, connectionState: 'disconnected' });
+    },
+    onError: (err) => console.error(err),
+  });
+
+  const partyWebrtc = new PartyWebRTCService({
+    onConnectionStateChange: (uid, state) => {
+      set((prev) => ({
+        partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, connectionState: state } : p)),
+      }));
+    },
+    onAudioData: async (uid, packet) => {
+      await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
+      set((prev) => ({
+        partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: true } : p)),
+      }));
+      setTimeout(() => {
+        set((prev) => ({
+          partyParticipants: prev.partyParticipants.map((p) => (p.uid === uid ? { ...p, isSpeaking: false } : p)),
+        }));
+      }, 500);
+    },
+    onIceRestartOffer: async (uid, offer) => {
+      await partySignaling.sendOffer(uid, offer);
+    },
+    onDeepLink: async (uid, url) => {
+      try {
+        if (await Linking.canOpenURL(url)) await Linking.openURL(url);
+      } catch (e) {
+        console.warn('[PartyWebRTC] Unhandled universal link', url);
+      }
+    },
+    onError: (err) => console.error(err),
+  });
+
+  return { partySignaling, partyWebrtc };
 }
 
 export const useDuetStore = create<DuetState>((set, get) => ({
@@ -326,70 +407,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   },
 
   createPartyRoom: async () => {
-    
-    const { initialize: initAudio } = get();
-    
-    const partySignaling = new PartySignalingService({
-      onOffer: async (fromUid, offer) => {
-        const { partyWebrtc } = get();
-        if (partyWebrtc) {
-          const answer = await partyWebrtc.handleOffer(fromUid, offer);
-          await partySignaling.sendAnswer(fromUid, answer);
-        }
-      },
-      onAnswer: async (fromUid, answer) => {
-        await get().partyWebrtc?.handleAnswer(fromUid, answer);
-      },
-      onIceCandidate: async (fromUid, candidate) => {
-        await get().partyWebrtc?.addIceCandidate(fromUid, candidate);
-      },
-      onParticipantJoined: async (uid) => {
-        const { partyWebrtc } = get();
-        if (partyWebrtc) {
-          set((state) => ({ partyParticipants: [...state.partyParticipants, { uid, isSpeaking: false, isMuted: false, connectionState: 'connecting' }] }));
-          const offer = await partyWebrtc.createOffer(uid);
-          await partySignaling.sendOffer(uid, offer);
-        }
-      },
-      onParticipantLeft: (uid) => {
-        get().partyWebrtc?.removePeer(uid);
-        set((state) => ({ partyParticipants: state.partyParticipants.filter(p => p.uid !== uid) }));
-      },
-      onRoomDeleted: () => {
-        set({ roomDeleted: true, connectionState: 'disconnected' });
-      },
-      onError: (err) => console.error(err),
-    });
-
-    const partyWebrtc = new PartyWebRTCService({
-      onConnectionStateChange: (uid, state) => {
-        set((prev) => ({
-          partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, connectionState: state } : p)
-        }));
-      },
-      onAudioData: async (uid, packet) => {
-        await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
-        set((prev) => ({
-          partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, isSpeaking: true } : p)
-        }));
-        setTimeout(() => {
-          set((prev) => ({
-            partyParticipants: prev.partyParticipants.map(p => p.uid === uid ? { ...p, isSpeaking: false } : p)
-          }));
-        }, 500);
-      },
-      onIceRestartOffer: async (uid, offer) => {
-        await partySignaling.sendOffer(uid, offer);
-      },
-      onDeepLink: async (uid, url) => {
-        try {
-          if (await Linking.canOpenURL(url)) await Linking.openURL(url);
-        } catch (e) {
-          console.warn("[PartyWebRTC] Unhandled universal link", url);
-        }
-      },
-      onError: (err) => console.error(err),
-    });
+    const { partySignaling, partyWebrtc } = buildPartyServices(set, get);
 
     set({ partySignaling, partyWebrtc, isHost: true, roomType: 'party' });
     await partySignaling.initialize();
@@ -408,8 +426,44 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     lifecycle('room.created', { roomCode, roomType: 'party' });
     return roomCode;
   },
-  
+
+  joinPartyRoom: async (code: string) => {
+    const { partySignaling, partyWebrtc } = buildPartyServices(set, get);
+
+    set({ partySignaling, partyWebrtc, isHost: false, roomType: 'party' });
+    await partySignaling.initialize();
+
+    partyWebrtc.onLocalIceCandidate = (uid, candidate) => {
+      partySignaling.sendIceCandidate(uid, candidate);
+    };
+
+    await callForegroundService.start();
+
+    // Existing participants create offers toward us when our member entry
+    // lands (their onParticipantJoined fires) — we just seed the UI list.
+    const existingUids = await partySignaling.joinRoom(code);
+    set({
+      roomCode: code.toUpperCase(),
+      partyParticipants: existingUids.map((uid) => ({
+        uid,
+        isSpeaking: false,
+        isMuted: false,
+        connectionState: 'connecting',
+      })),
+    });
+    crashlyticsService.logRoomJoined(code);
+    eventTrackingService.track('room_joined', { roomCode: code, roomType: 'party' });
+    lifecycle('room.joined', { roomCode: code, roomType: 'party' });
+  },
+
   joinRoom: async (code: string) => {
+    // Party rooms use a different signaling scheme — route by room type so a
+    // party code entered in the normal join flow doesn't hang forever.
+    const normalized = code.toUpperCase();
+    const typeSnap = await database().ref(`rooms/${normalized}/roomType`).once('value');
+    if (typeSnap.val() === 'party') {
+      return get().joinPartyRoom!(normalized);
+    }
     // Create signaling service
     const signaling = new SignalingService({
       onOffer: async (offer) => {

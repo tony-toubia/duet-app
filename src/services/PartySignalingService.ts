@@ -154,8 +154,9 @@ export class PartySignalingService {
 
   async sendAnswer(toUid: string, answer: RTCSessionDescription): Promise<void> {
     if (!this.roomRef || !this.userId) return;
-    const pairId = `${this.userId}_${toUid}`;
-    // Sent on the reverse pairId, keeping it consistent for the receiver
+    // The answer must land on the OFFERER's pair (`{offerer}_{answerer}`) —
+    // handleSignalingPair delivers answers to the pair's sender side.
+    const pairId = `${toUid}_${this.userId}`;
     await this.roomRef.child(`signaling/${pairId}/answer`).set({
       type: answer.type,
       sdp: answer.sdp,
@@ -219,34 +220,49 @@ export class PartySignalingService {
     this.unsubscribers.push(() => signalingRef.off('child_changed', unsubscribeChanged));
   }
 
+  // Dedup state: child_changed replays the whole pair object every time a
+  // candidate lands, so offers/answers/candidates would otherwise be
+  // re-processed on every event.
+  private processedCandidates = new Set<string>();
+  private lastProcessedOffer = new Map<string, string>();
+  private lastProcessedAnswer = new Map<string, string>();
+
   private handleSignalingPair(snapshot: any) {
     const pairId = snapshot.key;
     const data = snapshot.val();
     if (!pairId || !data || !this.userId) return;
 
     const [senderId, receiverId] = pairId.split('_');
-    
-    // Process incoming signaling messages destined for US
-    if (receiverId === this.userId) {
-      if (data.offer) {
+
+    // Ignore pairs between two OTHER participants — their signaling (and
+    // especially their ICE candidates) must not leak into our connections.
+    if (senderId !== this.userId && receiverId !== this.userId) return;
+
+    // Offers addressed to us (we are the pair's receiver)
+    if (receiverId === this.userId && data.offer) {
+      if (this.lastProcessedOffer.get(pairId) !== data.offer.sdp) {
+        this.lastProcessedOffer.set(pairId, data.offer.sdp);
         this.callbacks.onOffer(senderId, data.offer as RTCSessionDescription);
       }
     }
-    
-    // Answer routing occurs on the SAME pair object but mapped backward, meaning
-    // if I sent the offer (I am senderId), the answer will pop up on this pair.
-    if (senderId === this.userId) {
-      if (data.answer) {
-         this.callbacks.onAnswer(receiverId, data.answer as RTCSessionDescription);
+
+    // Answers live on the offerer's pair: if we sent the offer (we are the
+    // pair's sender), the answer on this pair is addressed to us.
+    if (senderId === this.userId && data.answer) {
+      if (this.lastProcessedAnswer.get(pairId) !== data.answer.sdp) {
+        this.lastProcessedAnswer.set(pairId, data.answer.sdp);
+        this.callbacks.onAnswer(receiverId, data.answer as RTCSessionDescription);
       }
     }
 
-    // Processing incoming ICE candidates globally from any pair tracking we maintain
+    // ICE candidates from the other side of this pair
     if (data.candidates) {
-      Object.values(data.candidates).forEach((cand: any) => {
-        if (cand.sentBy !== this.userId) {
-          this.callbacks.onIceCandidate(cand.sentBy, cand as RTCIceCandidate);
-        }
+      Object.entries(data.candidates).forEach(([key, cand]: [string, any]) => {
+        if (cand.sentBy === this.userId) return;
+        const dedupeKey = `${pairId}/${key}`;
+        if (this.processedCandidates.has(dedupeKey)) return;
+        this.processedCandidates.add(dedupeKey);
+        this.callbacks.onIceCandidate(cand.sentBy, cand as RTCIceCandidate);
       });
     }
   }
@@ -271,6 +287,10 @@ export class PartySignalingService {
   async leave() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.unsubscribers.forEach(unsub => unsub());
+    this.processedCandidates.clear();
+    this.lastProcessedOffer.clear();
+    this.lastProcessedAnswer.clear();
+    this.knownMembers.clear();
     
     if (this.roomRef && this.userId) {
       await this.roomRef.child('members').child(this.userId).onDisconnect().cancel();
