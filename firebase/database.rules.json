@@ -8,8 +8,10 @@
         // Only authenticated users can read room data (SDP contains IP addresses)
         ".read": "auth != null",
 
-        // Only authenticated users can create or modify rooms
-        ".write": "auth != null",
+        // Anyone authenticated can CREATE a room; only its creator can
+        // overwrite or delete the room wholesale. Members and signaling
+        // children grant their own narrower writes below.
+        ".write": "auth != null && (!data.exists() || data.child('createdBy').val() == auth.uid)",
 
         // Validate room structure (createdAt + createdBy required; additional fields allowed for party rooms)
         ".validate": "newData.hasChild('createdAt') && newData.hasChild('createdBy')",
@@ -24,8 +26,9 @@
 
         "members": {
           "$memberId": {
-            // Members can add/remove themselves (onDisconnect inherits auth from registration)
-            ".write": "auth != null",
+            // Members can only add/remove THEMSELVES (onDisconnect inherits
+            // auth from registration) — no ejecting other participants
+            ".write": "auth != null && $memberId == auth.uid",
             ".validate": "newData.hasChildren(['role', 'joinedAt'])",
 
             "role": {
@@ -42,7 +45,9 @@
           }
         },
 
-        // WebRTC signaling data
+        // WebRTC signaling data. These stay auth-writable (not member-gated)
+        // because a joining guest clears stale signaling BEFORE registering
+        // its member entry.
         "offer": {
           ".write": "auth != null",
           ".validate": "newData.hasChildren(['type', 'sdp'])",
@@ -52,7 +57,7 @@
           },
 
           "sdp": {
-            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 10000"
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 20000"
           }
         },
 
@@ -65,7 +70,7 @@
           },
 
           "sdp": {
-            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 10000"
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 20000"
           }
         },
 
@@ -105,6 +110,13 @@
               ".validate": "newData.isNumber()"
             }
           }
+        },
+
+        // Party-mode per-pair signaling (offers/answers/candidates keyed by
+        // '{fromUid}_{toUid}'). Needs its own write grant now that the
+        // room-level write is restricted to the creator.
+        "signaling": {
+          ".write": "auth != null"
         }
       }
     },
