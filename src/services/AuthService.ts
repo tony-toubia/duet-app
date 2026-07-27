@@ -59,12 +59,29 @@ class AuthService {
     if (currentUser?.isAnonymous) {
       try {
         const result = await currentUser.linkWithCredential(googleCredential);
-        // Profile creation handled by onAuthStateChanged -> ensureProfile
-        return result.user;
+        // Linking doesn't copy the provider's name/photo onto the user
+        if (!result.user.displayName) {
+          const google = result.user.providerData?.find((p) => p?.providerId === 'google.com');
+          if (google?.displayName || google?.photoURL) {
+            await result.user.updateProfile({
+              displayName: google.displayName || undefined,
+              photoURL: google.photoURL || undefined,
+            });
+            await result.user.reload();
+          }
+        }
+        // Linking keeps the same user, so onAuthStateChanged does NOT fire
+        // again — update the RTDB profile explicitly or it stays 'anonymous'.
+        await this.createOrUpdateProfile(auth().currentUser!, 'google');
+        analyticsService.logLogin('google');
+        analyticsService.setUserId(auth().currentUser!.uid);
+        return auth().currentUser!;
       } catch (linkError: any) {
         // If account already exists, sign in directly
         if (linkError.code === 'auth/credential-already-in-use') {
           const result = await auth().signInWithCredential(googleCredential);
+          analyticsService.logLogin('google');
+          analyticsService.setUserId(result.user.uid);
           return result.user;
         }
         throw linkError;
@@ -108,11 +125,19 @@ class AuthService {
         if (fullName?.givenName) {
           const displayName = [fullName.givenName, fullName.familyName].filter(Boolean).join(' ');
           await result.user.updateProfile({ displayName });
+          await result.user.reload();
         }
-        return result.user;
+        // Linking keeps the same user, so onAuthStateChanged does NOT fire
+        // again — update the RTDB profile explicitly or it stays 'anonymous'.
+        await this.createOrUpdateProfile(auth().currentUser!, 'apple');
+        analyticsService.logLogin('apple');
+        analyticsService.setUserId(auth().currentUser!.uid);
+        return auth().currentUser!;
       } catch (linkError: any) {
         if (linkError.code === 'auth/credential-already-in-use') {
           const result = await auth().signInWithCredential(credential);
+          analyticsService.logLogin('apple');
+          analyticsService.setUserId(result.user.uid);
           return result.user;
         }
         throw linkError;
