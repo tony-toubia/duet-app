@@ -249,6 +249,8 @@ export class PartyWebRTCService {
     this.peers.forEach((context, uid) => {
       const state = context.pc.connectionState;
       if (state === 'connected' || state === 'connecting') return;
+      // External signal (foreground/network change) — escape the give-up cap
+      context.iceRestartCount = 0;
       this.attemptIceRestart(uid, context);
     });
   }

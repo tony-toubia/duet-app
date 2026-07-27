@@ -73,6 +73,7 @@ interface DuetState {
   setVadSensitivity: (sensitivity: number) => void;
   setDuckingEnabled: (enabled: boolean) => void;
   sendReaction: (emoji: string) => void;
+  nudgeReconnect: () => void;
   dismissAlert: () => void;
   setFromInvite: (value: boolean) => void;
 }
@@ -337,7 +338,17 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ partnerId: partnerUid || 'partner' });
       },
       onPartnerLeft: () => {
-        set({ partnerId: null, connectionState: 'disconnected' });
+        const { webrtc } = get();
+        // Stop offering into a room with nobody on the other side; the loop
+        // resumes naturally if the partner rejoins (new offer/renegotiation).
+        webrtc?.stopReconnectLoop();
+        // Firebase presence can flake while the WebRTC link is still healthy —
+        // don't clobber a live connection's status.
+        if (webrtc?.connectionState === 'connected') {
+          set({ partnerId: null });
+        } else {
+          set({ partnerId: null, connectionState: 'disconnected' });
+        }
       },
       onRoomDeleted: () => {
         console.log('[Store] Room was deleted');
@@ -495,7 +506,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onPartnerJoined: () => {},
       onPartnerLeft: () => {
-        set({ partnerId: null, connectionState: 'disconnected' });
+        const { webrtc } = get();
+        webrtc?.stopReconnectLoop();
+        if (webrtc?.connectionState === 'connected') {
+          set({ partnerId: null });
+        } else {
+          set({ partnerId: null, connectionState: 'disconnected' });
+        }
       },
       onRoomDeleted: () => {
         console.log('[Store] Room was deleted');
@@ -752,6 +769,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   sendReaction: (emoji: string) => {
     const { webrtc } = get();
     webrtc?.sendReaction(emoji);
+  },
+
+  nudgeReconnect: () => {
+    const { webrtc, partyWebrtc } = get();
+    webrtc?.nudgeReconnect();
+    partyWebrtc?.nudgeReconnect();
   },
 
   dismissAlert: () => {

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  AppState,
   Switch,
   Platform,
   ImageBackground,
@@ -73,6 +74,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     setVadSensitivity,
     setDuckingEnabled,
     setFromInvite,
+    nudgeReconnect,
   } = useDuetStore();
 
   const hasBeenConnected = useRef(false);
@@ -94,6 +96,17 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       hasBeenConnected.current = true;
     }
   }, [connectionState]);
+
+  // Kick reconnection when the app returns to the foreground — ICE timers may
+  // have been frozen while suspended, and this also escapes the restart cap.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        useDuetStore.getState().nudgeReconnect();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // Navigate to lobby when room code is cleared (after leaveRoom)
   useEffect(() => {
@@ -182,7 +195,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
       case 'connected': return 'Connected';
       case 'connecting': return 'Connecting...';
       case 'reconnecting': return 'Reconnecting...';
-      case 'failed': return 'Connection Failed';
+      case 'failed': return 'Failed — tap to retry';
       default:
         if (hasBeenConnected.current && !partnerId) return 'Partner left';
         return 'Waiting for partner...';
@@ -200,9 +213,14 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         <View style={[styles.statusDot, { backgroundColor: getConnectionColor() }]} />
         <Text style={styles.roomIdText}>{roomCode}</Text>
       </TouchableOpacity>
-      <Text style={[styles.connectionText, { color: getConnectionColor() }]}>
-        {getConnectionText()}
-      </Text>
+      <TouchableOpacity
+        onPress={nudgeReconnect}
+        disabled={connectionState !== 'failed'}
+      >
+        <Text style={[styles.connectionText, { color: getConnectionColor() }]}>
+          {getConnectionText()}
+        </Text>
+      </TouchableOpacity>
       <ConnectionQualityIndicator webrtc={webrtc} />
       <GuestRoomTimer onTimeExpired={handleLeave} onControlsLocked={setControlsLocked} />
       <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn}>
