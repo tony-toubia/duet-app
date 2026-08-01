@@ -67,6 +67,7 @@ export class SignalingService {
   private partnerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionId: string = '';  // Unique per-connection session to detect stale messages
+  private joinedAtMs: number | null = null;  // Stable joinedAt reused by heartbeat rewrites
 
   constructor(callbacks: SignalingCallbacks) {
     this.callbacks = callbacks;
@@ -125,6 +126,8 @@ export class SignalingService {
       })
     );
     
+    this.joinedAtMs = Date.now();
+
     // Remove yourself from members when you disconnect (not the whole room)
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();
 
@@ -207,6 +210,8 @@ export class SignalingService {
       })
     );
     
+    this.joinedAtMs = Date.now();
+
     // Remove yourself when you disconnect
     this.roomRef.child('members').child(this.userId).onDisconnect().remove();
 
@@ -390,11 +395,19 @@ export class SignalingService {
     this.heartbeatTimer = setInterval(async () => {
       if (this.roomRef && this.userId) {
         try {
+          // Write the whole member payload, not just the heartbeat child:
+          // the security rules require role + joinedAt on a member node, so a
+          // bare heartbeat write onto an entry that onDisconnect already
+          // removed would be rejected. Writing the full record keeps the write
+          // valid and restores our presence if we were dropped while alive.
           await this.roomRef
             .child('members')
             .child(this.userId)
-            .child('heartbeat')
-            .set(database.ServerValue.TIMESTAMP);
+            .update({
+              role: this.isOfferer ? 'offerer' : 'answerer',
+              joinedAt: this.joinedAtMs ?? Date.now(),
+              heartbeat: database.ServerValue.TIMESTAMP,
+            });
           this.heartbeatFailures = 0;
         } catch {
           this.heartbeatFailures++;
@@ -452,11 +465,15 @@ export class SignalingService {
         }
       } else if (memberCount <= 1 && this.partnerEverJoined) {
         // Debounce partner left: wait before firing to allow brief reconnects
-        // (e.g., partner backgrounded and Firebase onDisconnect fired temporarily)
-        if (this.partnerPresent) {
+        // (e.g., partner backgrounded and Firebase onDisconnect fired temporarily).
+        // Do NOT restart a countdown that's already running: our own 10s
+        // heartbeat rewrites members/{uid}/heartbeat, which re-fires this
+        // listener and would otherwise reset the 15s debounce forever, so
+        // onPartnerLeft could never fire.
+        if (this.partnerPresent && !this.partnerDebounceTimer) {
           console.log('[Signaling] Partner may have left, waiting to confirm...');
-          if (this.partnerDebounceTimer) clearTimeout(this.partnerDebounceTimer);
           this.partnerDebounceTimer = setTimeout(() => {
+            this.partnerDebounceTimer = null;
             if (this.partnerPresent) {
               this.partnerPresent = false;
               console.log('[Signaling] Partner left (confirmed after debounce)');
