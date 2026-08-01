@@ -222,7 +222,10 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         </Text>
       </TouchableOpacity>
       <ConnectionQualityIndicator webrtc={webrtc} />
-      <GuestRoomTimer onTimeExpired={handleLeave} onControlsLocked={setControlsLocked} />
+      {/* Must be the real leave, not handleLeave: that only opens a
+          confirmation the guest could cancel, which would strand them in the
+          room muted and deafened with the countdown already stopped. */}
+      <GuestRoomTimer onTimeExpired={handleConfirmLeave} onControlsLocked={setControlsLocked} />
       <TouchableOpacity onPress={handleLeave} style={styles.leaveBtn}>
         <Text style={styles.leaveBtnText}>Leave</Text>
       </TouchableOpacity>

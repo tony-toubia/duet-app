@@ -11,10 +11,14 @@ interface FriendsState {
   friendCode: string | null;
   isFriendCodeLoading: boolean;
 
+  /** Teardown for the currently active subscription, if any. */
+  _teardown: (() => void) | null;
+
   pendingRequests: () => Array<{ uid: string } & FriendEntry>;
   acceptedFriends: () => Array<{ uid: string } & FriendEntry>;
 
   subscribe: () => () => void;
+  reset: () => void;
   sendFriendRequest: (targetUid: string) => Promise<void>;
   acceptFriendRequest: (friendUid: string) => Promise<void>;
   removeFriend: (friendUid: string) => Promise<void>;
@@ -33,6 +37,7 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
   isSearching: false,
   friendCode: null,
   isFriendCodeLoading: false,
+  _teardown: null,
 
   pendingRequests: () => {
     const { friends } = get();
@@ -50,7 +55,13 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
   },
 
   subscribe: () => {
+    // Idempotent: several screens subscribe independently, and the auth store
+    // re-subscribes on account change. Drop any previous subscription first so
+    // listeners can't accumulate against a stale uid.
+    get()._teardown?.();
+
     const unsubs: (() => void)[] = [];
+    let unsubStatuses: (() => void) | null = null;
 
     const unsubFriends = friendsService.subscribeFriends((friends) => {
       set({ friends });
@@ -59,11 +70,17 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
         .filter(([, f]) => f.status === 'accepted')
         .map(([uid]) => uid);
 
+      // Replace rather than stack: each presence subscription starts with an
+      // empty accumulator and emits partial maps, so leaving the old one
+      // attached makes the online dots flicker as they overwrite each other.
+      unsubStatuses?.();
+      unsubStatuses = null;
       if (acceptedUids.length > 0) {
-        const unsubStatuses = presenceService.subscribeToStatuses(acceptedUids, (statuses) => {
+        unsubStatuses = presenceService.subscribeToStatuses(acceptedUids, (statuses) => {
           set({ statuses });
         });
-        unsubs.push(unsubStatuses);
+      } else {
+        set({ statuses: {} });
       }
     });
     unsubs.push(unsubFriends);
@@ -73,7 +90,19 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
     });
     unsubs.push(unsubRecent);
 
-    return () => unsubs.forEach((u) => u());
+    const teardown = () => {
+      unsubStatuses?.();
+      unsubStatuses = null;
+      unsubs.forEach((u) => u());
+      if (get()._teardown === teardown) set({ _teardown: null });
+    };
+    set({ _teardown: teardown });
+    return teardown;
+  },
+
+  reset: () => {
+    get()._teardown?.();
+    set({ friends: {}, statuses: {}, recentConnections: {} });
   },
 
   sendFriendRequest: async (targetUid: string) => {

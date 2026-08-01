@@ -192,9 +192,7 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
             </Text>
             <TouchableOpacity
               style={styles.upgradeBtn}
-              onPress={() => {
-                signOut();
-              }}
+              onPress={() => navigation.navigate('Auth')}
             >
               <Text style={styles.upgradeBtnText}>Create Account</Text>
             </TouchableOpacity>

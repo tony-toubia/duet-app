@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, FlatList, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ContentService, ContentItem } from '@/services/ContentService';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { ContentCard } from '@/components/ContentCard';
 import { colors } from '@/theme';
+import type { ContentHubScreenProps } from '@/navigation/types';
 
-export const ContentHubScreen = () => {
+export const ContentHubScreen = ({ navigation }: ContentHubScreenProps) => {
   const insets = useSafeAreaInsets();
   const userCity = useDuetStore(s => s.userCity);
   const [items, setItems] = useState<ContentItem[]>([]);
@@ -47,8 +48,16 @@ export const ContentHubScreen = () => {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar style="light" />
-      <Text style={styles.headerTitle}>Content Hub</Text>
-      
+      {/* Stack has headerShown:false and gestureEnabled:false, so without an
+          explicit control there is no way off this screen on iOS. */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Content Hub</Text>
+        <View style={{ width: 50 }} />
+      </View>
+
       {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator color={colors.primary} />
@@ -77,12 +86,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  backBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  backBtnText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '500',
+  },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     color: colors.text,
     fontWeight: 'bold',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
   },
   listContent: {
     paddingHorizontal: 20,

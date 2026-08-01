@@ -3,6 +3,7 @@ import { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import database from '@react-native-firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
 import { eventTrackingService } from '@/services/EventTrackingService';
+import { pushNotificationService } from '@/services/PushNotificationService';
 
 export interface NotificationPreferences {
   emailOptIn: boolean;
@@ -44,7 +45,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initializeAuth: () => {
     authService.initialize();
 
+    let lastUid: string | null = null;
+
     const unsubscribe = authService.onAuthStateChanged(async (user) => {
+      // Rebind per-account state whenever the signed-in uid changes. The push
+      // token is stored under users/{uid}, and the friends listeners capture a
+      // uid when they attach — without this, a device that switches accounts
+      // keeps receiving the previous account's notifications and showing its
+      // friends list until the app is restarted.
+      if (user?.uid !== lastUid) {
+        lastUid = user?.uid ?? null;
+        const { useFriendsStore } = require('@/hooks/useFriendsStore');
+        if (user) {
+          pushNotificationService.refreshTokenRegistration().catch(() => {});
+          useFriendsStore.getState().subscribe();
+        } else {
+          useFriendsStore.getState().reset();
+        }
+      }
+
       if (user) {
         set({
           user,
@@ -205,6 +224,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    // Drop this device's token from the outgoing account first — while we
+    // still have the auth to delete it. Otherwise the next account to sign in
+    // shares the device with a stale registration and both receive its pushes.
+    await pushNotificationService.removeToken().catch(() => {});
     await authService.signOut();
     set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
   },

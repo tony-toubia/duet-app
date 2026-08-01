@@ -409,6 +409,20 @@ class PushNotificationService {
   }
 
   /**
+   * Re-register this device's token against whoever is signed in now.
+   * Must run on every account change: the token is stored per-uid, so without
+   * this a device keeps delivering the previous account's notifications.
+   */
+  async refreshTokenRegistration(): Promise<void> {
+    try {
+      const token = await messaging().getToken();
+      if (token) await this.saveTokenToDatabase(token);
+    } catch (error) {
+      console.warn('[Push] Token re-registration failed:', error);
+    }
+  }
+
+  /**
    * Remove push token (call when user logs out)
    */
   async removeToken(): Promise<void> {
