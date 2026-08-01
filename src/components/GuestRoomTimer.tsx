@@ -48,9 +48,12 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
     }, 1000);
   };
 
-  const startGraceCountdown = () => {
+  /** `reset: false` resumes the existing countdown instead of granting a fresh
+   *  grace period — otherwise a failing ad could be tapped repeatedly to stay
+   *  in the room indefinitely. */
+  const startGraceCountdown = (reset = true) => {
     if (graceIntervalRef.current) clearInterval(graceIntervalRef.current);
-    setGraceSecondsLeft(GRACE_PERIOD_SECONDS);
+    if (reset) setGraceSecondsLeft(GRACE_PERIOD_SECONDS);
 
     graceIntervalRef.current = setInterval(() => {
       setGraceSecondsLeft((prev) => {
@@ -106,20 +109,27 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
 
   const handleWatchAd = async () => {
     setIsLoadingAd(true);
+    // Stop the auto-leave countdown for the duration of the ad, otherwise it
+    // can expire mid-ad and eject the user who is currently watching it.
+    if (graceIntervalRef.current) {
+      clearInterval(graceIntervalRef.current);
+      graceIntervalRef.current = null;
+    }
     try {
       // Try interstitial first (pre-roll), fall back to rewarded
-      if (adService.isPreRollReady) {
-        await adService.showPreRoll();
-      } else {
-        const earned = await adService.showRewarded();
-        if (!earned) {
-          setIsLoadingAd(false);
-          return;
-        }
+      const watched = adService.isPreRollReady
+        ? await adService.showPreRoll()
+        : await adService.showRewarded();
+
+      if (!watched) {
+        // No ad was actually shown — don't grant the extension; resume the
+        // countdown so the modal doesn't become a way to stay indefinitely.
+        setIsLoadingAd(false);
+        startGraceCountdown(false);
+        return;
       }
 
       // Ad completed — restore session
-      if (graceIntervalRef.current) clearInterval(graceIntervalRef.current);
       setMuted(prevAudioState.current.muted);
       setDeafened(prevAudioState.current.deafened);
       onControlsLocked?.(false);
@@ -127,7 +137,8 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
       setShowExpiredModal(false);
       startCountdown();
     } catch {
-      // Ad failed — modal stays open
+      // Ad failed — keep the modal open and resume the countdown
+      startGraceCountdown(false);
     } finally {
       setIsLoadingAd(false);
     }
@@ -232,6 +243,8 @@ export const GuestRoomTimer = ({ onTimeExpired, onControlsLocked }: GuestRoomTim
 
 const styles = StyleSheet.create({
   timerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     borderRadius: 10,
     paddingHorizontal: 8,

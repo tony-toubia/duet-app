@@ -56,10 +56,17 @@ class AdService {
   private adFreeUntil = 0;
   private static readonly AD_FREE_DURATION_MS = 60 * 60 * 1000;
 
+  private initialized = false;
+
   /**
-   * Initialize and preload all ads
+   * Initialize and preload all ads. Idempotent: the Lobby remounts on every
+   * return from a room, and re-running this built fresh ad objects whose
+   * listeners kept mutating the shared isLoaded/onClosedResolve fields — the
+   * flags would drift out of sync with the live ad and the buttons went dead.
    */
   initialize(): void {
+    if (this.initialized) return;
+    this.initialized = true;
     this.loadInterstitial();
     this.loadRewarded();
   }
@@ -237,10 +244,15 @@ class AdService {
    * Show an interstitial ad immediately (for room entry pre-roll).
    * Resolves when the ad is closed, or immediately if no ad is loaded.
    */
-  async showPreRoll(): Promise<void> {
+  /**
+   * Show the pre-roll interstitial. Resolves true only when an ad was actually
+   * displayed and dismissed — callers that grant something in exchange for a
+   * view (e.g. extending a guest session) must not treat "resolved" as "seen".
+   */
+  async showPreRoll(): Promise<boolean> {
     if (!this.isLoaded || !this.interstitial) {
       console.log('[Ad] Pre-roll not ready, skipping');
-      return;
+      return false;
     }
     try {
       const closedPromise = new Promise<void>((resolve) => {
@@ -248,9 +260,11 @@ class AdService {
       });
       await this.interstitial.show();
       await closedPromise;
+      return true;
     } catch (error) {
       console.log('[Ad] Failed to show pre-roll:', error);
       this.onClosedResolve = null;
+      return false;
     }
   }
 

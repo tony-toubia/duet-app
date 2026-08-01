@@ -28,7 +28,7 @@ export const ContentCard = ({ item, onListenTogether }: ContentCardProps) => {
         <Image source={{ uri: item.image }} style={styles.image} resizeMode="cover" />
       )}
       <View style={styles.content}>
-        <Text style={styles.typeTag}>{item.type.replace('_', ' ').toUpperCase()}</Text>
+        <Text style={styles.typeTag}>{(item.type || 'content').replace('_', ' ').toUpperCase()}</Text>
         <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
         {item.city && (
           <Text style={styles.cityText}>Localized for {item.city}</Text>

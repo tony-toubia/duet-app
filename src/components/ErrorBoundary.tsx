@@ -44,7 +44,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <Text style={styles.message}>
             {this.state.error?.message || this.props.fallbackMessage || 'An unexpected error occurred. Please try again.'}
           </Text>
-          <Text style={styles.errorDetail}>{this.state.error?.stack}</Text>
+          {__DEV__ && <Text style={styles.errorDetail}>{this.state.error?.stack}</Text>}
           <TouchableOpacity style={styles.retryBtn} onPress={this.handleRetry}>
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>

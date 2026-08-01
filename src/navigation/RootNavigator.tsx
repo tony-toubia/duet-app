@@ -48,9 +48,11 @@ export const RootNavigator = () => {
   }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem('onboardingComplete').then((value) => {
-      setShowOnboarding(value !== 'true');
-    });
+    // A rejection here would leave showOnboarding null forever, which renders
+    // the loading spinner as the whole app.
+    AsyncStorage.getItem('onboardingComplete')
+      .then((value) => setShowOnboarding(value !== 'true'))
+      .catch(() => setShowOnboarding(true));
   }, []);
 
   // Set up presence tracking when user is authenticated
