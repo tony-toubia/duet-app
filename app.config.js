@@ -137,7 +137,15 @@ module.exports = {
         {
           androidAppId: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
           iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
-          delayAppMeasurementInit: true
+          delayAppMeasurementInit: true,
+          // Google's SKAdNetwork ID, for ad attribution without tracking
+          skAdNetworkItems: ["cstr6suwn9.skadnetwork"]
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          userTrackingPermission: "Allowing tracking lets Duet show you ads that are more relevant to you. Duet never uses your conversations for ads."
         }
       ],
       "expo-apple-authentication",

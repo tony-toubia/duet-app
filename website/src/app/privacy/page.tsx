@@ -84,11 +84,13 @@ export default function PrivacyPage() {
         </ul>
 
         <h2>3. Advertising</h2>
-        {/* NEEDS COUNSEL: the app does not show Apple's App Tracking Transparency
-            prompt or a GDPR/UMP consent form, so whether ads may be personalized,
-            and whether ad data use counts as "selling" or "sharing" under CCPA/CPRA,
-            needs a legal decision before this section is final. */}
+        {/* NEEDS COUNSEL: whether personalized ads (with consent) count as "selling"
+            or "sharing" under CCPA/CPRA, and whether a "Do Not Sell or Share" link and
+            US-state privacy messages (AdMob Privacy & messaging) are required. The
+            consent messages themselves are configured in the AdMob and AdSense
+            dashboards, not in this code. */}
         <p>Duet displays ads to support the free service. On mobile, Google AdMob serves native, full-screen, and rewarded video ads. On the web, Google AdSense serves display ads. Google may collect device identifiers (such as your device&apos;s advertising ID), your IP address, and ad interaction data, as described in <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google&apos;s Privacy Policy</a>. We do not give advertisers your name, email address, or profile.</p>
+        <p>Where the law requires it (for example in the European Economic Area, the UK and Switzerland), we ask for your consent before ads are personalized, using Google&apos;s consent message; you can change your choice at any time with <strong>Ad Privacy Choices</strong> in your Profile. On iPhone, ads use your device&apos;s advertising identifier only if you allow tracking when asked; you can change this in iOS Settings &gt; Privacy &amp; Security &gt; Tracking. Users under 18 only ever see non-personalized ads and are never asked to allow tracking.</p>
 
         <h2>4. Data Sharing</h2>
         {/* NEEDS COUNSEL: "We do not sell your personal information" must be checked

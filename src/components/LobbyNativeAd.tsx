@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 
 import type { NativeAd as NativeAdType } from 'react-native-google-mobile-ads';
+import { adConsentService } from '@/services/AdConsentService';
 const ads = require('react-native-google-mobile-ads');
 const NativeAd = ads.NativeAd;
 const NativeAdView = ads.NativeAdView;
@@ -16,7 +17,8 @@ const getLobbyNativeAdUnitId = () => {
   const extras = Constants.expoConfig?.extra;
   const id = Platform.OS === 'ios' ? extras?.admobLobbyNativeIdIos : extras?.admobLobbyNativeIdAndroid;
   console.log('[Ad] Lobby native unit ID:', id ? '(set)' : '(missing)', 'Platform:', Platform.OS);
-  return id || TestIds.NATIVE;
+  // No unit ID in a release build: show no ad rather than Google's test ad
+  return id || null;
 };
 
 const LOBBY_NATIVE_AD_UNIT_ID = getLobbyNativeAdUnitId();
@@ -25,14 +27,22 @@ export const LobbyNativeAd = () => {
   const [nativeAd, setNativeAd] = useState<any>(null);
 
   useEffect(() => {
-    if (!NativeAd) return; // Ads disabled on iOS
+    if (!NativeAd || !LOBBY_NATIVE_AD_UNIT_ID) return;
     let destroyed = false;
     let ad: any = null;
 
-    NativeAd.createForAdRequest(LOBBY_NATIVE_AD_UNIT_ID, {
-      aspectRatio: NativeMediaAspectRatio.LANDSCAPE,
-    })
-      .then((loadedAd: NativeAdType) => {
+    // No ad request until consent is gathered, and none at all if declined
+    adConsentService
+      .ready()
+      .then(() => {
+        if (destroyed || !adConsentService.canRequestAds) return null;
+        return NativeAd.createForAdRequest(LOBBY_NATIVE_AD_UNIT_ID, {
+          aspectRatio: NativeMediaAspectRatio.LANDSCAPE,
+          ...adConsentService.requestOptions(),
+        });
+      })
+      .then((loadedAd: NativeAdType | null) => {
+        if (!loadedAd) return;
         if (!destroyed) {
           ad = loadedAd;
           setNativeAd(loadedAd);

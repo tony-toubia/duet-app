@@ -19,6 +19,8 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { adService } from '@/services/AdService';
+import { adConsentService } from '@/services/AdConsentService';
+import { ageGateService } from '@/services/AgeGateService';
 import { invitationService } from '@/services/InvitationService';
 import { LobbyNativeAd } from '@/components/LobbyNativeAd';
 import { MatchBanner } from '@/components/MatchBanner';
@@ -86,7 +88,14 @@ export const LobbyScreen = ({ navigation, route }: LobbyScreenProps) => {
     const init = async () => {
       try {
         await initialize();
-        try { adService.initialize(); } catch (e) { console.warn('[Ad] Ad init failed:', e); }
+        // Ad consent (Google UMP, then Apple's tracking prompt for adults),
+        // then preload full-screen ads. Not awaited: a consent form must not
+        // hold up audio setup.
+        ageGateService
+          .getAdAgeBand()
+          .then((band) => adConsentService.prepare(band))
+          .then(() => adService.initialize())
+          .catch((e) => console.warn('[Ad] Ad init failed:', e));
         setIsInitialized(true);
       } catch (error: any) {
         console.error('[Lobby] Init failed:', error);

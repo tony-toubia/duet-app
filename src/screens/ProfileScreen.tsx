@@ -17,6 +17,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { storageService } from '@/services/StorageService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { referralService } from '@/services/ReferralService';
+import { adConsentService } from '@/services/AdConsentService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { ProfileScreenProps } from '@/navigation/types';
@@ -305,6 +306,18 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
           </View>
         )}
 
+        {adConsentService.privacyOptionsRequired && (
+          <TouchableOpacity
+            style={styles.adChoicesBtn}
+            onPress={() => adConsentService.showPrivacyOptions().catch(() => {
+              Alert.alert('Error', 'Could not open ad privacy choices. Please try again.');
+            })}
+            accessibilityRole="button"
+          >
+            <Text style={styles.adChoicesText}>Ad Privacy Choices</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
@@ -571,6 +584,19 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     fontSize: 16,
     fontWeight: '600',
+  },
+  adChoicesBtn: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  adChoicesText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '500',
   },
   deleteBtn: {
     marginHorizontal: 20,
