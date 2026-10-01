@@ -41,6 +41,19 @@ export async function checkAdmin(): Promise<boolean> {
   }
 }
 
+// Safety reports
+export async function fetchReports(status: 'open' | 'resolved' | 'all' = 'open') {
+  return api<{ reasons: Record<string, string>; reports: any[] }>(`reports?status=${status}`);
+}
+
+export async function resolveReport(id: string, resolution: 'dismissed' | 'warned' | 'suspended', note: string) {
+  return api<{ resolved: boolean }>(`reports/${encodeURIComponent(id)}/resolve`, 'POST', { resolution, note });
+}
+
+export async function reinstateUser(uid: string) {
+  return api<{ reinstated: boolean }>(`users/${encodeURIComponent(uid)}/reinstate`, 'POST');
+}
+
 // Content Hub (manual items). Client writes to content_hub are denied by
 // database rules, so these go through the admin API.
 export async function createContentItem(data: {

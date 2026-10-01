@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useFriendsStore } from '@/hooks/useFriendsStore';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { Spinner } from '@/components/ui/Spinner';
+import { SafetySheet } from '@/components/app/SafetySheet';
+import { blockService, BlockedUser } from '@/services/BlockService';
 
 type SearchTab = 'email' | 'code';
 
@@ -18,6 +20,13 @@ export function FriendsScreen() {
   const [removeTarget, setRemoveTarget] = useState<{ uid: string; name: string } | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  const [safetyTarget, setSafetyTarget] = useState<{ uid: string; displayName: string; context: 'friend' | 'recent' } | null>(null);
+  const [blocked, setBlocked] = useState<BlockedUser[]>([]);
+
+  useEffect(() => {
+    setBlocked(blockService.list());
+    return blockService.onChange(() => setBlocked(blockService.list()));
+  }, []);
 
   const isGuest = useAuthStore((s) => s.isGuest);
 
@@ -324,6 +333,14 @@ export function FriendsScreen() {
                 >
                   Decline
                 </button>
+                <button
+                  onClick={() => setSafetyTarget({ uid: req.uid, displayName: req.displayName, context: 'friend' })}
+                  aria-label={`Report or block ${req.displayName}`}
+                  title="Report or block"
+                  className="text-text-muted text-lg font-bold px-2 ml-1 hover:text-text-main"
+                >
+                  {'\u22EF'}
+                </button>
               </div>
             ))}
           </div>
@@ -346,6 +363,14 @@ export function FriendsScreen() {
                   className="bg-primary text-white rounded-lg py-1.5 px-3 text-sm font-semibold hover:bg-primary-light transition-colors"
                 >
                   Add
+                </button>
+                <button
+                  onClick={() => setSafetyTarget({ uid: conn.uid, displayName: conn.displayName, context: 'recent' })}
+                  aria-label={`Report or block ${conn.displayName}`}
+                  title="Report or block"
+                  className="text-text-muted text-lg font-bold px-2 ml-1 hover:text-text-main"
+                >
+                  {'\u22EF'}
                 </button>
               </div>
             ))}
@@ -389,12 +414,46 @@ export function FriendsScreen() {
                   >
                     Remove
                   </button>
+                  <button
+                    onClick={() => setSafetyTarget({ uid: friend.uid, displayName: friend.displayName, context: 'friend' })}
+                    aria-label={`Report or block ${friend.displayName}`}
+                    title="Report or block"
+                    className="text-text-muted text-lg font-bold px-2 ml-1 hover:text-text-main"
+                  >
+                    {'\u22EF'}
+                  </button>
                 </div>
               );
             })
           )}
         </div>
+
+        {/* Blocked */}
+        {blocked.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wider">Blocked ({blocked.length})</h2>
+            {blocked.map((b) => (
+              <div key={b.uid} className="flex items-center bg-glass border border-glass-border rounded-xl p-3">
+                <span className="flex-1 font-medium">{b.displayName}</span>
+                <button
+                  onClick={() => blockService.unblock(b.uid).catch(() => {})}
+                  className="text-text-muted text-sm hover:text-text-main transition-colors"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {safetyTarget && (
+        <SafetySheet
+          people={[{ uid: safetyTarget.uid, displayName: safetyTarget.displayName }]}
+          context={safetyTarget.context}
+          onClose={() => setSafetyTarget(null)}
+        />
+      )}
 
       {/* Remove confirmation modal */}
       {removeTarget && (

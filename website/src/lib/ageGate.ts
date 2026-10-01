@@ -1,5 +1,5 @@
 /**
- * Age gate logic. Keep in sync with the website copy (website/src/lib/ageGate.ts).
+ * Age gate logic. Keep in sync with the mobile app copy (repo root src/lib/ageGate.ts).
  *
  * Duet is for people 13 and over. The gate asks for birth month and year
  * on a neutral screen (it doesn't reveal the cut-off), keeps only the

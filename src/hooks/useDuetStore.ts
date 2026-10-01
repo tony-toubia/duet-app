@@ -10,6 +10,7 @@ import { PartySignalingService } from '@/services/PartySignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { friendsService, getPublicProfile } from '@/services/FriendsService';
+import { blockService } from '@/services/BlockService';
 import { eventTrackingService } from '@/services/EventTrackingService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '@/navigation/navigationRef';
@@ -138,6 +139,8 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
   const partySignaling: PartySignalingService = new PartySignalingService({
     onOffer: async (fromUid, offer) => {
       const { partyWebrtc } = get();
+      // Never connect with someone this user has blocked
+      if (blockService.isBlocked(fromUid)) return;
       if (partyWebrtc) {
         const answer = await partyWebrtc.handleOffer(fromUid, offer);
         await partySignaling.sendAnswer(fromUid, answer);
@@ -151,6 +154,10 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
     },
     onParticipantJoined: async (uid) => {
       const { partyWebrtc } = get();
+      if (blockService.isBlocked(uid)) {
+        console.log('[Party] Not connecting with a blocked participant');
+        return;
+      }
       if (partyWebrtc) {
         set((state) => ({
           partyParticipants: [

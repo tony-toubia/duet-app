@@ -1,8 +1,10 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { getDatabase } from 'firebase-admin/database';
+import { getAuth } from 'firebase-admin/auth';
 import { AdminAuthError, requireAdmin } from '../adminAuth';
 import { validateContentItem, isValidItemId } from './contentHubAdmin';
+import { resolveReport, reinstateUser, RESOLUTIONS, Resolution, REPORT_REASONS } from '../safety';
 import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
@@ -50,6 +52,64 @@ export const marketingApi = onRequest(
       // ── Admin check (used by the web admin panel to gate its UI) ──
       if (path === 'me' && method === 'GET') {
         json(res, 200, { admin: true, uid: adminUid });
+        return;
+      }
+
+      // ── Safety reports ───────────────────────────────────────
+      if (path === 'reports' && method === 'GET') {
+        const filter = String(req.query.status || 'open');
+        const raw = (await db.ref('reports').orderByChild('createdAt').limitToLast(500).once('value')).val() || {};
+        const entries = Object.entries(raw)
+          .map(([id, r]: [string, any]) => ({ id, ...r, status: r.status || 'open' }))
+          .filter((r) => filter === 'all' || r.status === filter)
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const uids = [...new Set(entries.flatMap((r) => [r.reporterUid, r.reportedUid]))];
+        const names: Record<string, string> = {};
+        await Promise.all(uids.map(async (uid) => {
+          names[uid] = (await db.ref(`users/${uid}/profile/displayName`).once('value')).val() || '(deleted or unknown)';
+        }));
+        const disabled: Record<string, boolean> = {};
+        await Promise.all(uids.map(async (uid) => {
+          disabled[uid] = await getAuth().getUser(uid).then((u) => u.disabled, () => false);
+        }));
+        json(res, 200, {
+          reasons: REPORT_REASONS,
+          reports: entries.map((r) => ({
+            ...r,
+            reporterName: names[r.reporterUid],
+            reportedName: names[r.reportedUid],
+            reportedDisabled: disabled[r.reportedUid] || false,
+          })),
+        });
+        return;
+      }
+
+      const resolveMatch = path.match(/^reports\/([^/]+)\/resolve$/);
+      if (resolveMatch && method === 'POST') {
+        const id = resolveMatch[1];
+        const resolution = req.body?.resolution as Resolution;
+        if (!isValidItemId(id) || !RESOLUTIONS.includes(resolution)) {
+          json(res, 400, { error: 'Invalid report or resolution' });
+          return;
+        }
+        try {
+          await resolveReport(id, resolution, String(req.body?.note || ''), adminUid);
+        } catch (e: any) {
+          json(res, e?.message === 'Report not found' ? 404 : 500, { error: e?.message || 'Failed' });
+          return;
+        }
+        console.log(`[Safety] Report ${id} resolved as ${resolution} by ${adminUid}`);
+        json(res, 200, { resolved: true });
+        return;
+      }
+
+      const reinstateMatch = path.match(/^users\/([^/]+)\/reinstate$/);
+      if (reinstateMatch && method === 'POST') {
+        const uid = reinstateMatch[1];
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) { json(res, 400, { error: 'Invalid uid' }); return; }
+        await reinstateUser(uid);
+        console.log(`[Safety] User ${uid} reinstated by ${adminUid}`);
+        json(res, 200, { reinstated: true });
         return;
       }
 

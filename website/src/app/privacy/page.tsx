@@ -48,6 +48,9 @@ export default function PrivacyPage() {
         <h3>Social Features</h3>
         <p>If you use social features, we store your friends list and pending friend requests, room invitations, your recent connections (who you talked with, when, and the room code), the last person you connected with (for quick reconnect), and your online status and last-seen time.</p>
 
+        <h3>Safety: Blocking and Reports</h3>
+        <p>If you block someone, we store that on your account so they can&apos;t send you friend requests or invitations or join rooms you create; they aren&apos;t told. If you report someone, we store your report (who you reported, the reason, any details you add, the room code if it happened in a room, and when) so our team can review it. The person you report isn&apos;t told who reported them. Audio is never recorded, so reports are based on what you tell us.</p>
+
         <h3>Device Information</h3>
         <p>We store a push notification token for each device you use and its platform (iOS, Android, or Web), so we can notify you about room activity, friend requests, and invitations.</p>
 
@@ -110,7 +113,9 @@ export default function PrivacyPage() {
         <ul>
           <li><strong>Room data:</strong> Deleted when everyone leaves the room, and automatically once no one has been connected to it for a while (normally within a day).</li>
           <li><strong>Account data:</strong> Retained as long as your account exists.</li>
-          <li><strong>Social data:</strong> Retained until you remove the connection or delete your account.</li>
+          <li><strong>Social data:</strong> Retained until you remove the connection or delete your account. Your block list is deleted with your account.</li>
+          {/* NEEDS COUNSEL: retention period for safety reports and moderation records */}
+          <li><strong>Safety reports:</strong> Kept for as long as needed to review them and keep Duet safe, including after the reporter or the reported person deletes their account.</li>
           <li><strong>Usage information:</strong> Retained as long as your account exists.</li>
           <li><strong>Crash reports:</strong> Retained by Firebase Crashlytics for 90 days.</li>
         </ul>
@@ -128,13 +133,15 @@ export default function PrivacyPage() {
           <li><strong>Permissions:</strong> You can revoke camera, microphone, or notification permissions through your device or browser settings. Microphone access is required for voice communication.</li>
           <li><strong>Guest mode:</strong> You can use Duet without creating an account.</li>
           <li><strong>Friends:</strong> You can remove friends and decline friend requests at any time.</li>
+          <li><strong>Blocking and reporting:</strong> You can block or report someone from a room or your friends list, and unblock them from your friends list.</li>
         </ul>
 
         <h2>8. Children&apos;s Privacy</h2>
-        {/* NEEDS COUNSEL: the app has no age check, the minimum age differs by country
-            (e.g. up to 16 in parts of the EU), and it should match the App Store and
-            Google Play age ratings. */}
-        <p>Duet is not intended for children under 13. We do not knowingly collect personal information from children under 13. If you believe a child has provided us with personal information, please contact us and we will delete it.</p>
+        {/* NEEDS COUNSEL: confirm 13 as the minimum age for every market (the age of
+            digital consent is up to 16 in parts of the EU), whether an existing
+            account must be deleted when the gate shows the user is under 13, and
+            that the store age ratings match. */}
+        <p>Duet is for people 13 and over. The first time you open Duet, we ask for your birth month and year. We keep only an age range (under 16, 16 to 17, or 18 and over) on your device, not your birth date, and use it to keep ads age-appropriate: users under 18 only see non-personalized ads. If you are under 13, you can&apos;t use Duet. We do not knowingly collect personal information from children under 13. If you believe a child has provided us with personal information, please contact us and we will delete it.</p>
 
         <h2>9. Changes to This Policy</h2>
         {/* NEEDS COUNSEL: whether "continued use constitutes acceptance" is enough

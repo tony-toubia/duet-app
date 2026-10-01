@@ -21,6 +21,7 @@ import {
 import { logEvent } from './marketing/events';
 import { checkRateLimit } from './rateLimit';
 import { isRoomStale, STALE_AFTER_MS } from './roomCleanup';
+import { reportAlertEmail, ReportRecord } from './safety';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
@@ -855,6 +856,40 @@ export const onFriendRequestRateLimit = onValueCreated(
       console.warn(`[RateLimit] User ${friendData.initiatedBy} exceeded friend request limit`);
       await event.data.ref.remove();
     }
+  }
+);
+
+// ─── Safety reports ──────────────────────────────────────────────────
+
+/**
+ * New safety report: rate limit the reporter (20/day; beyond that the
+ * report is dropped as abuse of the feature), mark it open, and email the
+ * moderators (REPORTS_EMAIL, default hello@getduet.app).
+ */
+export const onReportCreated = onValueCreated(
+  { ref: '/reports/{reportId}', region: 'us-central1', secrets: [resendApiKey] },
+  async (event) => {
+    const reportId = event.params.reportId;
+    const report = event.data.val() as ReportRecord | null;
+    if (!report?.reporterUid) return;
+
+    const allowed = await checkRateLimit(report.reporterUid, 'report', 20, 24 * 60 * 60 * 1000);
+    if (!allowed) {
+      console.warn(`[Safety] ${report.reporterUid} exceeded the report limit; dropping ${reportId}`);
+      await event.data.ref.remove();
+      return;
+    }
+    await event.data.ref.child('status').set('open');
+
+    const [reporterName, reportedName] = await Promise.all(
+      [report.reporterUid, report.reportedUid].map(async (uid) =>
+        (await db.ref(`users/${uid}/profile/displayName`).once('value')).val() || 'Unknown'
+      )
+    );
+    const { subject, html } = reportAlertEmail(reportId, report, { reporter: reporterName, reported: reportedName });
+    const to = process.env.REPORTS_EMAIL || 'hello@getduet.app';
+    const sent = await sendEmail(new Resend(resendApiKey.value()), to, subject, html);
+    console.log(`[Safety] Report ${reportId} (${report.reason}) recorded; alert ${sent ? 'sent' : 'FAILED'}`);
   }
 );
 

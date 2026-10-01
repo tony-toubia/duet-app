@@ -6,6 +6,10 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
 import { AuthScreen } from '@/components/app/AuthScreen';
 import { Spinner } from '@/components/ui/Spinner';
+import { AgeGate, AgeBlocked } from '@/components/app/AgeGate';
+import { ageGateService } from '@/services/AgeGateService';
+import { blockService } from '@/services/BlockService';
+import type { AgeGateResult } from '@/lib/ageGate';
 
 export default function AppLayout({
   children,
@@ -15,6 +19,24 @@ export default function AppLayout({
   const { user, isLoading, showUpgradeAuth, initializeAuth, completeSignInWithEmailLink } = useAuthStore();
   const initializeDuet = useDuetStore((s) => s.initialize);
   const [emailLinkError, setEmailLinkError] = useState<string | null>(null);
+  // undefined until read from localStorage (client only); null = not yet asked
+  const [ageResult, setAgeResult] = useState<AgeGateResult | null | undefined>(undefined);
+
+  useEffect(() => {
+    setAgeResult(ageGateService.getResult());
+  }, []);
+
+  // Under the minimum age: never stay signed in.
+  // NEEDS COUNSEL: whether an existing account's data must also be deleted.
+  useEffect(() => {
+    if (ageResult === 'blocked' && user) useAuthStore.getState().signOut().catch(() => {});
+  }, [ageResult, user]);
+
+  // Keep the block list loaded while signed in
+  useEffect(() => {
+    if (!user) return;
+    return blockService.start();
+  }, [user]);
 
   useEffect(() => {
     const unsub = initializeAuth();
@@ -52,7 +74,14 @@ export default function AppLayout({
     }
   }, [completeSignInWithEmailLink]);
 
-  if (isLoading) {
+  if (ageResult === null) {
+    return <AgeGate onDone={setAgeResult} />;
+  }
+  if (ageResult === 'blocked') {
+    return <AgeBlocked />;
+  }
+
+  if (isLoading || ageResult === undefined) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Spinner size="lg" />

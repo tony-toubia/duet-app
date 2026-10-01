@@ -33,6 +33,8 @@ import { ConnectionQualityIndicator } from '@/components/ConnectionQualityIndica
 import { ShareModal } from '@/components/ShareModal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { InviteModal } from '@/components/InviteModal';
+import { SafetySheet, SafetyPerson } from '@/components/SafetySheet';
+import { getPublicProfile } from '@/services/FriendsService';
 import { colors } from '@/theme';
 import type { RoomScreenProps } from '@/navigation/types';
 
@@ -45,6 +47,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [controlsLocked, setControlsLocked] = useState(false);
+  const [safetyPeople, setSafetyPeople] = useState<SafetyPerson[] | null>(null);
   const hasShownInitialShare = useRef(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -207,6 +210,46 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     return null;
   }
 
+  // Report / block: the 1:1 partner, or anyone in a party room
+  const otherUids = roomType === 'party'
+    ? partyParticipants.map((p) => p.uid)
+    : partnerId && partnerId !== 'partner' ? [partnerId] : [];
+
+  const handleOpenSafety = async () => {
+    const people = await Promise.all(
+      otherUids.map(async (uid) => ({
+        uid,
+        displayName: (await getPublicProfile(uid).catch(() => null))?.displayName || 'Duet User',
+      }))
+    );
+    setSafetyPeople(people);
+  };
+
+  const handleBlockedInRoom = (uid: string) => {
+    if (roomType === 'party') {
+      // Stop connecting with them; the rest of the group carries on
+      useDuetStore.getState().partyWebrtc?.removePeer(uid);
+      useDuetStore.setState((state) => ({
+        partyParticipants: state.partyParticipants.filter((p) => p.uid !== uid),
+      }));
+    } else {
+      // Leave straight away (no interstitial for a safety exit)
+      setSafetyPeople(null);
+      useDuetStore.getState().leaveRoom();
+    }
+  };
+
+  const safetySheet = safetyPeople ? (
+    <SafetySheet
+      visible
+      people={safetyPeople}
+      context="room"
+      roomCode={roomCode}
+      onClose={() => setSafetyPeople(null)}
+      onBlocked={handleBlockedInRoom}
+    />
+  ) : null;
+
   const topBar = (
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       <TouchableOpacity onPress={handleShareCode} style={styles.roomIdContainer}>
@@ -266,6 +309,16 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         <Text style={styles.actionIcon}>{'\ud83d\udc65'}</Text>
         <Text style={styles.actionLabel}>Invite</Text>
       </TouchableOpacity>
+      {otherUids.length > 0 && (
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={handleOpenSafety}
+          accessibilityLabel="Report or block"
+        >
+          <Text style={styles.actionIcon}>{'\ud83d\udee1\ufe0f'}</Text>
+          <Text style={styles.actionLabel}>Safety</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -341,6 +394,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
           <View style={{ height: insets.bottom }} />
           <ReactionOverlay />
           {adTransitionOverlay}
+          {safetySheet}
           {showShareModal && (
             <ShareModal
               visible
@@ -400,6 +454,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
         </ScrollView>
         <ReactionOverlay />
         {adTransitionOverlay}
+          {safetySheet}
         {showShareModal && (
           <ShareModal
             visible
