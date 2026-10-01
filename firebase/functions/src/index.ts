@@ -459,8 +459,9 @@ export const emailClick = onRequest(
 
     const expected = generateClickToken(uid, url, unsubSecret.value());
     if (token !== expected) {
-      // Still redirect even if token is invalid — don't break the user experience
-      res.redirect(302, url);
+      // Never follow an unsigned destination: that would make this endpoint an
+      // open redirect anyone could use to bounce people to arbitrary sites.
+      res.redirect(302, 'https://getduet.app');
       return;
     }
 

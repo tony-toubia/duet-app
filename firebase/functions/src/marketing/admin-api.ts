@@ -1,7 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
-import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
+import { AdminAuthError, requireAdmin } from '../adminAuth';
 import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
@@ -9,20 +9,6 @@ import type { Campaign, Message, SegmentContext } from './types';
 
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
-
-// Admin UIDs — comma-separated. Update this with your Firebase Auth UID.
-const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').filter(Boolean);
-
-async function verifyAdmin(req: any): Promise<string> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) throw new Error('No auth token');
-  const token = authHeader.split('Bearer ')[1];
-  const decoded = await getAuth().verifyIdToken(token);
-  if (ADMIN_UIDS.length > 0 && !ADMIN_UIDS.includes(decoded.uid)) {
-    throw new Error('Not authorized');
-  }
-  return decoded.uid;
-}
 
 function cors(res: any): void {
   res.set('Access-Control-Allow-Origin', '*');
@@ -45,10 +31,13 @@ export const marketingApi = onRequest(
     cors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
+    // Fails closed: denies everyone when ADMIN_UIDS is empty or unset.
+    let adminUid: string;
     try {
-      await verifyAdmin(req);
+      adminUid = await requireAdmin(req, 'marketingApi');
     } catch (err: any) {
-      json(res, 401, { error: err.message });
+      const status = err instanceof AdminAuthError ? err.status : 401;
+      json(res, status, { error: err instanceof AdminAuthError ? err.message : 'Not authorized' });
       return;
     }
 
@@ -57,6 +46,12 @@ export const marketingApi = onRequest(
     const method = req.method;
 
     try {
+      // ── Admin check (used by the web admin panel to gate its UI) ──
+      if (path === 'me' && method === 'GET') {
+        json(res, 200, { admin: true, uid: adminUid });
+        return;
+      }
+
       // ── Segments ─────────────────────────────────────────────
       if (path === 'segments' && method === 'GET') {
         const snap = await db.ref('marketing/segments').once('value');

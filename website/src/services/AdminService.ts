@@ -29,6 +29,18 @@ async function api<T = any>(
   return data;
 }
 
+// Admin check: asks the server, whose ADMIN_UIDS list is the only source of
+// truth. Any failure (not signed in, not listed, list unset, network) is
+// treated as "not an admin".
+export async function checkAdmin(): Promise<boolean> {
+  try {
+    const result = await api<{ admin?: boolean }>('me');
+    return result.admin === true;
+  } catch {
+    return false;
+  }
+}
+
 // Segments
 export async function fetchSegments() {
   return api<{ segments: any[] }>('segments');
