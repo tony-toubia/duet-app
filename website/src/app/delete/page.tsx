@@ -6,12 +6,20 @@ import { useState } from 'react';
 export default function DeleteAccountPage() {
   const [email, setEmail] = useState('');
   const [confirmed, setConfirmed] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [opened, setOpened] = useState(false);
 
+  // There is no automated deletion backend yet: requests are handled by hand.
+  // Submitting opens a pre-filled email to us instead of showing a
+  // confirmation for a request that was never sent anywhere.
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
-    // TODO: Wire up to backend deletion endpoint
+    const subject = 'Delete my Duet account';
+    const body =
+      `Please delete my Duet account and its data.\n\nAccount email: ${email}\n\n` +
+      'I understand this is permanent and cannot be undone.';
+    window.location.href =
+      `mailto:hello@getduet.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setOpened(true);
   };
 
   return (
@@ -29,15 +37,17 @@ export default function DeleteAccountPage() {
         {/* Info Box */}
         <div className="bg-white border border-[#e0dbd5] rounded-xl p-6 mb-6">
           <h2 className="text-lg font-bold mb-3 text-lobby-dark">What gets deleted</h2>
-          <p className="text-sm text-[#3d4f5f] mb-3">Requesting account deletion will permanently remove:</p>
+          <p className="text-sm text-[#3d4f5f] mb-3">Deleting your account permanently removes:</p>
           <ul className="pl-5 mb-3 list-disc">
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your profile (display name, email, profile photo)</li>
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your friends list and pending requests</li>
-            <li className="text-sm text-[#3d4f5f] mb-1.5">Your recent connections history</li>
+            <li className="text-sm text-[#3d4f5f] mb-1.5">Your recent connections and last-partner history</li>
+            <li className="text-sm text-[#3d4f5f] mb-1.5">Your invitations, online status, and settings</li>
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your push notification tokens</li>
+            <li className="text-sm text-[#3d4f5f] mb-1.5">Your usage history and email records</li>
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your uploaded avatar image</li>
           </ul>
-          <p className="text-sm text-[#3d4f5f]">Room data is already automatically deleted after 24 hours of inactivity. Crash reports are retained per Google&apos;s standard retention policy.</p>
+          <p className="text-sm text-[#3d4f5f]">Room data is already deleted when everyone leaves a room, and within about 24 hours of the room being created. Crash reports are kept by Firebase Crashlytics for 90 days.</p>
         </div>
 
         {/* Form */}
@@ -73,19 +83,25 @@ export default function DeleteAccountPage() {
 
           <button
             type="submit"
-            disabled={submitted}
-            className={`w-full py-3.5 text-base font-semibold text-white rounded-lg transition-colors ${
-              submitted
-                ? 'bg-success cursor-not-allowed'
-                : 'bg-[#c0392b] hover:bg-[#a93226] cursor-pointer disabled:bg-gray-300 disabled:cursor-not-allowed'
-            }`}
+            className="w-full py-3.5 text-base font-semibold text-white rounded-lg transition-colors bg-[#c0392b] hover:bg-[#a93226] cursor-pointer"
           >
-            {submitted ? 'Request Submitted' : 'Request Account Deletion'}
+            Email Deletion Request
           </button>
         </form>
 
+        {opened && (
+          <div role="status" className="mt-4 rounded-lg border border-[#e0dbd5] bg-white p-4 text-sm text-[#3d4f5f] leading-relaxed">
+            Your email app should now be open with the request filled in. <strong>Send that email to finish your request.</strong>{' '}
+            If nothing opened, email <strong>hello@getduet.app</strong> from your account&apos;s email address with the subject &ldquo;Delete my Duet account&rdquo;.
+          </div>
+        )}
+
+        {/* NEEDS COUNSEL / OPS: "within 30 days" is a commitment someone must now meet by
+            hand. Guest accounts have no email, so guests cannot identify themselves
+            through this page; an in-app deletion option is needed (and is required by
+            the App Store for apps that let people create accounts). */}
         <p className="text-xs text-[#8a99a8] text-center mt-4 leading-relaxed">
-          We will process your request within 30 days. You will receive a confirmation email once your data has been deleted.
+          Requests are handled by our team by email. We aim to delete your data within 30 days and will reply to confirm when it&apos;s done.
           If you have questions, contact <a href="mailto:hello@getduet.app" className="text-primary">hello@getduet.app</a>.
         </p>
       </div>
