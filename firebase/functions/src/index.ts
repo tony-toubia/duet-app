@@ -23,7 +23,7 @@ import { checkRateLimit } from './rateLimit';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
-export { searchUserByEmail } from './userApi';
+export { searchUserByEmail, getTurnCredentials } from './userApi';
 
 initializeApp();
 

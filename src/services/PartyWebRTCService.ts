@@ -4,7 +4,7 @@ import {
   RTCSessionDescription,
   RTCIceCandidate,
 } from 'react-native-webrtc';
-import { getIceServers } from '@/config/turn';
+import { getIceServers, ensureTurnCredentials } from '@/config/turn';
 import type { AudioPacket } from './WebRTCService';
 import { lifecycle } from './LifecycleLog';
 
@@ -104,6 +104,8 @@ export class PartyWebRTCService {
   }
 
   async createOffer(toUid: string): Promise<RTCSessionDescription> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(toUid);
     if (!context) {
       context = this.createPeerConnection(toUid);
@@ -124,6 +126,8 @@ export class PartyWebRTCService {
   }
 
   async handleOffer(fromUid: string, offer: RTCSessionDescription): Promise<RTCSessionDescription> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(fromUid);
     if (!context) context = this.createPeerConnection(fromUid);
 
@@ -161,6 +165,8 @@ export class PartyWebRTCService {
   }
 
   async addIceCandidate(fromUid: string, candidate: RTCIceCandidate): Promise<void> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(fromUid);
     // It's possible candidates arrive slightly before the offer
     if (!context) context = this.createPeerConnection(fromUid);
@@ -232,6 +238,14 @@ export class PartyWebRTCService {
     console.log(`[PartyWebRTC] Attempting ICE restart for ${uid} (attempt ${context.iceRestartCount})`);
     lifecycle('party.peer.ice.restart', { uid, attempt: context.iceRestartCount });
     try {
+      // Relay credentials expire after 24h: refresh before restarting ICE
+      if (await ensureTurnCredentials()) {
+        try {
+          (context.pc as any).setConfiguration?.(getRtcConfig());
+        } catch (e) {
+          console.warn(`[PartyWebRTC] Could not apply refreshed relay credentials for ${uid}:`, e);
+        }
+      }
       const offer = await context.pc.createOffer({ iceRestart: true } as any);
       await context.pc.setLocalDescription(offer);
       this.callbacks.onIceRestartOffer(uid, offer as RTCSessionDescription);

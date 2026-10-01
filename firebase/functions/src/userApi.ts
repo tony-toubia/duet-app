@@ -3,7 +3,9 @@
  * (guests included, since guests are anonymous Firebase users) and returns
  * only what the caller is allowed to see.
  */
+import { createHmac } from 'crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { checkRateLimit } from './rateLimit';
@@ -67,3 +69,86 @@ export const searchUserByEmail = onCall({ region: 'us-central1' }, async (reques
   const uid = requireUid(request.auth);
   return { user: await findUserByEmail(uid, request.data?.email) };
 });
+
+// ─── Relay (TURN) credentials ────────────────────────────────────────
+
+const turnSharedSecret = defineSecret('TURN_SHARED_SECRET');
+
+export const TURN_CREDENTIAL_TTL_SECONDS = 24 * 60 * 60;
+const TURN_REQUEST_LIMIT = 120;
+const TURN_REQUEST_WINDOW_MS = 60 * 60 * 1000;
+
+export interface TurnConfig {
+  /** Relay host or IP (TURN_HOST). */
+  host: string;
+  /** Optional TLS hostname with a valid certificate (TURN_TLS_HOST). */
+  tlsHost?: string;
+  /**
+   * "secret": coturn runs with use-auth-secret and we mint short-lived
+   * credentials (the TURN REST API scheme). "static": transition mode for
+   * a server still using one shared user=; the credential is served to
+   * signed-in users instead of being baked into app and web bundles.
+   */
+  mode: 'secret' | 'static';
+  sharedSecret?: string;
+  staticUsername?: string;
+  staticPassword?: string;
+}
+
+export interface IssuedTurnCredentials {
+  iceServers: { urls: string[]; username: string; credential: string }[];
+  /** Unix ms after which the client should fetch new credentials. */
+  expiresAt: number;
+}
+
+export function turnConfigFromEnv(sharedSecret: string | undefined): TurnConfig {
+  return {
+    host: (process.env.TURN_HOST || '').trim(),
+    tlsHost: (process.env.TURN_TLS_HOST || '').trim() || undefined,
+    mode: process.env.TURN_AUTH_MODE === 'static' ? 'static' : 'secret',
+    sharedSecret,
+    staticUsername: process.env.TURN_STATIC_USERNAME,
+    staticPassword: process.env.TURN_STATIC_PASSWORD,
+  };
+}
+
+/**
+ * Build relay credentials for one user. In "secret" mode the username is
+ * "<expiry unix seconds>:<uid>" and the password is
+ * base64(HMAC-SHA1(shared secret, username)), which coturn verifies with the
+ * same secret, so credentials expire on their own and each one is
+ * attributable to an account in relay logs.
+ */
+export function issueTurnCredentials(uid: string, config: TurnConfig, nowMs = Date.now()): IssuedTurnCredentials {
+  if (!config.host) throw new HttpsError('failed-precondition', 'Relay is not configured.');
+
+  const urls = [`turn:${config.host}:3478?transport=udp`, `turn:${config.host}:3478?transport=tcp`];
+  if (config.tlsHost) urls.push(`turns:${config.tlsHost}:5349?transport=tcp`);
+
+  if (config.mode === 'static') {
+    if (!config.staticUsername || !config.staticPassword) {
+      throw new HttpsError('failed-precondition', 'Relay is not configured.');
+    }
+    return {
+      iceServers: [{ urls, username: config.staticUsername, credential: config.staticPassword }],
+      // Re-fetch daily so clients pick up the switch to "secret" mode
+      expiresAt: nowMs + TURN_CREDENTIAL_TTL_SECONDS * 1000,
+    };
+  }
+
+  if (!config.sharedSecret) throw new HttpsError('failed-precondition', 'Relay is not configured.');
+  const expiry = Math.floor(nowMs / 1000) + TURN_CREDENTIAL_TTL_SECONDS;
+  const username = `${expiry}:${uid}`;
+  const credential = createHmac('sha1', config.sharedSecret).update(username).digest('base64');
+  return { iceServers: [{ urls, username, credential }], expiresAt: expiry * 1000 };
+}
+
+export const getTurnCredentials = onCall(
+  { region: 'us-central1', secrets: [turnSharedSecret] },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const allowed = await checkRateLimit(uid, 'turn_credentials', TURN_REQUEST_LIMIT, TURN_REQUEST_WINDOW_MS);
+    if (!allowed) throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+    return issueTurnCredentials(uid, turnConfigFromEnv(turnSharedSecret.value()));
+  }
+);

@@ -163,9 +163,8 @@ module.exports = {
       admobRewardedIdIos: process.env.ADMOB_REWARDED_ID_IOS || "",
       admobLobbyNativeIdAndroid: process.env.ADMOB_LOBBY_NATIVE_ID_ANDROID || "",
       admobLobbyNativeIdIos: process.env.ADMOB_LOBBY_NATIVE_ID_IOS || "",
-      turnServerIp: process.env.TURN_SERVER_IP || "",
-      turnUsername: process.env.TURN_USERNAME || "",
-      turnPassword: process.env.TURN_PASSWORD || "",
+      // Relay (TURN) credentials are fetched at runtime from the
+      // getTurnCredentials Cloud Function; nothing relay-related is bundled.
     },
     owner: "tonytoubia"
   }

@@ -1,4 +1,4 @@
-import { getIceServers } from '@/config/turn';
+import { getIceServers, ensureTurnCredentials } from '@/config/turn';
 import type { AudioPacket } from './WebRTCService';
 import { lifecycle } from './LifecycleLog';
 
@@ -106,6 +106,8 @@ export class PartyWebRTCService {
   }
 
   async createOffer(toUid: string): Promise<RTCSessionDescriptionInit> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(toUid);
     if (!context) {
       context = this.createPeerConnection(toUid);
@@ -128,6 +130,8 @@ export class PartyWebRTCService {
     fromUid: string,
     offer: RTCSessionDescriptionInit
   ): Promise<RTCSessionDescriptionInit> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(fromUid);
     if (!context) context = this.createPeerConnection(fromUid);
 
@@ -176,6 +180,8 @@ export class PartyWebRTCService {
     fromUid: string,
     candidate: RTCIceCandidateInit
   ): Promise<void> {
+    // Peer connections pick up relay credentials at creation (cached; bounded wait)
+    await ensureTurnCredentials();
     let context = this.peers.get(fromUid);
     if (!context) context = this.createPeerConnection(fromUid);
 
@@ -261,6 +267,14 @@ export class PartyWebRTCService {
     console.log(`[PartyWebRTC] Attempting ICE restart for ${uid} (attempt ${context.iceRestartCount})`);
     lifecycle('party.peer.ice.restart', { uid, attempt: context.iceRestartCount });
     try {
+      // Relay credentials expire after 24h: refresh before restarting ICE
+      if (await ensureTurnCredentials()) {
+        try {
+          context.pc.setConfiguration(getRtcConfig());
+        } catch (e) {
+          console.warn(`[PartyWebRTC] Could not apply refreshed relay credentials for ${uid}:`, e);
+        }
+      }
       const offer = await context.pc.createOffer({ iceRestart: true });
       await context.pc.setLocalDescription(offer);
       this.callbacks.onIceRestartOffer(uid, offer);

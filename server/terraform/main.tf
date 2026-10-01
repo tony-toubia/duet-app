@@ -51,9 +51,17 @@ variable "turn_username" {
 }
 
 variable "turn_password" {
-  description = "TURN server password"
+  description = "Legacy static TURN password, only used when turn_auth_secret is empty"
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "turn_auth_secret" {
+  description = "Shared secret for time-limited relay credentials (same value as the Firebase secret TURN_SHARED_SECRET). Empty = legacy static account."
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 variable "domain" {
@@ -95,12 +103,20 @@ resource "digitalocean_droplet" "turn" {
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
     turn_username = var.turn_username
-    turn_password = var.turn_password
-    domain        = var.domain
+    turn_password    = var.turn_password
+    turn_auth_secret = var.turn_auth_secret
+    domain           = var.domain
     email         = var.email
   })
 
   tags = ["duet", "turn"]
+
+  # user_data only runs on first boot, and changing it forces Terraform to
+  # destroy and recreate the droplet (new IP, relay outage). Apply config
+  # changes to the running server over SSH instead (see server/README.md).
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 }
 
 # =====================
@@ -237,20 +253,7 @@ output "ssh_command" {
   value       = "ssh root@${digitalocean_droplet.turn.ipv4_address}"
 }
 
-output "app_config" {
-  description = "Configuration for src/config/turn.ts"
-  sensitive   = true
-  value       = <<-EOT
-    // Add to PRODUCTION_TURN in src/config/turn.ts:
-    {
-      urls: 'turn:${digitalocean_droplet.turn.ipv4_address}:3478',
-      username: '${var.turn_username}',
-      credential: '${var.turn_password}',
-    },
-    {
-      urls: 'turn:${digitalocean_droplet.turn.ipv4_address}:3478?transport=tcp',
-      username: '${var.turn_username}',
-      credential: '${var.turn_password}',
-    },
-  EOT
+output "functions_env" {
+  description = "Relay settings for firebase/functions/.env (the app fetches credentials from getTurnCredentials)"
+  value       = "TURN_HOST=${digitalocean_droplet.turn.ipv4_address}"
 }
