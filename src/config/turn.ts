@@ -46,27 +46,6 @@ function getProductionTurn(): TurnServer[] {
 }
 
 /**
- * Fallback TURN servers (free, but less reliable for production)
- */
-const FALLBACK_TURN: TurnServer[] = [
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
-/**
  * STUN servers (free, no auth needed)
  */
 const STUN_SERVERS: TurnServer[] = [
@@ -76,9 +55,9 @@ const STUN_SERVERS: TurnServer[] = [
 ];
 
 /**
- * Whether production TURN credentials are configured (vs. the free openrelay
- * fallback). Surfaced in lifecycle logs so a build silently missing its EAS
- * env vars is visible in the field.
+ * Whether Duet's TURN relay credentials are configured. Without them there is
+ * no relay at all, so this is surfaced in lifecycle logs to make a build
+ * missing its EAS env vars visible in the field.
  */
 export function hasProductionTurn(): boolean {
   return getProductionTurn().length > 0;
@@ -89,18 +68,16 @@ export function hasProductionTurn(): boolean {
  */
 export function getIceServers(): TurnServer[] {
   // Use production TURN if configured, otherwise fall back
+  // Audio only ever relays through Duet's own TURN server; there is
+  // deliberately no third-party relay fallback. Without the TURN env vars,
+  // calls still connect directly where networks allow, and fail rather than
+  // route audio through someone else's server.
   const productionTurn = getProductionTurn();
-  const turnServers = productionTurn.length > 0 ? productionTurn : FALLBACK_TURN;
-
-  const servers = [...STUN_SERVERS, ...turnServers];
-  const hasTurn = turnServers.length > 0;
-  const source = productionTurn.length > 0 ? 'production' : 'fallback';
-  console.log(`[TURN] Using ${source} TURN servers (${turnServers.length} TURN, ${STUN_SERVERS.length} STUN)`);
-  if (!hasTurn) {
-    console.warn('[TURN] No TURN servers configured! Users behind symmetric NATs will not be able to connect.');
+  console.log(`[TURN] ${productionTurn.length} TURN, ${STUN_SERVERS.length} STUN servers`);
+  if (productionTurn.length === 0) {
+    console.error('[TURN] TURN env vars not set: no relay available, so peers behind strict NATs will not connect.');
   }
-
-  return servers;
+  return [...STUN_SERVERS, ...productionTurn];
 }
 
 /**
@@ -155,8 +132,8 @@ export async function fetchDynamicTurnCredentials(
       },
     ];
   } catch (error) {
-    console.warn('[TURN] Failed to fetch dynamic credentials, using fallback:', error);
-    return FALLBACK_TURN;
+    console.warn('[TURN] Failed to fetch dynamic credentials:', error);
+    return [];
   }
 }
 

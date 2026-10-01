@@ -136,4 +136,4 @@ If you don't want to self-host:
 
 - [Twilio TURN](https://www.twilio.com/stun-turn) - Pay per GB
 - [Xirsys](https://xirsys.com/) - Free tier available
-- [Metered](https://www.metered.ca/) - Free tier (currently used as fallback)
+- [Metered](https://www.metered.ca/) - Free tier (not used: Duet relays audio only through its own TURN server)

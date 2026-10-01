@@ -35,34 +35,24 @@ function getProductionTurn(): TurnServer[] {
   ];
 }
 
-const FALLBACK_TURN: TurnServer[] = [
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
 const STUN_SERVERS: TurnServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
 ];
 
+/**
+ * ICE servers for peer connections. Audio only ever relays through Duet's own
+ * TURN server; there is deliberately no third-party relay fallback. If the
+ * TURN env vars are missing, calls still connect directly where networks
+ * allow, and fail rather than route audio through someone else's server.
+ */
 export function getIceServers(): TurnServer[] {
   const productionTurn = getProductionTurn();
-  const turnServers = productionTurn.length > 0 ? productionTurn : FALLBACK_TURN;
-  return [...STUN_SERVERS, ...turnServers];
+  if (productionTurn.length === 0) {
+    console.error('[TURN] NEXT_PUBLIC_TURN_* not set: no relay available, so peers behind strict NATs will not connect.');
+  }
+  return [...STUN_SERVERS, ...productionTurn];
 }
 
 export async function fetchDynamicTurnCredentials(
@@ -76,7 +66,7 @@ export async function fetchDynamicTurnCredentials(
     const { username, credential, urls } = await response.json();
     return [{ urls, username, credential }];
   } catch (error) {
-    console.warn('[TURN] Failed to fetch dynamic credentials, using fallback:', error);
-    return FALLBACK_TURN;
+    console.warn('[TURN] Failed to fetch dynamic credentials:', error);
+    return [];
   }
 }
