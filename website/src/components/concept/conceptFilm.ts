@@ -20,6 +20,8 @@ export interface ConceptFilmElements {
   caption: HTMLElement;
   eyebrow: HTMLElement;
   chapters: HTMLElement;
+  /** Class list applied to each generated chapter button. */
+  chapterClassName: string;
   logoSrc: string;
 }
 
@@ -49,6 +51,11 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const sm = (a: number, b: number, t: number) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
 const win = (a: number, b: number, t: number, f = 0.25) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
 const rng = (seed: number) => { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; };
+const hexRgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+const mixColor = (a: string, b: string, t: number) => {
+  const A = hexRgb(a), B = hexRgb(b);
+  return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], t))).join(',')})`;
+};
 
 function rr(c: Ctx, x: number, y: number, w: number, h: number, r: number) {
   r = Math.min(r, w / 2, h / 2);
@@ -358,26 +365,54 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     c.restore();
   }
 
-  // "What I'm listening to" pill. Its level bars drop when the other person speaks (ducking).
+  // "What I'm listening to" pill. While the other person talks the audio is
+  // ducked: the speaker glyph loses its sound waves, the level bars slow to a
+  // stop and settle into a low, dim line, and a "lowered" label appears.
   function chip(c: Ctx, x: number, y: number, label: string, level: number, t: number) {
+    const d = clamp((1 - level) / 0.7); // 0 = playing normally, 1 = fully lowered
     const f = fs(21);
     c.save();
     c.font = `600 ${f}px ${FONT}`;
-    const tw = c.measureText(label).width, bw = f * 0.34, gap = f * 0.22, nb = 5;
-    const w = f * 0.7 + tw + f * 0.5 + nb * bw + (nb - 1) * gap + f * 0.7, h = f * 1.75;
+    const tw = c.measureText(label).width, bw = f * 0.34, gap = f * 0.22, nb = 5, gw = f * 0.95;
+    const w = f * 0.6 + gw + f * 0.25 + tw + f * 0.5 + nb * bw + (nb - 1) * gap + f * 0.7, h = f * 1.75;
     const x0 = clamp(x - w / 2, 12, W - 12 - w), y0 = y - h / 2;
     rr(c, x0, y0, w, h, h / 2);
     c.fillStyle = 'rgba(22,24,44,0.84)'; c.fill();
-    c.strokeStyle = 'rgba(244,219,200,0.35)'; c.lineWidth = 1.5; c.stroke();
-    c.fillStyle = COL.cream; c.textBaseline = 'middle'; c.textAlign = 'left';
-    c.fillText(label, x0 + f * 0.7, y + 1);
-    let bx = x0 + f * 0.7 + tw + f * 0.5;
+    c.strokeStyle = `rgba(244,219,200,${(0.35 - 0.2 * d).toFixed(3)})`; c.lineWidth = 1.5; c.stroke();
+    // speaker glyph: its sound waves fade out as the audio is lowered
+    const gx = x0 + f * 0.6;
+    c.fillStyle = mixColor(COL.cream, '#8a8ca3', d);
+    c.beginPath();
+    c.moveTo(gx, y - f * 0.16); c.lineTo(gx + f * 0.18, y - f * 0.16); c.lineTo(gx + f * 0.42, y - f * 0.36);
+    c.lineTo(gx + f * 0.42, y + f * 0.36); c.lineTo(gx + f * 0.18, y + f * 0.16); c.lineTo(gx, y + f * 0.16);
+    c.closePath(); c.fill();
+    c.strokeStyle = COL.cream; c.lineWidth = f * 0.09; c.lineCap = 'round';
+    for (let i = 0; i < 2; i++) {
+      c.globalAlpha = clamp((1 - d) * 2 - i);
+      c.beginPath(); c.arc(gx + f * 0.42, y, f * (0.24 + i * 0.2), -0.85, 0.85); c.stroke();
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = mixColor(COL.cream, '#9a9cb2', d); c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.fillText(label, gx + gw + f * 0.25, y + 1);
+    // level bars: lively while playing; slowed, flattened and dimmed while lowered
+    let bx = gx + gw + f * 0.25 + tw + f * 0.5;
+    c.fillStyle = mixColor(COL.orange, '#6b6d85', d);
     for (let i = 0; i < nb; i++) {
-      const wave = 0.35 + 0.65 * Math.abs(Math.sin(t * 5.5 + i * 1.7));
-      const bh = Math.max(f * 0.14, h * 0.58 * level * wave);
-      c.fillStyle = level < 0.6 ? COL.orangeL : COL.orange;
+      const live = 0.35 + 0.65 * Math.abs(Math.sin(t * 5.5 + i * 1.7));
+      const bh = Math.max(f * 0.14, h * 0.58 * lerp(live, 0.5, d) * lerp(1, 0.18, d));
       rr(c, bx, y - bh / 2, bw, bh, bw / 2); c.fill();
       bx += bw + gap;
+    }
+    if (d > 0.02) {
+      const lf = fs(16), text = `${label} lowered`;
+      c.globalAlpha = d;
+      c.font = `700 ${lf}px ${FONT}`;
+      const lw = c.measureText(text).width + lf * 1.1, lh = lf * 1.6;
+      const lx = clamp(x0 + w / 2 - lw / 2, 12, W - 12 - lw), ly = y0 - lh - lf * 0.3;
+      rr(c, lx, ly, lw, lh, lh / 2);
+      c.fillStyle = 'rgba(22,24,44,0.84)'; c.fill();
+      c.fillStyle = COL.orangeL; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(text, lx + lw / 2, ly + lh / 2 + 1);
     }
     c.restore();
     return { x0, y0, w, h };
@@ -939,7 +974,7 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
   const chapBtns = SEGS.map((s, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'concept-chap';
+    b.className = el.chapterClassName;
     b.textContent = s.name;
     b.addEventListener('click', () => { T = STARTS[i] + 0.5; draw(); });
     el.chapters.appendChild(b);
