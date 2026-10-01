@@ -5,7 +5,7 @@ An audio companion app that overlays voice communication onto your music, enabli
 ## 🎯 What This Does
 
 - **Always-on voice** - No push-to-talk, just speak naturally
-- **Audio ducking** - Your music automatically lowers when your partner speaks
+- **Audio ducking** - Your partner's voice plays over your music; on Android most music apps lower while they speak, on iPhone lowering is an opt-in setting (default is mixing)
 - **Cross-platform** - Works between iPhone and Android
 - **Background operation** - Keeps working when your phone is locked
 
@@ -168,7 +168,7 @@ Firebase Realtime Database acts as the "meeting point" for two devices:
 1. Device A creates a room → gets a 6-character code
 2. Device B joins with the code
 3. They exchange WebRTC offers/answers/ICE candidates via Firebase
-4. Once connected, audio flows directly peer-to-peer (no server in between)
+4. Once connected, audio flows directly between the phones when possible, or through Duet's own TURN relay (still encrypted) when a direct path isn't available
 
 ## 🔒 Firebase Security Rules
 

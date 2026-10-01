@@ -40,7 +40,7 @@ const LEGEND = [
   },
   {
     title: 'The listening pill',
-    body: 'What each person is playing. When the other person talks, it lowers so their voice comes through, then rises again.',
+    body: 'What each person is playing. Their voice plays over it, and Duet can lower it while they talk so they come through clearly. On iPhone, turn on “Lower other audio” in a room.',
     icon: (
       <svg viewBox="0 0 48 32" aria-hidden="true" className="h-8 w-12">
         <path d="M6 13h4l6-5v16l-6-5H6z" fill="#f4dbc8" />
@@ -87,7 +87,7 @@ export default function ConceptPage() {
           </h1>
           <p className="max-w-[60ch] text-lg leading-relaxed text-white/75 max-sm:text-base">
             Duet keeps an always-on voice line open between you and the people you care about. Your music or
-            podcast keeps playing, and it lowers on its own whenever they talk.
+            podcast keeps playing, their voice plays over it, and Duet can lower it while they talk.
           </p>
         </section>
 

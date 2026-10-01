@@ -8,7 +8,7 @@ const jsonLd = {
   name: 'Duet',
   applicationCategory: 'CommunicationApplication',
   operatingSystem: 'iOS, Web',
-  description: 'Always-on voice for the people who matter most. One-tap rooms, peer-to-peer encrypted audio.',
+  description: 'Always-on voice for the people who matter most. One-tap rooms, encrypted audio.',
   url: 'https://getduet.app',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   installUrl: 'https://getduet.app/app',
@@ -121,7 +121,7 @@ export default function LandingPage() {
               />
               <h3 className="text-lg font-semibold mb-2">Private</h3>
               <p className="text-sm text-white/60 leading-relaxed">
-                Peer-to-peer encrypted audio. Your conversations never touch our servers.
+                Encrypted audio that goes directly between your phones when it can, and only through our own relay when it can&apos;t. Never recorded.
               </p>
             </div>
 

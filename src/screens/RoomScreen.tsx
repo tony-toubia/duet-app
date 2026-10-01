@@ -293,13 +293,13 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
   const handleWatchRewardedAd = async () => {
     const earned = await adService.showRewarded();
     if (earned) {
-      Alert.alert('Ad-Free!', 'You have 1 hour of ad-free rooms. Enjoy!');
+      Alert.alert('Thanks!', 'No full-screen ads for the next hour.');
     }
   };
 
   const rewardedAdButton = adService.isRewardedReady && !adService.isAdFree ? (
     <TouchableOpacity style={styles.rewardedAdBtn} onPress={handleWatchRewardedAd}>
-      <Text style={styles.rewardedAdText}>Watch ad for 1hr ad-free</Text>
+      <Text style={styles.rewardedAdText}>Watch an ad: 1 hour without full-screen ads</Text>
     </TouchableOpacity>
   ) : null;
 

@@ -268,8 +268,10 @@ class AdService {
     }
   }
 
+  // The rewarded "1 hour without full-screen ads" window suppresses the
+  // pre-roll as well as the leave interstitial; it previously only did the latter.
   get isPreRollReady(): boolean {
-    return this.isLoaded;
+    return this.isLoaded && !this.isAdFree;
   }
 }
 

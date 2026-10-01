@@ -948,7 +948,7 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
       [0, 'Out exploring the city. Headphones on, each of you in your own soundtrack.'],
       [3, 'The crowd pulls you apart, and neither of you notices.'],
       [6.6, 'You turn to say something, and they’re gone.'],
-      [8.6, 'With Duet, you’re still connected. Just talk, and their music lowers so they hear you.'],
+      [8.6, 'With Duet, you’re still connected. Just talk; Duet can lower their music so they hear you.'],
       [15.3, 'No calling, no texting, no scanning the crowd.'],
     ] },
     { name: 'On the road', d: 14.6, draw: scene2, caps: [
