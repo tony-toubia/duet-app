@@ -39,7 +39,7 @@ module.exports = {
       infoPlist: {
         RCTNewArchEnabled: false,
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
-        NSLocalNetworkUsageDescription: "Duet uses your local network to establish peer-to-peer voice connections.",
+        NSLocalNetworkUsageDescription: "Duet uses your local network to connect your voice directly to the other person's device when you're both on the same network.",
         UIBackgroundModes: ["audio"],
         BGTaskSchedulerPermittedIdentifiers: ["com.duet.audio"],
         ITSAppUsesNonExemptEncryption: false,

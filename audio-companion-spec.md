@@ -1,5 +1,12 @@
 # Audio Companion App — Technical Architecture & MVP Spec
 
+> **Historical planning document (December 2024).** Several statements here
+> do not describe the shipped app and must not be reused as product or
+> marketing copy. In particular, audio is **not** end-to-end encrypted in the
+> verified sense: it is encrypted between devices and relayed through
+> Duet's own server when a direct path fails. For current behaviour, see
+> the privacy policy (`website/src/app/privacy/page.tsx`).
+
 **Project Codename:** Duet  
 **Version:** 0.1 Draft  
 **Date:** December 2024  

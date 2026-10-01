@@ -1,5 +1,10 @@
 # Duet App — End-to-End Product & Architecture Review
 
+> **Historical review (March 2026).** Some ideas below (for example
+> "ad-free" rewards and peer-to-peer-only claims) were proposals, not shipped
+> behaviour. Don't reuse them as product or marketing copy. For current
+> behaviour, see the privacy policy (`website/src/app/privacy/page.tsx`).
+
 **Date:** March 5, 2026
 **Reviewer perspective:** Product Management & Cross-Functional Architecture
 

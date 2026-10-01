@@ -257,7 +257,7 @@ Free options: Twilio (pay-as-you-go), Cloudflare Calls, Metered.ca
 
 ## 📄 License
 
-MIT - Build something cool with this!
+Proprietary. Copyright © 2026 Tony Toubia. All rights reserved. See [LICENSE](LICENSE).
 
 ---
 

@@ -2,6 +2,7 @@
   "name": "duet-app",
   "version": "0.2.1",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
