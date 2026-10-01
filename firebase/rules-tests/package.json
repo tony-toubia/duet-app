@@ -1,0 +1,14 @@
+{
+  "name": "duet-rules-tests",
+  "private": true,
+  "description": "Realtime Database security-rules tests, run against the local emulator (requires Java).",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only database --project demo-duet --config ../../firebase.json \"node users.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.0",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.0.0"
+  }
+}

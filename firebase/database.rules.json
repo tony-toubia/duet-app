@@ -123,16 +123,24 @@
 
     // User profiles and push tokens
     "users": {
-      // Allow reading profiles for friend search and display
-      ".read": "auth != null",
+      // No bulk reads. Signed-in users may only run the exact-match email
+      // lookup used by friend search (orderByChild profile/email, equalTo,
+      // limitToFirst 1). A plain read of /users used to return every user's
+      // email, push tokens, preferences and last partner to any signed-in
+      // user, including anonymous guests.
+      ".read": "auth != null && query.orderByChild == 'profile/email' && query.equalTo != null && query.limitToFirst == 1",
       // Index for email search
       ".indexOn": ["profile/email"],
 
       "$userId": {
+        // Your own data (tokens, preferences, persistent room) is yours alone
+        ".read": "$userId == auth.uid",
         // Users can write their own data
         ".write": "$userId == auth.uid",
 
         "profile": {
+          // Display name and photo are shown to friends and room partners
+          ".read": "auth != null",
           ".validate": "newData.hasChildren(['displayName'])",
           "displayName": {
             ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 100"
