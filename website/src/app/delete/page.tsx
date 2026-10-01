@@ -59,7 +59,7 @@ export default function DeleteAccountPage() {
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your entry in your friends&apos; lists and in the recent connections of people you&apos;ve talked with</li>
             <li className="text-sm text-[#3d4f5f] mb-1.5">Your sign-in account itself</li>
           </ul>
-          <p className="text-sm text-[#3d4f5f]">Room data is already deleted when everyone leaves a room, and within about 24 hours of the room being created. Crash reports are kept by Firebase Crashlytics for 90 days, and usage analytics are kept by Google Analytics for Firebase under its data-retention setting; neither contains your name or email address.</p>
+          <p className="text-sm text-[#3d4f5f]">Room data is already deleted when everyone leaves a room, or automatically once no one has been connected to it for a while. Crash reports are kept by Firebase Crashlytics for 90 days, and usage analytics are kept by Google Analytics for Firebase under its data-retention setting; neither contains your name or email address.</p>
         </div>
 
         {/* Form */}

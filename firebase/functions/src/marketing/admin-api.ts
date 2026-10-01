@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { getDatabase } from 'firebase-admin/database';
 import { AdminAuthError, requireAdmin } from '../adminAuth';
+import { validateContentItem, isValidItemId } from './contentHubAdmin';
 import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
@@ -50,6 +51,42 @@ export const marketingApi = onRequest(
       if (path === 'me' && method === 'GET') {
         json(res, 200, { admin: true, uid: adminUid });
         return;
+      }
+
+      // ── Content Hub (manual items) ───────────────────────────
+      // Client writes to content_hub are denied by rules, so the admin
+      // panel creates, deletes and pins items through here.
+      if (path === 'content-hub/items' && method === 'POST') {
+        let item;
+        try {
+          item = validateContentItem(req.body);
+        } catch (e: any) {
+          json(res, 400, { error: e.message });
+          return;
+        }
+        const ref = db.ref('content_hub/items').push();
+        await ref.set(item);
+        json(res, 201, { id: ref.key });
+        return;
+      }
+
+      const contentItemMatch = path.match(/^content-hub\/items\/([^/]+)(\/pin)?$/);
+      if (contentItemMatch) {
+        const [, id, pin] = contentItemMatch;
+        if (!isValidItemId(id)) { json(res, 400, { error: 'Invalid item id' }); return; }
+        const itemRef = db.ref(`content_hub/items/${id}`);
+        if (!pin && method === 'DELETE') {
+          await itemRef.remove();
+          json(res, 200, { deleted: true });
+          return;
+        }
+        if (pin && method === 'PUT') {
+          if (typeof req.body?.pinned !== 'boolean') { json(res, 400, { error: 'pinned must be a boolean' }); return; }
+          if (!(await itemRef.child('title').once('value')).exists()) { json(res, 404, { error: 'Not found' }); return; }
+          await itemRef.child('pinned').set(req.body.pinned);
+          json(res, 200, { pinned: req.body.pinned });
+          return;
+        }
       }
 
       // ── Segments ─────────────────────────────────────────────

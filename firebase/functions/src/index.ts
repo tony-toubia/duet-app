@@ -20,6 +20,7 @@ import {
 } from './marketing/templates';
 import { logEvent } from './marketing/events';
 import { checkRateLimit } from './rateLimit';
+import { isRoomStale, STALE_AFTER_MS } from './roomCleanup';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
@@ -145,11 +146,13 @@ async function sendEmail(
 }
 
 /**
- * Clean up stale rooms older than 24 hours.
+ * Clean up rooms nobody is using any more (see roomCleanup.ts). Rooms in
+ * active use are kept even when older than 24 hours.
  * Runs every hour.
  */
 export const cleanupStaleRooms = onSchedule('every 1 hours', async () => {
-  const cutoffTime = Date.now() - 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const cutoffTime = now - STALE_AFTER_MS;
 
   try {
     const snapshot = await db
@@ -159,13 +162,18 @@ export const cleanupStaleRooms = onSchedule('every 1 hours', async () => {
       .once('value');
 
     const deletions: Promise<void>[] = [];
+    let kept = 0;
     snapshot.forEach((child) => {
-      console.log(`Deleting stale room: ${child.key}`);
-      deletions.push(child.ref.remove());
+      if (isRoomStale(child.val(), now)) {
+        console.log(`Deleting stale room: ${child.key}`);
+        deletions.push(child.ref.remove());
+      } else {
+        kept++;
+      }
     });
 
     await Promise.all(deletions);
-    console.log(`Cleaned up ${deletions.length} stale rooms`);
+    console.log(`Cleaned up ${deletions.length} stale rooms; kept ${kept} older rooms still in use`);
   } catch (error) {
     console.error('Error cleaning up rooms:', error);
     throw error;

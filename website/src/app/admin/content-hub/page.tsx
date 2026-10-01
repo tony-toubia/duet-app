@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { firebaseDb as database } from '@/services/firebase';
-import { ref, onValue, push, remove, set } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
+import { createContentItem, deleteContentItem, setContentItemPinned } from '@/services/AdminService';
 import { AnimatedPageIcon } from '@/components/admin/AnimatedPageIcon';
 
 interface ContentItem {
@@ -138,18 +139,13 @@ export default function ContentHubAdmin() {
     e.preventDefault();
     if (!title || !deepLink) return;
 
-    const contentRef = ref(database, 'content_hub/items');
-    const newDoc = push(contentRef);
-    await set(newDoc, {
-      title,
-      type,
-      deepLink,
-      image,
-      city: city || null,
-      source: 'manual',
-      pinned: true, // Manual items are always pinned
-      createdAt: Date.now(),
-    });
+    try {
+      // Server validates the link and stores it as a pinned manual item
+      await createContentItem({ title, type, deepLink, image, city: city || null });
+    } catch (err: any) {
+      alert(err?.message || 'Could not create the item.');
+      return;
+    }
 
     setTitle('');
     setDeepLink('');
@@ -160,15 +156,20 @@ export default function ContentHubAdmin() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this content item?')) {
-      await remove(ref(database, `content_hub/items/${id}`));
+      try {
+        await deleteContentItem(id);
+      } catch (err: any) {
+        alert(err?.message || 'Could not delete the item.');
+      }
     }
   };
 
   const handleTogglePin = async (item: ContentItem) => {
-    await set(
-      ref(database, `content_hub/items/${item.id}/pinned`),
-      !item.pinned
-    );
+    try {
+      await setContentItemPinned(item.id, !item.pinned);
+    } catch (err: any) {
+      alert(err?.message || 'Could not update the item.');
+    }
   };
 
   // Filter content by source

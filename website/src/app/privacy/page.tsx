@@ -43,7 +43,7 @@ export default function PrivacyPage() {
         <p>Camera and photo library access is used only for setting a profile picture. Your profile photo is stored in Google Firebase Storage and shown to your friends and room partners.</p>
 
         <h3>Room Data</h3>
-        <p>When you create or join a room, we store the room code, who is in the room, and the technical details needed to connect you. This data is deleted when everyone leaves the room, and in any case within about 24 hours of the room being created.</p>
+        <p>When you create or join a room, we store the room code, who is in the room, and the technical details needed to connect you. This data is deleted when everyone leaves the room. If a room is left behind (for example, after an app crash), it is deleted automatically once no one has been connected to it for a while, normally within a day.</p>
 
         <h3>Social Features</h3>
         <p>If you use social features, we store your friends list and pending friend requests, room invitations, your recent connections (who you talked with, when, and the room code), the last person you connected with (for quick reconnect), and your online status and last-seen time.</p>
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
             console), email open/click records, and relay server logs (log rotation is
             not configured), then state them here. */}
         <ul>
-          <li><strong>Room data:</strong> Deleted when everyone leaves the room, and in any case within about 24 hours of the room being created.</li>
+          <li><strong>Room data:</strong> Deleted when everyone leaves the room, and automatically once no one has been connected to it for a while (normally within a day).</li>
           <li><strong>Account data:</strong> Retained as long as your account exists.</li>
           <li><strong>Social data:</strong> Retained until you remove the connection or delete your account.</li>
           <li><strong>Usage information:</strong> Retained as long as your account exists.</li>

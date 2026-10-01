@@ -41,6 +41,26 @@ export async function checkAdmin(): Promise<boolean> {
   }
 }
 
+// Content Hub (manual items). Client writes to content_hub are denied by
+// database rules, so these go through the admin API.
+export async function createContentItem(data: {
+  title: string;
+  type: string;
+  deepLink: string;
+  image: string;
+  city?: string | null;
+}) {
+  return api<{ id: string }>('content-hub/items', 'POST', data);
+}
+
+export async function deleteContentItem(id: string) {
+  return api<{ deleted: boolean }>(`content-hub/items/${encodeURIComponent(id)}`, 'DELETE');
+}
+
+export async function setContentItemPinned(id: string, pinned: boolean) {
+  return api<{ pinned: boolean }>(`content-hub/items/${encodeURIComponent(id)}/pin`, 'PUT', { pinned });
+}
+
 // Segments
 export async function fetchSegments() {
   return api<{ segments: any[] }>('segments');
