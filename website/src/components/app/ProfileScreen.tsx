@@ -7,9 +7,11 @@ import { storageService } from '@/services/StorageService';
 
 export function ProfileScreen() {
   const router = useRouter();
-  const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
+  const { user, userProfile, isGuest, signOut, deleteAccount, refreshProfile, preferences, updatePreferences } = useAuthStore();
   const [isUploading, setIsUploading] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleChangePhoto = async () => {
@@ -32,6 +34,19 @@ export function ProfileScreen() {
     setShowSignOutModal(false);
     await signOut();
     router.push('/app');
+  };
+
+  const handleDelete = async () => {
+    setShowDeleteModal(false);
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await deleteAccount();
+      router.push('/app');
+    } catch {
+      setIsDeleting(false);
+      setError('Something went wrong and your account was not deleted. Check your connection and try again, or email hello@getduet.app.');
+    }
   };
 
   const displayName = userProfile?.displayName || user?.displayName || 'Duet User';
@@ -154,7 +169,42 @@ export function ProfileScreen() {
             Sign Out
           </button>
         )}
+
+        <button
+          onClick={() => setShowDeleteModal(true)}
+          disabled={isDeleting}
+          className="text-text-muted text-sm underline py-2 disabled:opacity-50"
+        >
+          {isDeleting ? 'Deleting…' : isGuest ? 'Delete Guest Data' : 'Delete Account'}
+        </button>
       </div>
+
+      {/* Delete account confirmation */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-8" onClick={() => setShowDeleteModal(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div role="dialog" aria-modal="true" className="relative bg-white rounded-3xl p-7 w-full max-w-[340px] text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold text-[#1a1a2e] mb-2">{isGuest ? 'Delete guest data?' : 'Delete your account?'}</h2>
+            <p className="text-sm text-[#6b6b80] mb-6">
+              {isGuest
+                ? 'This permanently deletes your guest account, friends, recent connections and settings. This cannot be undone.'
+                : 'This permanently deletes your account, profile, photo, friends, recent connections and settings, and unsubscribes you from all emails. This cannot be undone.'}
+            </p>
+            <button
+              onClick={handleDelete}
+              className="bg-danger text-white rounded-2xl py-3.5 w-full font-bold text-base mb-3 hover:bg-red-600 transition-colors"
+            >
+              Delete Permanently
+            </button>
+            <button
+              onClick={() => setShowDeleteModal(false)}
+              className="text-[#9a9aaa] text-[15px] font-semibold py-2 px-6"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sign out confirmation */}
       {showSignOutModal && (

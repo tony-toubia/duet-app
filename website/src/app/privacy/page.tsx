@@ -120,7 +120,7 @@ export default function PrivacyPage() {
         {/* NEEDS COUNSEL: region-specific rights (access, correction, portability,
             objection, appeal) and how to exercise them. */}
         <ul>
-          <li><strong>Account deletion:</strong> You can ask us to delete your account and associated data at any time by emailing us or using our <Link href="/delete">account deletion page</Link>.</li>
+          <li><strong>Account deletion:</strong> You can delete your account and associated data at any time, immediately, from your Profile in the app or on the web (guests too). If you can&apos;t sign in, use our <Link href="/delete">account deletion page</Link> or email us.</li>
           <li><strong>Profile management:</strong> You can update your display name and profile photo within the app.</li>
           <li><strong>Emails and notifications:</strong> You can unsubscribe from emails using the link in any email, and turn emails or push notifications off in your Duet profile settings.</li>
           <li><strong>Permissions:</strong> You can revoke camera, microphone, or notification permissions through your device or browser settings. Microphone access is required for voice communication.</li>
@@ -142,7 +142,7 @@ export default function PrivacyPage() {
         <h2>10. Contact Us</h2>
         <p>If you have questions about this Privacy Policy or your data, contact us at:</p>
         <p><strong>Email:</strong> hello@getduet.app</p>
-        <p>To request account deletion, visit our <Link href="/delete">account deletion page</Link>.</p>
+        <p>To delete your account, use <strong>Delete Account</strong> in your Profile, or visit our <Link href="/delete">account deletion page</Link>.</p>
       </div>
 
       {/* Footer */}

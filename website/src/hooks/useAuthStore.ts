@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { ref, get as dbGet, update } from 'firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
 import { firebaseDb } from '@/services/firebase';
+import { presenceService } from '@/services/PresenceService';
 
 export interface NotificationPreferences {
   emailOptIn: boolean;
@@ -30,6 +31,7 @@ interface AuthState {
   promptUpgrade: () => void;
   cancelUpgrade: () => void;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
 }
@@ -175,6 +177,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Clear store immediately so UI updates without waiting for onAuthStateChanged
     set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
     await authService.signOut();
+  },
+
+  deleteAccount: async () => {
+    await presenceService.teardownForDeletion();
+    try {
+      await authService.deleteAccount();
+    } catch (error) {
+      // Still signed in: let presence write normally again
+      presenceService.cancelDeletionTeardown();
+      throw error;
+    }
+    set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
   },
 
   refreshProfile: async () => {

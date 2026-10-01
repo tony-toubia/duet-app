@@ -9,6 +9,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { checkRateLimit } from './rateLimit';
+import { deleteUserAccount } from './accountDeletion';
 
 export interface PublicProfile {
   uid: string;
@@ -152,3 +153,19 @@ export const getTurnCredentials = onCall(
     return issueTurnCredentials(uid, turnConfigFromEnv(turnSharedSecret.value()));
   }
 );
+
+// ─── Account deletion ────────────────────────────────────────────────
+
+/**
+ * Permanently delete the caller's account and data (Apple guideline
+ * 5.1.1(v); also available to guests). The app asks for confirmation first.
+ */
+export const deleteAccount = onCall({ region: 'us-central1', timeoutSeconds: 120 }, async (request) => {
+  const uid = requireUid(request.auth);
+  if (request.data?.confirm !== 'DELETE') {
+    throw new HttpsError('invalid-argument', 'Deletion was not confirmed.');
+  }
+  const allowed = await checkRateLimit(uid, 'delete_account', 5, 60 * 60 * 1000);
+  if (!allowed) throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  return deleteUserAccount(uid);
+});

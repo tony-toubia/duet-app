@@ -18,6 +18,7 @@ import {
 } from 'firebase/auth';
 import { ref, get, set, update, serverTimestamp } from 'firebase/database';
 import { firebaseAuth, firebaseDb } from './firebase';
+import { callFunction } from './CloudFunctions';
 
 const EMAIL_LINK_STORAGE_KEY = 'emailForSignIn';
 
@@ -185,6 +186,16 @@ class AuthService {
 
   onAuthStateChanged(callback: (user: User | null) => void): () => void {
     return firebaseOnAuthStateChanged(firebaseAuth, callback);
+  }
+
+  /**
+   * Permanently delete the signed-in account (guest or full) and all its
+   * data via the deleteAccount Cloud Function, then sign out locally.
+   */
+  async deleteAccount(): Promise<void> {
+    if (!firebaseAuth.currentUser) throw new Error('Not signed in.');
+    await callFunction('deleteAccount', { confirm: 'DELETE' });
+    await this.signOut();
   }
 
   async signOut(): Promise<void> {

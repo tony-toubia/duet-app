@@ -1,10 +1,10 @@
 {
   "name": "duet-rules-tests",
   "private": true,
-  "description": "Realtime Database security-rules tests, run against the local emulator (requires Java).",
+  "description": "Realtime Database security-rules and account-deletion tests, run against the local emulators (requires Java).",
   "type": "module",
   "scripts": {
-    "test": "firebase emulators:exec --only database --project demo-duet --config ../../firebase.json \"node users.rules.test.mjs\""
+    "test": "npm --prefix ../functions run build && firebase emulators:exec --only database,auth,storage --project demo-duet --config ../../firebase.json \"node users.rules.test.mjs && node deletion.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.0",

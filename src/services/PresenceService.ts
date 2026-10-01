@@ -3,6 +3,9 @@ import auth from '@react-native-firebase/auth';
 
 class PresenceService {
   private isSetUp = false;
+  // Set while an account is being deleted so teardown doesn't re-create
+  // the user's status entry after the server has removed it
+  private suppressOfflineWrite = false;
 
   /**
    * Set up presence tracking for the current user.
@@ -13,6 +16,7 @@ class PresenceService {
     if (!user || this.isSetUp) return () => {};
 
     this.isSetUp = true;
+    this.suppressOfflineWrite = false;
     const statusRef = database().ref(`/status/${user.uid}`);
     const connectedRef = database().ref('.info/connected');
 
@@ -32,12 +36,37 @@ class PresenceService {
 
     return () => {
       connectedRef.off('value', handler);
-      statusRef.set({
-        state: 'offline',
-        lastSeen: database.ServerValue.TIMESTAMP,
-      });
+      if (!this.suppressOfflineWrite) {
+        statusRef.set({
+          state: 'offline',
+          lastSeen: database.ServerValue.TIMESTAMP,
+        });
+      }
       this.isSetUp = false;
     };
+  }
+
+  /**
+   * Before deleting the account: cancel the server-side onDisconnect write
+   * and skip the "offline" write on teardown, so nothing re-creates this
+   * user's status entry once their data is gone.
+   */
+  async teardownForDeletion(): Promise<void> {
+    this.suppressOfflineWrite = true;
+    const user = auth().currentUser;
+    if (!user) return;
+    await database().ref(`/status/${user.uid}`).onDisconnect().cancel().catch(() => {});
+  }
+
+  /** Deletion failed and the user is still signed in: restore presence. */
+  cancelDeletionTeardown(): void {
+    this.suppressOfflineWrite = false;
+    const user = auth().currentUser;
+    if (!user || !this.isSetUp) return;
+    database().ref(`/status/${user.uid}`).onDisconnect().set({
+      state: 'offline',
+      lastSeen: database.ServerValue.TIMESTAMP,
+    });
   }
 
   /**

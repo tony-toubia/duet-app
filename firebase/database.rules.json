@@ -264,6 +264,8 @@
 
     // Room invitations
     "invitations": {
+      // Server-side lookups (account deletion)
+      ".indexOn": ["fromUid", "toUid"],
       "$invitationId": {
         // Anyone authenticated can read invitations addressed to them
         ".read": "auth != null && data.child('toUid').val() == auth.uid",

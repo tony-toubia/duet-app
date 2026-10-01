@@ -23,7 +23,7 @@ import { checkRateLimit } from './rateLimit';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
-export { searchUserByEmail, getTurnCredentials } from './userApi';
+export { searchUserByEmail, getTurnCredentials, deleteAccount } from './userApi';
 
 initializeApp();
 
@@ -616,7 +616,8 @@ export const onAuthProviderUpgraded = onValueWritten(
     const before = event.data.before.val();
     const after = event.data.after.val();
 
-    if (before !== 'anonymous' || after === 'anonymous') return;
+    // after == null is an account deletion, not an upgrade
+    if (before !== 'anonymous' || after == null || after === 'anonymous') return;
 
     console.log(`[Email] Auth upgrade for ${userId}: ${before} -> ${after}`);
 

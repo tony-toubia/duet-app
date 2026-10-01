@@ -4,6 +4,7 @@ import database from '@react-native-firebase/database';
 import { authService, UserProfile } from '@/services/AuthService';
 import { eventTrackingService } from '@/services/EventTrackingService';
 import { pushNotificationService } from '@/services/PushNotificationService';
+import { presenceService } from '@/services/PresenceService';
 
 export interface NotificationPreferences {
   emailOptIn: boolean;
@@ -29,6 +30,7 @@ interface AuthState {
   completeSignInWithEmailLink: (url: string, email?: string) => Promise<void>;
   continueAsGuest: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => Promise<void>;
 }
@@ -229,6 +231,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // shares the device with a stale registration and both receive its pushes.
     await pushNotificationService.removeToken().catch(() => {});
     await authService.signOut();
+    set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
+  },
+
+  deleteAccount: async () => {
+    await presenceService.teardownForDeletion();
+    try {
+      await authService.deleteAccount();
+    } catch (error) {
+      // Still signed in: let presence write normally again
+      presenceService.cancelDeletionTeardown();
+      throw error;
+    }
+    // Signed out by now, so this only drops the device's FCM registration
+    // (the server already deleted the stored tokens)
+    await pushNotificationService.removeToken().catch(() => {});
     set({ user: null, userProfile: null, isGuest: false, preferences: { emailOptIn: true, pushOptIn: true } });
   },
 
