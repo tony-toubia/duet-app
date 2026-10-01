@@ -3,25 +3,21 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ContentService, type ContentItem } from '@/services/ContentService';
-import { LocationService } from '@/services/LocationService';
 import { ContentCard } from './ContentCard';
 import { Spinner } from '@/components/ui/Spinner';
 
 export function ContentHubScreen() {
   const router = useRouter();
   const [content, setContent] = useState<ContentItem[]>([]);
-  const [city, setCity] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [items, userCity] = await Promise.all([
-          ContentService.fetchContent(),
-          LocationService.fetchCity(),
-        ]);
-        setCity(userCity);
-        setContent(ContentService.filterContentByCity(items, userCity));
+        // Older versions cached a city looked up from the visitor's IP address
+        // (via ipapi.co). That lookup is gone; clear the leftover cache.
+        try { localStorage.removeItem('duet_location_cache'); } catch {}
+        setContent(await ContentService.fetchContent());
       } catch (e) {
         console.warn('[ContentHub] Failed to load:', e);
       } finally {
@@ -61,15 +57,6 @@ export function ContentHubScreen() {
         </h1>
         <div className="w-[72px]" /> {/* Spacer to center title */}
       </div>
-
-      {/* Location badge */}
-      {city && (
-        <div className="px-5 mb-3">
-          <span className="inline-block bg-primary/15 border border-primary/30 rounded-full px-3 py-1 text-primary text-xs font-semibold">
-            📍 {city}
-          </span>
-        </div>
-      )}
 
       {/* Content list */}
       <div className="px-5 pb-8 flex flex-col gap-4 max-w-2xl mx-auto">
