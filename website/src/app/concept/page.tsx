@@ -5,7 +5,7 @@ import { ConceptFilm } from '@/components/concept/ConceptFilm';
 
 const TITLE = 'How Duet Works - Duet';
 const DESCRIPTION =
-  'A 45-second look at Duet: an always-on voice line that keeps you close to your people, whether you’re lost in a crowd, driving a shift, or miles apart.';
+  'A 55-second look at Duet: an always-on voice line that keeps you close to your people, whether you’re lost in a crowd, driving a shift, or miles apart.';
 
 export const metadata: Metadata = {
   title: TITLE,

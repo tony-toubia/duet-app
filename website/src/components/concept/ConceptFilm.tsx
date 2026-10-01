@@ -56,13 +56,13 @@ export function ConceptFilm() {
             </svg>
           </button>
           <nav ref={chaptersRef} aria-label="Scenes" className="flex min-w-0 flex-1 flex-wrap gap-1.5" />
-          <span ref={timeRef} className="flex-none text-[13px] tabular-nums text-text-muted">0:00 / 0:45</span>
+          <span ref={timeRef} className="flex-none text-[13px] tabular-nums text-text-muted">0:00 / 0:55</span>
         </div>
         <input
           ref={scrubRef}
           type="range"
           min={0}
-          max={45}
+          max={55}
           step={0.01}
           defaultValue={0}
           aria-label="Position in film"

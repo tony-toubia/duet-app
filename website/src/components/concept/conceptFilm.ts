@@ -1,7 +1,7 @@
 /**
  * Concept film engine for /concept.
  *
- * A 45-second looping canvas animation of the Duet idea, drawn procedurally in
+ * A 55-second looping canvas animation of the Duet idea, drawn procedurally in
  * the style of the app's home-screen artwork: flat navy silhouettes, a dusk
  * terracotta skyline, and a glowing cord between headphones that loops into a
  * heart when two people are close and arcs over everything when they're apart.
@@ -33,7 +33,7 @@ interface PersonOpts {
   x: number; y: number; s?: number; dir?: number; phase?: number; amp?: number;
   col?: string; kind?: 'm' | 'f'; hp?: boolean; reach?: number;
 }
-interface Pulse { p: number; from: 'A' | 'B' }
+interface Pulse { p: number; from: 'A' | 'B'; alpha: number; arrive: number }
 type Ctx = CanvasRenderingContext2D;
 type Caption = [number, string];
 interface Segment { name: string; d: number; draw: (c: Ctx, t: number) => void; end?: boolean; caps: Caption[] }
@@ -51,6 +51,19 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const sm = (a: number, b: number, t: number) => { const x = clamp((t - a) / (b - a)); return x * x * (3 - 2 * x); };
 const win = (a: number, b: number, t: number, f = 0.25) => sm(a, a + f, t) * (1 - sm(b - f, b, t));
 const rng = (seed: number) => { let s = seed; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; };
+// One spoken line, timed relative to when the speaker starts: the dot rests at
+// the speaker for a moment, travels the line, then rests at the listener while
+// an arrival ring spreads. The listener's audio lowers as the voice arrives and
+// stays lowered a little after the speaker finishes, so each step reads on its own.
+const TALK = 3.0;
+function beat(t: number, t0: number, from: 'A' | 'B') {
+  const r = t - t0;
+  return {
+    speak: win(0, TALK, r, 0.3),
+    pulse: r > 0 && r < 2.25 ? { p: sm(0.35, 1.6, r), from, alpha: win(0, 2.25, r, 0.2), arrive: sm(1.55, 2.2, r) } : null,
+    duck: sm(1.3, 1.9, r) * (1 - sm(3.2, 3.8, r)),
+  };
+}
 const hexRgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 const mixColor = (a: string, b: string, t: number) => {
   const A = hexRgb(a), B = hexRgb(b);
@@ -333,9 +346,13 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     if (pulse && heart < 0.5) {
       const p = pulse.from === 'A' ? pulse.p : 1 - pulse.p;
       const back = pulse.from === 'A' ? -1 : 1;
-      c.globalAlpha = alpha;
+      // trail only while travelling, so the dot rests cleanly at each end
+      const moving = Math.min(pulse.p, 1 - pulse.p) > 0.001;
+      const pa = alpha * pulse.alpha;
       for (let i = 4; i >= 0; i--) {
+        if (i > 0 && !moving) continue;
         const pt = qpt(A, P, B, clamp(p + back * i * 0.018));
+        c.globalAlpha = pa;
         c.fillStyle = i === 0 ? COL.creamL : `rgba(244,219,200,${0.5 - i * 0.1})`;
         c.beginPath(); c.arc(pt.x, pt.y, 11 - i * 1.6, 0, Math.PI * 2); c.fill();
       }
@@ -343,6 +360,13 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
       c.shadowBlur = 0;
       c.fillStyle = COL.orange;
       c.beginPath(); c.arc(pt.x, pt.y, 5, 0, Math.PI * 2); c.fill();
+      // arrival ring at the listener's ear
+      if (pulse.arrive > 0 && pulse.arrive < 1) {
+        const end = pulse.from === 'A' ? B : A;
+        c.globalAlpha = alpha * (1 - pulse.arrive) * 0.9;
+        c.strokeStyle = COL.creamL; c.lineWidth = 3;
+        c.beginPath(); c.arc(end.x, end.y, 12 + 40 * pulse.arrive, 0, Math.PI * 2); c.stroke();
+      }
     }
     c.restore();
     return qpt(A, P, B, 0.5);
@@ -494,7 +518,7 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
   const far1 = makeSkyline(3, 16, 90, 190, 300, 500);
   far1.list[5].spire = true; far1.list[5].h = 540;
   const near1 = makeSkyline(11, 14, 150, 260, 210, 410);
-  const off1 = integrator(t => 120 * clamp(1 - sm(6.2, 6.8, t) + sm(11.3, 11.9, t)), 14.5);
+  const off1 = integrator(t => 120 * clamp(1 - sm(6.2, 6.8, t) + sm(14.9, 15.5, t)), 18.2);
   const STOP1 = off1(9);
   const crowd1 = (() => {
     const r = rng(21);
@@ -568,10 +592,10 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     drawCab(c, -400 + (STOP1 - off), G - 2);
     drawCart(c, 1340 + (STOP1 - off), G + 4);
 
-    const hxp = lerp(700, 430, sm(3, 6.5, t)) + 260 * sm(11.4, 13.6, t);
-    const sxp = lerp(830, 1180, sm(3, 6.5, t)) - 360 * sm(11.4, 13.6, t);
-    const ampH = clamp(1 - sm(6.2, 6.7, t) + sm(11.3, 11.7, t));
-    const ampS = clamp(1 - sm(6.4, 6.9, t) + sm(11.3, 11.7, t));
+    const hxp = lerp(700, 430, sm(3, 6.5, t)) + 260 * sm(15.0, 17.2, t);
+    const sxp = lerp(830, 1180, sm(3, 6.5, t)) - 360 * sm(15.0, 17.2, t);
+    const ampH = clamp(1 - sm(6.2, 6.7, t) + sm(14.9, 15.3, t));
+    const ampS = clamp(1 - sm(6.4, 6.9, t) + sm(14.9, 15.3, t));
     const ph = off * 0.05;
     const reach = sm(6.9, 7.5, t) * (1 - sm(8.2, 8.7, t));
 
@@ -583,15 +607,14 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     drawCrowd(c, t, true);
 
     const dist = Math.abs(her.e.x - him.e.x);
-    const talkH = win(8.7, 10.0, t), talkS = win(10.2, 11.6, t);
-    let pulse: Pulse | null = null;
-    if (t > 8.7 && t < 9.8) pulse = { p: sm(8.75, 9.65, t), from: 'A' };
-    else if (t > 10.2 && t < 11.3) pulse = { p: sm(10.25, 11.15, t), from: 'B' };
+    const bH = beat(t, 8.7, 'A'), bS = beat(t, 12.4, 'B');
+    const talkH = bH.speak, talkS = bS.speak;
+    const pulse = bH.pulse || bS.pulse;
     cord(c, him.e, her.e, { heart: 1 - sm(190, 330, dist), energy: Math.max(talkH, talkS), pulse });
     voiceBars(c, him.hx, him.hy, him.u, t, talkH);
     voiceBars(c, her.hx, her.hy, her.u, t, talkS);
-    chip(c, him.hx - 75, him.top - 40, 'music', 1 - 0.7 * talkS, t);
-    chip(c, her.hx + 75, her.top - 40, 'music', 1 - 0.7 * talkH, t);
+    chip(c, him.hx - 75, him.top - 40, 'music', 1 - 0.7 * bS.duck, t);
+    chip(c, her.hx + 75, her.top - 40, 'music', 1 - 0.7 * bH.duck, t);
 
     const q = win(7.2, 8.6, t, 0.2);
     if (q > 0.01) {
@@ -610,7 +633,7 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
   // ───────────── Scene 2 · On the road (rideshare) ─────────────
   const far2 = makeSkyline(5, 18, 80, 170, 220, 470);
   const mid2 = makeSkyline(9, 14, 140, 240, 160, 320);
-  const off2 = integrator(t => 380 * (1 - sm(7.9, 9.0, t)), 12.5);
+  const off2 = integrator(t => 380 * (1 - sm(10.2, 11.3, t)), 15);
 
   function drawLamp(c: Ctx, x: number) {
     c.save();
@@ -748,27 +771,26 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     for (let x = -(off % 150); x < W; x += 150) c.fillRect(x, 935, 76, 8);
 
     // rider walks up and gets in
-    const pa = win(9.0, 10.9, t, 0.3);
+    const pa = win(11.3, 13.2, t, 0.3);
     if (pa > 0.01) {
       c.save(); c.globalAlpha = pa;
-      person(c, { x: lerp(1060, 560, sm(9.0, 10.7, t)), y: G + 10, s: 0.95, dir: -1, phase: t * 8.5, amp: 1 - sm(10.4, 10.7, t), kind: 'm', col: CROWD[0] });
+      person(c, { x: lerp(1060, 560, sm(11.3, 13.0, t)), y: G + 10, s: 0.95, dir: -1, phase: t * 8.5, amp: 1 - sm(12.7, 13.0, t), kind: 'm', col: CROWD[0] });
       c.restore();
     }
-    const bob = Math.sin(t * 14) * 2 * (1 - sm(8, 9, t));
-    const car = drawCar(c, 600, 905 + bob, off, sm(10.6, 11.0, t));
+    const bob = Math.sin(t * 14) * 2 * (1 - sm(10.3, 11.3, t));
+    const car = drawCar(c, 600, 905 + bob, off, sm(12.9, 13.3, t));
     const fr = drawInset(c, t);
 
-    const talkF = win(3.0, 4.8, t), talkD = win(5.0, 6.9, t);
-    const muted = sm(9.4, 9.8, t);
-    let pulse: Pulse | null = null;
-    if (t > 3.0 && t < 4.0) pulse = { p: sm(3.05, 3.9, t), from: 'B' };
-    else if (t > 5.0 && t < 6.0) pulse = { p: sm(5.05, 5.9, t), from: 'A' };
+    const bF = beat(t, 3.0, 'B'), bD = beat(t, 6.7, 'A');
+    const talkF = bF.speak, talkD = bD.speak;
+    const muted = sm(11.7, 12.1, t);
+    const pulse = bF.pulse || bD.pulse;
     cord(c, car.e, fr.e, { energy: Math.max(talkF, talkD), pulse, alpha: 1 - 0.5 * muted });
     voiceBars(c, car.hx, car.hy, car.u, t, talkD);
     voiceBars(c, fr.hx, fr.hy, fr.u, t, talkF);
-    const dc = chip(c, car.hx - 20, car.top - 44, 'music', 1 - 0.7 * talkF, t);
+    const dc = chip(c, car.hx - 20, car.top - 44, 'music', 1 - 0.7 * bF.duck, t);
     muteBadge(c, dc.x0 + dc.w + 10, car.top - 44, muted);
-    chip(c, fr.hx + 30, fr.top - 30, 'music', 1 - 0.7 * talkD, t);
+    chip(c, fr.hx + 30, fr.top - 30, 'music', 1 - 0.7 * bD.duck, t);
     bubble(c, fr.hx, fr.top - 66, 'How’s the shift going?', talkF, -0.5);
     bubble(c, car.hx, car.top - 76, 'Slow night. Airport run next.', talkD, 0.1);
   }
@@ -871,18 +893,17 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     const herHead = P3({ x: her.hx, y: her.hy }, z), herTop = P3({ x: her.hx, y: her.top }, z).y;
     const himHead = P3({ x: him.hx, y: him.hy }, z), himTop = P3({ x: him.hx, y: him.top }, z).y;
     const herU = Math.max(12, her.u * z), himU = Math.max(12, him.u * z);
-    const talkM = win(9.4, 10.8, t), talkF = win(11.0, 12.4, t);
-    let pulse: Pulse | null = null;
-    if (t > 9.4 && t < 10.4) pulse = { p: sm(9.45, 10.3, t), from: 'B' };
-    else if (t > 11.0 && t < 12.0) pulse = { p: sm(11.05, 11.9, t), from: 'A' };
+    const bM = beat(t, 9.4, 'B'), bF = beat(t, 13.1, 'A');
+    const talkM = bM.speak, talkF = bF.speak;
+    const pulse = bM.pulse || bF.pulse;
     const dist = Math.hypot(B.x - A.x, B.y - A.y);
     const apex = cord(c, A, B, { heart: 1 - sm(160, 300, dist), energy: Math.max(talkM, talkF), pulse });
     const miles = (him.e.x - her.e.x) / 1650;
     tag(c, apex.x, apex.y - 34, `${Math.max(0.1, miles).toFixed(1)} mi apart`, sm(3.4, 4.0, t));
     voiceBars(c, himHead.x, himHead.y, himU, t, talkM);
     voiceBars(c, herHead.x, herHead.y, herU, t, talkF);
-    chip(c, herHead.x - 80, herTop - 36, 'podcast', 1 - 0.7 * talkM, t);
-    chip(c, himHead.x + 80, himTop - 36, 'music', 1 - 0.7 * talkF, t);
+    chip(c, herHead.x - 80, herTop - 36, 'podcast', 1 - 0.7 * bM.duck, t);
+    chip(c, himHead.x + 80, himTop - 36, 'music', 1 - 0.7 * bF.duck, t);
     bubble(c, himHead.x, himTop - 76, 'Grabbing coffee. Want one?', talkM, -0.2);
     bubble(c, herHead.x, herTop - 76, 'Oat latte, please!', talkF, 0.2);
   }
@@ -923,23 +944,23 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
 
   // ───────────── Timeline ─────────────
   const SEGS: Segment[] = [
-    { name: 'Out exploring', d: 14, draw: scene1, caps: [
+    { name: 'Out exploring', d: 17.8, draw: scene1, caps: [
       [0, 'Out exploring the city. Headphones on, each of you in your own soundtrack.'],
       [3, 'The crowd pulls you apart, and neither of you notices.'],
       [6.6, 'You turn to say something, and they’re gone.'],
       [8.6, 'With Duet, you’re still connected. Just talk, and their music lowers so they hear you.'],
-      [11.7, 'No calling, no texting, no scanning the crowd.'],
+      [15.3, 'No calling, no texting, no scanning the crowd.'],
     ] },
-    { name: 'On the road', d: 12, draw: scene2, caps: [
+    { name: 'On the road', d: 14.6, draw: scene2, caps: [
       [0, 'Driving a rideshare shift. Long, quiet stretches between pickups.'],
       [2.9, 'A friend rides along on an always-on line. No speakerphone, no calling back after every trip.'],
-      [8.9, 'A rider gets in? Tap mute. The line stays open for later.'],
+      [11.2, 'A rider gets in? Tap mute. The line stays open for later.'],
     ] },
-    { name: 'Leaving home', d: 14, draw: scene3, caps: [
+    { name: 'Leaving home', d: 17.6, draw: scene3, caps: [
       [0, 'Saturday morning. Two plans, one front door.'],
       [2.4, 'She walks to the farmers market with a podcast. He rides to the park with a playlist.'],
       [9.3, 'Miles apart, and still one sentence away.'],
-      [12.6, 'Say it the moment you think of it. Duet keeps the line open.'],
+      [15.9, 'Say it the moment you think of it. Duet keeps the line open.'],
     ] },
     { name: 'Duet', d: 5, draw: endCard, end: true, caps: [
       [0, 'Duet. Together, even when apart.'],
@@ -981,7 +1002,7 @@ export function mountConceptFilm(el: ConceptFilmElements): () => void {
     return b;
   });
 
-  let T = reduce ? 9.6 : 0.5;
+  let T = reduce ? 10.6 : 0.5;
   let playing = !reduce;
   let scrubbing = false;
   let lastCap = '', lastSeg = -1;
