@@ -88,12 +88,5 @@ export class ContentService {
     );
   }
 
-  static filterContentByCity(content: ContentItem[], city: string | null): ContentItem[] {
-    if (!city) return content;
-    // Map anything targeting the specific city or global (null city) to the top
-    const localized = content.filter(c => c.city?.toLowerCase() === city.toLowerCase());
-    const global = content.filter(c => !c.city || c.city.trim() === '');
-    return [...localized, ...global];
-  }
 }
 

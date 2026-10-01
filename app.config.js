@@ -39,7 +39,7 @@ module.exports = {
       infoPlist: {
         RCTNewArchEnabled: false,
         NSMicrophoneUsageDescription: "Duet needs microphone access to enable voice communication with your partner.",
-        NSLocalNetworkUsageDescription: "Duet uses your local network to establish peer-to-peer voice connections.",
+        NSLocalNetworkUsageDescription: "Duet uses your local network to connect your voice directly to the other person's device when you're both on the same network.",
         UIBackgroundModes: ["audio"],
         BGTaskSchedulerPermittedIdentifiers: ["com.duet.audio"],
         ITSAppUsesNonExemptEncryption: false,
@@ -137,7 +137,15 @@ module.exports = {
         {
           androidAppId: process.env.ADMOB_ANDROID_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
           iosAppId: process.env.ADMOB_IOS_APP_ID || "ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy",
-          delayAppMeasurementInit: true
+          delayAppMeasurementInit: true,
+          // Google's SKAdNetwork ID, for ad attribution without tracking
+          skAdNetworkItems: ["cstr6suwn9.skadnetwork"]
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          userTrackingPermission: "Allowing tracking lets Duet show you ads that are more relevant to you. Duet never uses your conversations for ads."
         }
       ],
       "expo-apple-authentication",
@@ -163,9 +171,8 @@ module.exports = {
       admobRewardedIdIos: process.env.ADMOB_REWARDED_ID_IOS || "",
       admobLobbyNativeIdAndroid: process.env.ADMOB_LOBBY_NATIVE_ID_ANDROID || "",
       admobLobbyNativeIdIos: process.env.ADMOB_LOBBY_NATIVE_ID_IOS || "",
-      turnServerIp: process.env.TURN_SERVER_IP || "",
-      turnUsername: process.env.TURN_USERNAME || "",
-      turnPassword: process.env.TURN_PASSWORD || "",
+      // Relay (TURN) credentials are fetched at runtime from the
+      // getTurnCredentials Cloud Function; nothing relay-related is bundled.
     },
     owner: "tonytoubia"
   }

@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { AuthScreen } from '@/components/app/AuthScreen';
 import { Spinner } from '@/components/ui/Spinner';
 import { cn } from '@/lib/cn';
+import { checkAdmin } from '@/services/AdminService';
 
-const ADMIN_UIDS = (process.env.NEXT_PUBLIC_ADMIN_UIDS || '').split(',').filter(Boolean);
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: 'dashboard' },
@@ -20,18 +20,34 @@ const NAV_ITEMS = [
   { href: '/admin/reporting', label: 'Reporting', icon: 'reporting' },
   { href: '/admin/subscribers', label: 'Subscribers', icon: 'subscribers' },
   { href: '/admin/content-hub', label: 'Content Hub', icon: 'dashboard' },
+  { href: '/admin/reports', label: 'Safety Reports', icon: 'messages' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading, initializeAuth } = useAuthStore();
   const pathname = usePathname();
 
+  // Admin access is decided by the server (fails closed). The old client-side
+  // NEXT_PUBLIC_ADMIN_UIDS check allowed everyone when unset and exposed the
+  // admin UIDs in the public JavaScript bundle.
+  const [access, setAccess] = useState<'checking' | 'allowed' | 'denied'>('checking');
+
   useEffect(() => {
     const unsub = initializeAuth();
     return unsub;
   }, [initializeAuth]);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setAccess('checking');
+    checkAdmin().then((isAdmin) => {
+      if (!cancelled) setAccess(isAdmin ? 'allowed' : 'denied');
+    });
+    return () => { cancelled = true; };
+  }, [user]);
+
+  if (isLoading || (user && access === 'checking')) {
     return (
       <div className="min-h-screen bg-lobby-dark flex items-center justify-center">
         <Spinner size="lg" />
@@ -43,7 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return <AuthScreen emailLinkError={null} isUpgrade={false} />;
   }
 
-  if (ADMIN_UIDS.length > 0 && !ADMIN_UIDS.includes(user.uid)) {
+  if (access !== 'allowed') {
     return (
       <div className="min-h-screen bg-lobby-dark flex items-center justify-center">
         <div className="text-center">

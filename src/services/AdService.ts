@@ -1,11 +1,13 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 // Type-only imports are erased at compile time — the runtime require() below
-// stays the only actual module load (ads are disabled on iOS).
+// stays the only actual module load.
 import type {
   InterstitialAd as InterstitialAdType,
   RewardedAd as RewardedAdType,
 } from 'react-native-google-mobile-ads';
+
+import { adConsentService } from './AdConsentService';
 
 const ads = require('react-native-google-mobile-ads');
 const InterstitialAd = ads.InterstitialAd;
@@ -19,7 +21,9 @@ const getInterstitialAdUnitId = () => {
   const extras = Constants.expoConfig?.extra;
   const id = Platform.OS === 'ios' ? extras?.admobInterstitialIdIos : extras?.admobInterstitialIdAndroid;
   console.log('[Ad] Interstitial unit ID:', id ? '(set)' : '(missing)', 'Platform:', Platform.OS);
-  return id || TestIds.INTERSTITIAL;
+  // A release build without its unit ID shows no ads (never Google's test
+  // ads, which earn nothing and hide the misconfiguration)
+  return id || null;
 };
 
 const getRewardedAdUnitId = () => {
@@ -27,7 +31,9 @@ const getRewardedAdUnitId = () => {
   const extras = Constants.expoConfig?.extra;
   const id = Platform.OS === 'ios' ? extras?.admobRewardedIdIos : extras?.admobRewardedIdAndroid;
   console.log('[Ad] Rewarded unit ID:', id ? '(set)' : '(missing)', 'Platform:', Platform.OS);
-  return id || TestIds.REWARDED;
+  // A release build without its unit ID shows no ads (never Google's test
+  // ads, which earn nothing and hide the misconfiguration)
+  return id || null;
 };
 
 const INTERSTITIAL_AD_UNIT_ID = getInterstitialAdUnitId();
@@ -65,7 +71,12 @@ class AdService {
    * flags would drift out of sync with the live ad and the buttons went dead.
    */
   initialize(): void {
-    if (this.initialized) return;
+    // Only after consent: AdConsentService.prepare() must have run and allowed ads
+    if (this.initialized || !adConsentService.canRequestAds) return;
+    if (!INTERSTITIAL_AD_UNIT_ID && !REWARDED_AD_UNIT_ID) {
+      console.warn('[Ad] No AdMob unit IDs in this build; full-screen ads disabled');
+      return;
+    }
     this.initialized = true;
     this.loadInterstitial();
     this.loadRewarded();
@@ -80,7 +91,8 @@ class AdService {
       this.interstitialRetryTimer = null;
     }
 
-    const interstitial: InterstitialAdType = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID);
+    if (!INTERSTITIAL_AD_UNIT_ID) return;
+    const interstitial: InterstitialAdType = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID, adConsentService.requestOptions());
     this.interstitial = interstitial;
 
     interstitial.addAdEventListener(AdEventType.LOADED, () => {
@@ -166,7 +178,8 @@ class AdService {
       this.rewardedRetryTimer = null;
     }
 
-    const rewarded: RewardedAdType = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID);
+    if (!REWARDED_AD_UNIT_ID) return;
+    const rewarded: RewardedAdType = RewardedAd.createForAdRequest(REWARDED_AD_UNIT_ID, adConsentService.requestOptions());
     this.rewarded = rewarded;
     this.rewardedEarned = false;
 
@@ -268,8 +281,10 @@ class AdService {
     }
   }
 
+  // The rewarded "1 hour without full-screen ads" window suppresses the
+  // pre-roll as well as the leave interstitial; it previously only did the latter.
   get isPreRollReady(): boolean {
-    return this.isLoaded;
+    return this.isLoaded && !this.isAdFree;
   }
 }
 

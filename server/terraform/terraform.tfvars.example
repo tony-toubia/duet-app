@@ -9,9 +9,10 @@ do_token = "dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # Options: nyc1, nyc3, sfo3, lon1, fra1, sgp1, blr1, tor1
 region = "nyc1"
 
-# TURN server credentials
-turn_username = "duet"
-turn_password = "generate-with-openssl-rand-hex-32"
+# Relay credentials: shared secret for time-limited credentials minted by the
+# getTurnCredentials Cloud Function. Use the same value as the Firebase secret
+# TURN_SHARED_SECRET. Generate with: openssl rand -hex 32
+turn_auth_secret = ""
 
 # Optional: Domain for TLS (recommended for production)
 # domain = "turn.yourdomain.com"

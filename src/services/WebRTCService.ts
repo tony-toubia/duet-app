@@ -4,7 +4,7 @@ import {
   RTCSessionDescription,
   RTCIceCandidate,
 } from 'react-native-webrtc';
-import { getIceServers, hasProductionTurn } from '@/config/turn';
+import { getIceServers, hasProductionTurn, ensureTurnCredentials } from '@/config/turn';
 import { lifecycle } from './LifecycleLog';
 
 // WebRTC configuration
@@ -92,6 +92,8 @@ export class WebRTCService {
    */
   async initialize(): Promise<void> {
     try {
+      // Fetch short-lived relay credentials first (cached; bounded wait)
+      await ensureTurnCredentials();
       // Create peer connection
       this.peerConnection = new RTCPeerConnection(getRtcConfig());
       lifecycle('webrtc.turn', { production: hasProductionTurn() });
@@ -414,6 +416,19 @@ export class WebRTCService {
     }
   }
 
+  /**
+   * Relay credentials expire after 24 hours; before an ICE restart, fetch
+   * fresh ones if needed and hand them to the live connection.
+   */
+  private async refreshRelayCredentials(): Promise<void> {
+    if (!(await ensureTurnCredentials()) || !this.peerConnection) return;
+    try {
+      (this.peerConnection as any).setConfiguration?.(getRtcConfig());
+    } catch (e) {
+      console.warn('[WebRTC] Could not apply refreshed relay credentials:', e);
+    }
+  }
+
   private async attemptIceRestart(): Promise<void> {
     if (!this.peerConnection) return;
 
@@ -434,6 +449,7 @@ export class WebRTCService {
     console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
     lifecycle('webrtc.ice.restart', { attempt: this.iceRestartCount });
     try {
+      await this.refreshRelayCredentials();
       const offer = await this.peerConnection.createOffer({ iceRestart: true } as any);
       await this.peerConnection.setLocalDescription(offer);
       console.log('[WebRTC] ICE restart offer created, sending via signaling');

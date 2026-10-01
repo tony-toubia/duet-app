@@ -1,0 +1,16 @@
+Copyright (c) 2026 Tony Toubia. All rights reserved.
+
+This repository and its contents (the Duet app, website, backend functions,
+server configuration, documentation, logos and artwork) are proprietary.
+No license is granted to use, copy, modify, distribute or create derivative
+works from any part of it without prior written permission from the
+copyright holder.
+
+Third-party components keep their own licenses. This includes the
+dependencies installed through package.json and the patched open-source
+files in patches/ (React Native, Expo and the JavaScriptCore integration,
+which are MIT-licensed; their notices are preserved in the respective
+packages). Third-party trademarks and logos in assets/icons/ and
+website/public/ (Spotify, YouTube, Apple, Google, Waze, App Store and
+Google Play badges) belong to their owners and are used under their brand
+guidelines.

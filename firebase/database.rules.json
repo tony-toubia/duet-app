@@ -27,8 +27,9 @@
         "members": {
           "$memberId": {
             // Members can only add/remove THEMSELVES (onDisconnect inherits
-            // auth from registration) — no ejecting other participants
-            ".write": "auth != null && $memberId == auth.uid",
+            // auth from registration) — no ejecting other participants.
+            // Someone the room's creator has blocked can't join it.
+            ".write": "auth != null && $memberId == auth.uid && (!newData.exists() || !root.child('rooms').child($roomCode).child('createdBy').exists() || !root.child('blocks').child(root.child('rooms').child($roomCode).child('createdBy').val()).child(auth.uid).exists())",
             ".validate": "newData.hasChildren(['role', 'joinedAt'])",
 
             "role": {
@@ -123,24 +124,33 @@
 
     // User profiles and push tokens
     "users": {
-      // Allow reading profiles for friend search and display
-      ".read": "auth != null",
-      // Index for email search
+      // No client reads of /users as a collection. Friend search by email
+      // runs server-side (searchUserByEmail callable) and returns only uid,
+      // display name and photo; a client query here used to expose the
+      // matched user's whole record (email, push tokens, preferences).
+      // Index kept for server-side (admin SDK) email queries.
       ".indexOn": ["profile/email"],
 
       "$userId": {
+        // Your own data (tokens, preferences, persistent room) is yours alone
+        ".read": "$userId == auth.uid",
         // Users can write their own data
         ".write": "$userId == auth.uid",
 
         "profile": {
+          // Only display name and photo are visible to other signed-in users
+          // (friends and room partners). Email and the rest of the profile
+          // are readable by the owner only, via $userId/.read above.
           ".validate": "newData.hasChildren(['displayName'])",
           "displayName": {
+            ".read": "auth != null",
             ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 100"
           },
           "email": {
             ".validate": "newData.isString() || newData.val() == null"
           },
           "avatarUrl": {
+            ".read": "auth != null",
             ".validate": "newData.isString() || newData.val() == null"
           },
           "createdAt": {
@@ -196,8 +206,13 @@
         ".read": "$userId == auth.uid",
 
         "$friendId": {
-          // Either user can write (for sending/accepting requests)
-          ".write": "auth.uid == $userId || auth.uid == $friendId",
+          // The list owner can write their own entries. The other person may
+          // only: remove the entry (unfriend/decline); create or refresh a
+          // pending request they initiated; or accept a request the owner
+          // sent them. A stranger can no longer mark themselves "accepted" in
+          // someone's list (which would grant them that person's presence),
+          // and someone the owner has blocked can't add themselves at all.
+          ".write": "auth.uid == $userId || (auth.uid == $friendId && (!newData.exists() || (!root.child('blocks').child($userId).child(auth.uid).exists() && ((newData.child('status').val() == 'pending' && newData.child('initiatedBy').val() == auth.uid && (!data.exists() || data.child('status').val() == 'pending')) || (newData.child('status').val() == 'accepted' && data.child('initiatedBy').val() == $userId)))))",
           ".validate": "newData.hasChildren(['status', 'displayName', 'initiatedBy'])",
 
           "status": {
@@ -234,8 +249,9 @@
     // Presence/online status
     "status": {
       "$userId": {
-        // Anyone authenticated can read status (for friend list online indicators)
-        ".read": "auth != null",
+        // Online status and last-seen are visible to the user and to their
+        // accepted friends only (friend list online indicators)
+        ".read": "auth != null && ($userId == auth.uid || root.child('friends').child($userId).child(auth.uid).child('status').val() == 'accepted')",
         // Only the user can write their own status
         ".write": "$userId == auth.uid",
 
@@ -250,11 +266,14 @@
 
     // Room invitations
     "invitations": {
+      // Server-side lookups (account deletion)
+      ".indexOn": ["fromUid", "toUid"],
       "$invitationId": {
         // Anyone authenticated can read invitations addressed to them
         ".read": "auth != null && data.child('toUid').val() == auth.uid",
         // Only the sender can create invitations (prevents spoofing)
-        ".write": "auth != null && (!data.exists() || data.child('fromUid').val() == auth.uid) && newData.child('fromUid').val() == auth.uid",
+        // ...and never to someone who has blocked the sender
+        ".write": "auth != null && (!data.exists() || data.child('fromUid').val() == auth.uid) && newData.child('fromUid').val() == auth.uid && !root.child('blocks').child(newData.child('toUid').val()).child(auth.uid).exists()",
         ".validate": "newData.hasChildren(['fromUid', 'fromDisplayName', 'toUid', 'roomCode', 'createdAt'])"
       }
     },
@@ -394,6 +413,39 @@
     "worldcup": {
       ".read": "auth != null",
       ".write": false
+    },
+
+    // Block lists: /blocks/{uid}/{blockedUid}. Private to the owner. Rules
+    // elsewhere consult them (friend requests, invitations, room joins).
+    "blocks": {
+      "$userId": {
+        ".read": "$userId == auth.uid",
+        ".write": "$userId == auth.uid",
+        "$blockedUid": {
+          ".validate": "$blockedUid != $userId && newData.hasChildren(['blockedAt'])",
+          "blockedAt": { ".validate": "newData.isNumber()" },
+          "displayName": { ".validate": "newData.isString() && newData.val().length < 100" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    // Safety reports. Clients may only create a report as themselves; they
+    // can never read, edit or delete reports. Reviewed via the admin API.
+    "reports": {
+      ".indexOn": ["createdAt"],
+      "$reportId": {
+        ".write": "auth != null && !data.exists() && newData.child('reporterUid').val() == auth.uid",
+        ".validate": "newData.hasChildren(['reporterUid', 'reportedUid', 'reason', 'context', 'createdAt'])",
+        "reporterUid": { ".validate": "newData.isString()" },
+        "reportedUid": { ".validate": "newData.isString() && newData.val() != auth.uid && newData.val().length > 0 && newData.val().length < 128" },
+        "reason": { ".validate": "newData.isString() && newData.val().matches(/^(harassment|hate|sexual|spam|underage|self_harm|other)$/)" },
+        "context": { ".validate": "newData.isString() && newData.val().matches(/^(room|friend|recent)$/)" },
+        "details": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+        "roomCode": { ".validate": "newData.isString() && newData.val().length <= 20" },
+        "createdAt": { ".validate": "newData.val() == now" },
+        "$other": { ".validate": false }
+      }
     },
 
     // Deny access to everything else

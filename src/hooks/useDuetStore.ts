@@ -9,9 +9,10 @@ import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { PartySignalingService } from '@/services/PartySignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
-import { friendsService } from '@/services/FriendsService';
+import { friendsService, getPublicProfile } from '@/services/FriendsService';
+import { blockService } from '@/services/BlockService';
 import { eventTrackingService } from '@/services/EventTrackingService';
-import { LocationService } from '@/services/LocationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '@/navigation/navigationRef';
 import { callForegroundService } from '@/services/CallForegroundService';
 import { lifecycle } from '@/services/LifecycleLog';
@@ -42,7 +43,6 @@ interface DuetState {
   incomingReaction: { emoji: string; id: number } | null;
 
   // Context & Settings
-  userCity: string | null;
   pendingAlert: PendingAlert | null;
 
   // Invite tracking (suppress share modal when room originated from friend invite)
@@ -139,6 +139,8 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
   const partySignaling: PartySignalingService = new PartySignalingService({
     onOffer: async (fromUid, offer) => {
       const { partyWebrtc } = get();
+      // Never connect with someone this user has blocked
+      if (blockService.isBlocked(fromUid)) return;
       if (partyWebrtc) {
         const answer = await partyWebrtc.handleOffer(fromUid, offer);
         await partySignaling.sendAnswer(fromUid, answer);
@@ -152,6 +154,10 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
     },
     onParticipantJoined: async (uid) => {
       const { partyWebrtc } = get();
+      if (blockService.isBlocked(uid)) {
+        console.log('[Party] Not connecting with a blocked participant');
+        return;
+      }
       if (partyWebrtc) {
         set((state) => ({
           partyParticipants: [
@@ -216,7 +222,6 @@ export const useDuetStore = create<DuetState>((set, get) => ({
 
   incomingReaction: null,
 
-  userCity: null,
   pendingAlert: null,
 
   fromInvite: false,
@@ -236,8 +241,10 @@ export const useDuetStore = create<DuetState>((set, get) => ({
   
   initialize: async () => {
     try {
-      // Async start geolocation fetching to prevent app pipeline blockage
-      LocationService.fetchCity().then(city => set({ userCity: city }));
+      // Older builds looked up the user's city from their IP address (via
+      // ipapi.co) and cached it on the device. That lookup is gone; clear the
+      // leftover cache so no location stays stored.
+      AsyncStorage.removeItem('@duet_location_cache').catch(() => {});
 
       // Initialize Crashlytics first for error tracking
       await crashlyticsService.initialize();
@@ -699,8 +706,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Record recent connection before cleanup
     if (partnerId && partnerId !== 'partner' && roomCode) {
       try {
-        const profileSnap = await database().ref(`/users/${partnerId}/profile`).once('value');
-        const profile = profileSnap.val();
+        // Only the partner's public fields are readable (not the whole profile)
+        const profile = await getPublicProfile(partnerId);
         if (profile) {
           await friendsService.recordRecentConnection(
             partnerId,
@@ -770,7 +777,6 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       isPartnerSpeaking: false,
       incomingReaction: null,
       fromInvite: false,
-      userCity: get().userCity, // Preserve city across re-renders
       roomType: 'duet',
       partyParticipants: [],
       partyWebrtc: null,

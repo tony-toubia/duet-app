@@ -6,6 +6,9 @@ import { useDuetStore } from '@/hooks/useDuetStore';
 import { useTabVisibility } from '@/hooks/useTabVisibility';
 import { lifecycle } from '@/services/LifecycleLog';
 import { ShareModal } from './ShareModal';
+import { SafetySheet, SafetyPerson } from '@/components/app/SafetySheet';
+import { blockService } from '@/services/BlockService';
+import { getPublicProfile } from '@/services/FriendsService';
 import { GuestRoomTimer } from './GuestRoomTimer';
 import { ReactionBar } from './ReactionBar';
 import { ReactionOverlay } from './ReactionOverlay';
@@ -110,6 +113,7 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [controlsLocked, setControlsLocked] = useState(false);
+  const [safetyPeople, setSafetyPeople] = useState<SafetyPerson[] | null>(null);
   const hasShownInitialShare = useRef(false);
   const hasBeenConnected = useRef(false);
   const hasLeft = useRef(false);
@@ -151,6 +155,16 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
       nudgeReconnect();
     }
   }, [isVisible, roomCode, nudgeReconnect]);
+
+  // Someone this user blocked turned up as the partner (e.g. they created the
+  // room): disconnect straight away. Rules already keep them out of rooms
+  // this user created.
+  useEffect(() => {
+    if (roomCode && blockService.isBlocked(partnerId)) {
+      leaveRoom();
+      window.alert("Someone you've blocked joined, so Duet disconnected you.");
+    }
+  }, [partnerId, roomCode, leaveRoom]);
 
   // Auto-join from URL if not already in a room (only once)
   useEffect(() => {
@@ -319,6 +333,21 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           </button>
         </div>
 
+        {/* Report / block the partner */}
+        {partnerId && partnerId !== 'partner' && (
+          <div className="flex justify-center mt-3">
+            <button
+              onClick={async () => {
+                const profile = await getPublicProfile(partnerId).catch(() => null);
+                setSafetyPeople([{ uid: partnerId, displayName: profile?.displayName || 'Duet User' }]);
+              }}
+              className="text-text-muted text-sm underline py-1.5"
+            >
+              Report or block
+            </button>
+          </div>
+        )}
+
         {/* Reactions */}
         <ReactionBar />
 
@@ -357,6 +386,19 @@ export function RoomScreen({ initialRoomCode }: { initialRoomCode?: string }) {
           roomCode={displayCode}
           onClose={() => setShowShareModal(false)}
         />
+
+        {safetyPeople && (
+          <SafetySheet
+            people={safetyPeople}
+            context="room"
+            roomCode={roomCode}
+            onClose={() => setSafetyPeople(null)}
+            onBlocked={() => {
+              setSafetyPeople(null);
+              leaveRoom();
+            }}
+          />
+        )}
 
         <ReactionOverlay />
       </div>

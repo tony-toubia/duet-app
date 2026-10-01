@@ -1,7 +1,10 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
-import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
+import { getAuth } from 'firebase-admin/auth';
+import { AdminAuthError, requireAdmin } from '../adminAuth';
+import { validateContentItem, isValidItemId } from './contentHubAdmin';
+import { resolveReport, reinstateUser, RESOLUTIONS, Resolution, REPORT_REASONS } from '../safety';
 import { computeAllSegments, computeCustomSegment } from './segments';
 import { executeCampaign, previewCampaignEmail } from './campaigns';
 import { seedWelcomeJourney } from './journeys';
@@ -9,20 +12,6 @@ import type { Campaign, Message, SegmentContext } from './types';
 
 const resendApiKey = defineSecret('RESEND_API_KEY');
 const unsubSecret = defineSecret('UNSUB_HMAC_SECRET');
-
-// Admin UIDs — comma-separated. Update this with your Firebase Auth UID.
-const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').filter(Boolean);
-
-async function verifyAdmin(req: any): Promise<string> {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) throw new Error('No auth token');
-  const token = authHeader.split('Bearer ')[1];
-  const decoded = await getAuth().verifyIdToken(token);
-  if (ADMIN_UIDS.length > 0 && !ADMIN_UIDS.includes(decoded.uid)) {
-    throw new Error('Not authorized');
-  }
-  return decoded.uid;
-}
 
 function cors(res: any): void {
   res.set('Access-Control-Allow-Origin', '*');
@@ -45,10 +34,13 @@ export const marketingApi = onRequest(
     cors(res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
+    // Fails closed: denies everyone when ADMIN_UIDS is empty or unset.
+    let adminUid: string;
     try {
-      await verifyAdmin(req);
+      adminUid = await requireAdmin(req, 'marketingApi');
     } catch (err: any) {
-      json(res, 401, { error: err.message });
+      const status = err instanceof AdminAuthError ? err.status : 401;
+      json(res, status, { error: err instanceof AdminAuthError ? err.message : 'Not authorized' });
       return;
     }
 
@@ -57,6 +49,106 @@ export const marketingApi = onRequest(
     const method = req.method;
 
     try {
+      // ── Admin check (used by the web admin panel to gate its UI) ──
+      if (path === 'me' && method === 'GET') {
+        json(res, 200, { admin: true, uid: adminUid });
+        return;
+      }
+
+      // ── Safety reports ───────────────────────────────────────
+      if (path === 'reports' && method === 'GET') {
+        const filter = String(req.query.status || 'open');
+        const raw = (await db.ref('reports').orderByChild('createdAt').limitToLast(500).once('value')).val() || {};
+        const entries = Object.entries(raw)
+          .map(([id, r]: [string, any]) => ({ id, ...r, status: r.status || 'open' }))
+          .filter((r) => filter === 'all' || r.status === filter)
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const uids = [...new Set(entries.flatMap((r) => [r.reporterUid, r.reportedUid]))];
+        const names: Record<string, string> = {};
+        await Promise.all(uids.map(async (uid) => {
+          names[uid] = (await db.ref(`users/${uid}/profile/displayName`).once('value')).val() || '(deleted or unknown)';
+        }));
+        const disabled: Record<string, boolean> = {};
+        await Promise.all(uids.map(async (uid) => {
+          disabled[uid] = await getAuth().getUser(uid).then((u) => u.disabled, () => false);
+        }));
+        json(res, 200, {
+          reasons: REPORT_REASONS,
+          reports: entries.map((r) => ({
+            ...r,
+            reporterName: names[r.reporterUid],
+            reportedName: names[r.reportedUid],
+            reportedDisabled: disabled[r.reportedUid] || false,
+          })),
+        });
+        return;
+      }
+
+      const resolveMatch = path.match(/^reports\/([^/]+)\/resolve$/);
+      if (resolveMatch && method === 'POST') {
+        const id = resolveMatch[1];
+        const resolution = req.body?.resolution as Resolution;
+        if (!isValidItemId(id) || !RESOLUTIONS.includes(resolution)) {
+          json(res, 400, { error: 'Invalid report or resolution' });
+          return;
+        }
+        try {
+          await resolveReport(id, resolution, String(req.body?.note || ''), adminUid);
+        } catch (e: any) {
+          json(res, e?.message === 'Report not found' ? 404 : 500, { error: e?.message || 'Failed' });
+          return;
+        }
+        console.log(`[Safety] Report ${id} resolved as ${resolution} by ${adminUid}`);
+        json(res, 200, { resolved: true });
+        return;
+      }
+
+      const reinstateMatch = path.match(/^users\/([^/]+)\/reinstate$/);
+      if (reinstateMatch && method === 'POST') {
+        const uid = reinstateMatch[1];
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) { json(res, 400, { error: 'Invalid uid' }); return; }
+        await reinstateUser(uid);
+        console.log(`[Safety] User ${uid} reinstated by ${adminUid}`);
+        json(res, 200, { reinstated: true });
+        return;
+      }
+
+      // ── Content Hub (manual items) ───────────────────────────
+      // Client writes to content_hub are denied by rules, so the admin
+      // panel creates, deletes and pins items through here.
+      if (path === 'content-hub/items' && method === 'POST') {
+        let item;
+        try {
+          item = validateContentItem(req.body);
+        } catch (e: any) {
+          json(res, 400, { error: e.message });
+          return;
+        }
+        const ref = db.ref('content_hub/items').push();
+        await ref.set(item);
+        json(res, 201, { id: ref.key });
+        return;
+      }
+
+      const contentItemMatch = path.match(/^content-hub\/items\/([^/]+)(\/pin)?$/);
+      if (contentItemMatch) {
+        const [, id, pin] = contentItemMatch;
+        if (!isValidItemId(id)) { json(res, 400, { error: 'Invalid item id' }); return; }
+        const itemRef = db.ref(`content_hub/items/${id}`);
+        if (!pin && method === 'DELETE') {
+          await itemRef.remove();
+          json(res, 200, { deleted: true });
+          return;
+        }
+        if (pin && method === 'PUT') {
+          if (typeof req.body?.pinned !== 'boolean') { json(res, 400, { error: 'pinned must be a boolean' }); return; }
+          if (!(await itemRef.child('title').once('value')).exists()) { json(res, 404, { error: 'Not found' }); return; }
+          await itemRef.child('pinned').set(req.body.pinned);
+          json(res, 200, { pinned: req.body.pinned });
+          return;
+        }
+      }
+
       // ── Segments ─────────────────────────────────────────────
       if (path === 'segments' && method === 'GET') {
         const snap = await db.ref('marketing/segments').once('value');

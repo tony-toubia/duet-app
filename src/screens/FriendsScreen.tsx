@@ -19,6 +19,8 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { invitationService } from '@/services/InvitationService';
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { SafetySheet } from '@/components/SafetySheet';
+import { blockService, BlockedUser } from '@/services/BlockService';
 import { colors } from '@/theme';
 import type { FriendsScreenProps } from '@/navigation/types';
 
@@ -33,6 +35,10 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
   const [isInviting, setIsInviting] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [safetyTarget, setSafetyTarget] = useState<{ uid: string; displayName: string; context: 'friend' | 'recent' } | null>(null);
+  const [blocked, setBlocked] = useState<BlockedUser[]>(blockService.list());
+
+  useEffect(() => blockService.onChange(() => setBlocked(blockService.list())), []);
   const insets = useSafeAreaInsets();
 
   const isGuest = useAuthStore.getState().isGuest;
@@ -324,6 +330,14 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
                   <TouchableOpacity style={styles.declineBtn} onPress={() => handleRemove(req.uid, req.displayName)}>
                     <Text style={styles.declineBtnText}>Decline</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.moreBtn}
+                    onPress={() => setSafetyTarget({ uid: req.uid, displayName: req.displayName, context: 'friend' })}
+                    accessibilityLabel={`Report or block ${req.displayName}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.moreBtnText}>{'\u22EF'}</Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -343,6 +357,14 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
                   </View>
                   <TouchableOpacity style={styles.addBtn} onPress={() => handleSendRequest(conn.uid)}>
                     <Text style={styles.addBtnText}>Add</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.moreBtn}
+                    onPress={() => setSafetyTarget({ uid: conn.uid, displayName: conn.displayName, context: 'recent' })}
+                    accessibilityLabel={`Report or block ${conn.displayName}`}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.moreBtnText}>{'\u22EF'}</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -375,13 +397,49 @@ export const FriendsScreen = ({ navigation }: FriendsScreenProps) => {
                         {isOnline ? 'Online' : 'Offline'}
                       </Text>
                     </View>
+                    <TouchableOpacity
+                      style={styles.moreBtn}
+                      onPress={() => setSafetyTarget({ uid: friend.uid, displayName: friend.displayName, context: 'friend' })}
+                      accessibilityLabel={`Report or block ${friend.displayName}`}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.moreBtnText}>{'\u22EF'}</Text>
+                    </TouchableOpacity>
                   </TouchableOpacity>
                 );
               })}
             </View>
           )}
         </View>
+        {/* Blocked */}
+        {blocked.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>BLOCKED ({blocked.length})</Text>
+            <View style={styles.card}>
+              {blocked.map((b) => (
+                <View key={b.uid} style={styles.friendRow}>
+                  {renderAvatar(b.displayName, null)}
+                  <Text style={[styles.userName, { flex: 1 }]}>{b.displayName}</Text>
+                  <TouchableOpacity
+                    style={styles.declineBtn}
+                    onPress={() => blockService.unblock(b.uid).catch(() => {})}
+                  >
+                    <Text style={styles.declineBtnText}>Unblock</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
+      {safetyTarget && (
+        <SafetySheet
+          visible
+          people={[{ uid: safetyTarget.uid, displayName: safetyTarget.displayName }]}
+          context={safetyTarget.context}
+          onClose={() => setSafetyTarget(null)}
+        />
+      )}
       <ConfirmModal
         visible={!!removeTarget}
         title="Remove Friend"
@@ -570,6 +628,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassBorder,
     overflow: 'hidden',
+  },
+  moreBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 4,
+  },
+  moreBtnText: {
+    color: colors.textMuted,
+    fontSize: 20,
+    fontWeight: '700',
   },
   friendRow: {
     flexDirection: 'row',

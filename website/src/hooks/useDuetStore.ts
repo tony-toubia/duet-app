@@ -6,7 +6,8 @@ import { SignalingService } from '@/services/SignalingService';
 import { PartySignalingService } from '@/services/PartySignalingService';
 import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
-import { friendsService } from '@/services/FriendsService';
+import { friendsService, getPublicProfile } from '@/services/FriendsService';
+import { blockService } from '@/services/BlockService';
 import { useAuthStore } from './useAuthStore';
 import { lifecycle } from '@/services/LifecycleLog';
 
@@ -218,6 +219,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const partySignaling = new PartySignalingService({
       onOffer: async (fromUid, offer) => {
         const { partyWebrtc, partySignaling: ps } = get();
+        // Never connect with someone this user has blocked
+        if (blockService.isBlocked(fromUid)) return;
         if (partyWebrtc && ps) {
           const answer = await partyWebrtc.handleOffer(fromUid, offer);
           await ps.sendAnswer(fromUid, answer);
@@ -231,6 +234,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       },
       onParticipantJoined: async (uid) => {
         console.log('[PartyStore] Participant joined:', uid);
+        if (blockService.isBlocked(uid)) return;
         const { partyWebrtc, partySignaling: ps } = get();
         if (partyWebrtc && ps) {
           try {
@@ -415,8 +419,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Record recent connection before cleanup
     if (partnerId && partnerId !== 'partner' && roomCode) {
       try {
-        const profileSnap = await firebaseGet(ref(firebaseDb, `/users/${partnerId}/profile`));
-        const profile = profileSnap.val();
+        // Only the partner's public fields are readable (not the whole profile)
+        const profile = await getPublicProfile(partnerId);
         if (profile) {
           await friendsService.recordRecentConnection(
             partnerId,

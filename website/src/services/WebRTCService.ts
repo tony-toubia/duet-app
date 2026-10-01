@@ -1,4 +1,4 @@
-import { getIceServers } from '@/config/turn';
+import { getIceServers, ensureTurnCredentials } from '@/config/turn';
 import { lifecycle } from './LifecycleLog';
 
 const getRtcConfig = (): RTCConfiguration => ({
@@ -56,6 +56,8 @@ export class WebRTCService {
 
   async initialize(): Promise<void> {
     try {
+      // Fetch short-lived relay credentials first (cached; bounded wait)
+      await ensureTurnCredentials();
       this.peerConnection = new RTCPeerConnection(getRtcConfig());
       const pc = this.peerConnection;
 
@@ -295,6 +297,14 @@ export class WebRTCService {
     console.log(`[WebRTC] Attempting ICE restart (attempt ${this.iceRestartCount})...`);
     lifecycle('webrtc.ice.restart', { attempt: this.iceRestartCount });
     try {
+      // Relay credentials expire after 24h: refresh before restarting ICE
+      if (await ensureTurnCredentials()) {
+        try {
+          this.peerConnection.setConfiguration(getRtcConfig());
+        } catch (e) {
+          console.warn('[WebRTC] Could not apply refreshed relay credentials:', e);
+        }
+      }
       const offer = await this.peerConnection.createOffer({ iceRestart: true });
       await this.peerConnection.setLocalDescription(offer);
       console.log('[WebRTC] ICE restart offer created, sending via signaling');

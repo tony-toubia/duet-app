@@ -19,9 +19,13 @@ import {
   reengagementEmailHtml,
 } from './marketing/templates';
 import { logEvent } from './marketing/events';
+import { checkRateLimit } from './rateLimit';
+import { isRoomStale, STALE_AFTER_MS } from './roomCleanup';
+import { reportAlertEmail, ReportRecord } from './safety';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
+export { searchUserByEmail, getTurnCredentials, deleteAccount } from './userApi';
 
 initializeApp();
 
@@ -143,11 +147,13 @@ async function sendEmail(
 }
 
 /**
- * Clean up stale rooms older than 24 hours.
+ * Clean up rooms nobody is using any more (see roomCleanup.ts). Rooms in
+ * active use are kept even when older than 24 hours.
  * Runs every hour.
  */
 export const cleanupStaleRooms = onSchedule('every 1 hours', async () => {
-  const cutoffTime = Date.now() - 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const cutoffTime = now - STALE_AFTER_MS;
 
   try {
     const snapshot = await db
@@ -157,13 +163,18 @@ export const cleanupStaleRooms = onSchedule('every 1 hours', async () => {
       .once('value');
 
     const deletions: Promise<void>[] = [];
+    let kept = 0;
     snapshot.forEach((child) => {
-      console.log(`Deleting stale room: ${child.key}`);
-      deletions.push(child.ref.remove());
+      if (isRoomStale(child.val(), now)) {
+        console.log(`Deleting stale room: ${child.key}`);
+        deletions.push(child.ref.remove());
+      } else {
+        kept++;
+      }
     });
 
     await Promise.all(deletions);
-    console.log(`Cleaned up ${deletions.length} stale rooms`);
+    console.log(`Cleaned up ${deletions.length} stale rooms; kept ${kept} older rooms still in use`);
   } catch (error) {
     console.error('Error cleaning up rooms:', error);
     throw error;
@@ -459,8 +470,9 @@ export const emailClick = onRequest(
 
     const expected = generateClickToken(uid, url, unsubSecret.value());
     if (token !== expected) {
-      // Still redirect even if token is invalid — don't break the user experience
-      res.redirect(302, url);
+      // Never follow an unsigned destination: that would make this endpoint an
+      // open redirect anyone could use to bounce people to arbitrary sites.
+      res.redirect(302, 'https://getduet.app');
       return;
     }
 
@@ -613,7 +625,8 @@ export const onAuthProviderUpgraded = onValueWritten(
     const before = event.data.before.val();
     const after = event.data.after.val();
 
-    if (before !== 'anonymous' || after === 'anonymous') return;
+    // after == null is an account deletion, not an upgrade
+    if (before !== 'anonymous' || after == null || after === 'anonymous') return;
 
     console.log(`[Email] Auth upgrade for ${userId}: ${before} -> ${after}`);
 
@@ -767,34 +780,7 @@ export const processEmailQueue = onSchedule(
 );
 
 // ─── Rate Limiting ──────────────────────────────────────────────────
-
-/**
- * Rate limit check helper. Uses a counter at /rateLimits/{userId}/{action}.
- * Returns true if within limit, false if rate limited.
- */
-async function checkRateLimit(
-  userId: string,
-  action: string,
-  maxPerWindow: number,
-  windowMs: number
-): Promise<boolean> {
-  const now = Date.now();
-  const ref = db.ref(`/rateLimits/${userId}/${action}`);
-  const snap = await ref.once('value');
-  const entries: number[] = snap.val() || [];
-
-  // Filter to only entries within the window
-  const recent = entries.filter((ts: number) => now - ts < windowMs);
-
-  if (recent.length >= maxPerWindow) {
-    return false; // Rate limited
-  }
-
-  // Add current timestamp and keep only recent entries
-  recent.push(now);
-  await ref.set(recent);
-  return true;
-}
+// checkRateLimit lives in ./rateLimit so the user-facing callables share it.
 
 /**
  * Rate limit room creation: max 10 rooms per user per hour.
@@ -870,6 +856,40 @@ export const onFriendRequestRateLimit = onValueCreated(
       console.warn(`[RateLimit] User ${friendData.initiatedBy} exceeded friend request limit`);
       await event.data.ref.remove();
     }
+  }
+);
+
+// ─── Safety reports ──────────────────────────────────────────────────
+
+/**
+ * New safety report: rate limit the reporter (20/day; beyond that the
+ * report is dropped as abuse of the feature), mark it open, and email the
+ * moderators (REPORTS_EMAIL, default hello@getduet.app).
+ */
+export const onReportCreated = onValueCreated(
+  { ref: '/reports/{reportId}', region: 'us-central1', secrets: [resendApiKey] },
+  async (event) => {
+    const reportId = event.params.reportId;
+    const report = event.data.val() as ReportRecord | null;
+    if (!report?.reporterUid) return;
+
+    const allowed = await checkRateLimit(report.reporterUid, 'report', 20, 24 * 60 * 60 * 1000);
+    if (!allowed) {
+      console.warn(`[Safety] ${report.reporterUid} exceeded the report limit; dropping ${reportId}`);
+      await event.data.ref.remove();
+      return;
+    }
+    await event.data.ref.child('status').set('open');
+
+    const [reporterName, reportedName] = await Promise.all(
+      [report.reporterUid, report.reportedUid].map(async (uid) =>
+        (await db.ref(`users/${uid}/profile/displayName`).once('value')).val() || 'Unknown'
+      )
+    );
+    const { subject, html } = reportAlertEmail(reportId, report, { reporter: reporterName, reported: reportedName });
+    const to = process.env.REPORTS_EMAIL || 'hello@getduet.app';
+    const sent = await sendEmail(new Resend(resendApiKey.value()), to, subject, html);
+    console.log(`[Safety] Report ${reportId} (${report.reason}) recorded; alert ${sent ? 'sent' : 'FAILED'}`);
   }
 );
 

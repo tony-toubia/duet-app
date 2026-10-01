@@ -13,6 +13,7 @@ import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { analyticsService } from './AnalyticsService';
+import { callFunction } from './CloudFunctions';
 
 const EMAIL_LINK_STORAGE_KEY = 'emailForSignIn';
 
@@ -281,6 +282,40 @@ class AuthService {
 
   onAuthStateChanged(callback: (user: FirebaseAuthTypes.User | null) => void): () => void {
     return auth().onAuthStateChanged(callback);
+  }
+
+  /**
+   * Permanently delete the signed-in account (guest or full) and all its
+   * data via the deleteAccount Cloud Function, then sign out locally.
+   */
+  async deleteAccount(): Promise<void> {
+    const user = auth().currentUser;
+    if (!user) throw new Error('Not signed in.');
+
+    // Apple requires apps to revoke Sign in with Apple tokens when an account
+    // is deleted. That needs a fresh authorization code, so Apple asks the
+    // user to confirm with Face ID / passcode. Cancelling stops the deletion.
+    const usesApple = user.providerData.some((p) => p.providerId === 'apple.com');
+    if (usesApple && Platform.OS === 'ios') {
+      let authorizationCode: string | null = null;
+      try {
+        ({ authorizationCode } = await AppleAuthentication.signInAsync({ requestedScopes: [] }));
+      } catch (error: any) {
+        if (error?.code === 'ERR_REQUEST_CANCELED') throw new Error('Account deletion cancelled.');
+        console.warn('[Auth] Apple re-authentication failed:', error);
+      }
+      if (authorizationCode) {
+        // Needs the Apple provider's OAuth code flow configured in Firebase;
+        // a failure here shouldn't block deleting the user's data
+        await auth().revokeToken(authorizationCode).catch((error) => {
+          console.warn('[Auth] Apple token revocation failed:', error);
+        });
+      }
+    }
+
+    await callFunction('deleteAccount', { confirm: 'DELETE' });
+    try { await GoogleSignin?.revokeAccess(); } catch {}
+    await this.signOut();
   }
 
   async signOut(): Promise<void> {

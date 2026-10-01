@@ -9,10 +9,14 @@ import { RoomScreen } from '@/screens/RoomScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { FriendsScreen } from '@/screens/FriendsScreen';
 import { ContentHubScreen } from '@/screens/ContentHubScreen';
+import { AgeGateScreen, AgeBlockedScreen } from '@/screens/AgeGateScreen';
+import { ageGateService } from '@/services/AgeGateService';
+import type { AgeGateResult } from '@/lib/ageGate';
 import { useAuthStore } from '@/hooks/useAuthStore';
 import { useDuetStore } from '@/hooks/useDuetStore';
 import { authService } from '@/services/AuthService';
 import { presenceService } from '@/services/PresenceService';
+import { blockService } from '@/services/BlockService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { colors } from '@/theme';
@@ -41,6 +45,22 @@ export const RootNavigator = () => {
   const pendingAlert = useDuetStore((s) => s.pendingAlert);
   const dismissAlert = useDuetStore((s) => s.dismissAlert);
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  // undefined while loading; null until the person has been through the gate
+  const [ageResult, setAgeResult] = useState<AgeGateResult | null | undefined>(undefined);
+
+  useEffect(() => {
+    ageGateService.getResult().then(setAgeResult, () => setAgeResult(null));
+  }, []);
+
+  // Under the minimum age: never stay signed in (covers people who already
+  // had an account before the gate existed).
+  // NEEDS COUNSEL: whether an existing account's data must also be deleted
+  // once we learn the user is under 13 (COPPA "actual knowledge").
+  useEffect(() => {
+    if (ageResult === 'blocked' && user) {
+      useAuthStore.getState().signOut().catch(() => {});
+    }
+  }, [ageResult, user]);
 
   useEffect(() => {
     const unsubscribe = initializeAuth();
@@ -61,6 +81,36 @@ export const RootNavigator = () => {
       const cleanup = presenceService.setup();
       return cleanup;
     }
+  }, [user]);
+
+  // Keep the block list loaded while signed in, and leave a 1:1 room as soon
+  // as the person on the other side turns out to be someone this user blocked
+  // (rules already stop them joining rooms this user created).
+  useEffect(() => {
+    if (!user) return;
+    const stopBlocks = blockService.start();
+    const leaveIfBlocked = () => {
+      const { partnerId, roomType, roomCode, leaveRoom } = useDuetStore.getState();
+      if (roomCode && roomType !== 'party' && blockService.isBlocked(partnerId)) {
+        leaveRoom().finally(() => {
+          useDuetStore.setState({
+            pendingAlert: {
+              title: 'You left the room',
+              message: "Someone you've blocked joined, so Duet disconnected you.",
+              buttons: [{ text: 'OK' }],
+            },
+          });
+        });
+      }
+    };
+    const stopStore = useDuetStore.subscribe((state, prev) => {
+      if (state.partnerId !== prev.partnerId) leaveIfBlocked();
+    });
+    // (Blocking from inside a room is handled by the room's Safety sheet.)
+    return () => {
+      stopStore();
+      stopBlocks();
+    };
   }, [user]);
 
   // Handle deep links
@@ -134,7 +184,14 @@ export const RootNavigator = () => {
     return () => subscription.remove();
   }, []);
 
-  if (isLoading || showOnboarding === null) {
+  if (ageResult === null) {
+    return <AgeGateScreen onDone={setAgeResult} />;
+  }
+  if (ageResult === 'blocked') {
+    return <AgeBlockedScreen />;
+  }
+
+  if (isLoading || showOnboarding === null || ageResult === undefined) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={colors.primary} />

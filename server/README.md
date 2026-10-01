@@ -27,10 +27,14 @@ external-ip=YOUR_SERVER_PUBLIC_IP
 # Replace with your domain
 realm=turn.yourdomain.com
 
-# Generate a strong password
-# openssl rand -hex 32
-user=duet:YOUR_STRONG_PASSWORD
+# Shared secret for time-limited credentials (same value as the Firebase
+# secret TURN_SHARED_SECRET). Generate with: openssl rand -hex 32
+use-auth-secret
+static-auth-secret=REPLACE_WITH_TURN_SHARED_SECRET
 ```
+
+There is deliberately no static `user=` account: a shared password ends up
+in every app build and in the public web bundle.
 
 ### 3. Deploy
 
@@ -40,32 +44,61 @@ docker-compose up -d
 
 # Check logs
 docker logs -f duet-turn
-
-# Test TURN server
-# Use https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
 ```
 
-### 4. Update App Configuration
+### 4. Point the app at it
 
-In `src/services/WebRTCService.ts`, update the ICE servers:
+The app and website never contain relay credentials. They call the
+`getTurnCredentials` Cloud Function (`firebase/functions/src/userApi.ts`),
+which returns per-user credentials valid for 24 hours:
 
-```typescript
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    {
-      urls: 'turn:turn.yourdomain.com:3478',
-      username: 'duet',
-      credential: 'YOUR_STRONG_PASSWORD',
-    },
-    {
-      urls: 'turn:turn.yourdomain.com:5349?transport=tcp',
-      username: 'duet',
-      credential: 'YOUR_STRONG_PASSWORD',
-    },
-  ],
-};
+```bash
+# From firebase/functions/ — paste the same secret as static-auth-secret
+firebase functions:secrets:set TURN_SHARED_SECRET
+
+# firebase/functions/.env (gitignored)
+TURN_HOST=YOUR_SERVER_PUBLIC_IP
+# TURN_TLS_HOST=turn.yourdomain.com   # only with a valid TLS certificate
 ```
+
+Then `firebase deploy --only functions`.
+
+To test, sign in to the web app, call the function from the browser console
+or the app logs, and paste the returned URL/username/credential into
+https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/ —
+a `relay` candidate means it works.
+
+## Migrating a server that still uses a static `user=` account
+
+Older app builds have the static password built in. To move without
+breaking anyone mid-release:
+
+1. **Bridge mode.** Set the secret (above), and in `firebase/functions/.env`:
+   ```
+   TURN_HOST=YOUR_SERVER_PUBLIC_IP
+   TURN_AUTH_MODE=static
+   TURN_STATIC_USERNAME=duet
+   TURN_STATIC_PASSWORD=<current static password>
+   ```
+   Deploy functions. New app builds and the website now fetch the relay
+   credential from the function instead of bundling it.
+2. **Release** the new app builds and website.
+3. **Cut over** (a few minutes' relay outage for old builds only). SSH to the
+   server and edit `/opt/duet-turn/turnserver.conf`: delete the `user=` and
+   `lt-cred-mech` lines, add `use-auth-secret` and
+   `static-auth-secret=<TURN_SHARED_SECRET>`, add the `no-loopback-peers` and
+   `denied-peer-ip=` lines from this directory's `turnserver.conf`, then
+   `docker restart duet-turn`. Immediately remove `TURN_AUTH_MODE` and the
+   `TURN_STATIC_*` lines from `firebase/functions/.env` and redeploy
+   functions. The old static password is now dead, which completes the
+   rotation.
+4. **Clean up**: delete the `TURN_SERVER_IP`, `TURN_USERNAME` and
+   `TURN_PASSWORD` EAS environment variables and the `NEXT_PUBLIC_TURN_*`
+   Vercel variables (no longer read).
+
+Do not change the droplet via `terraform apply` for this: cloud-init only
+runs on first boot, and a `user_data` change would recreate the droplet with
+a new IP (`main.tf` now ignores `user_data` changes for that reason).
 
 ## Production Recommendations
 
@@ -85,30 +118,6 @@ For production, enable TLS:
    ```
 
 3. Uncomment TLS lines in `turnserver.conf`
-
-### Time-Limited Credentials
-
-For better security, use time-limited credentials:
-
-1. Set a shared secret in `turnserver.conf`:
-   ```
-   use-auth-secret
-   static-auth-secret=YOUR_SHARED_SECRET
-   ```
-
-2. Generate credentials in your backend:
-   ```javascript
-   const crypto = require('crypto');
-
-   function generateTurnCredentials(secret, userId) {
-     const timestamp = Math.floor(Date.now() / 1000) + 24 * 3600; // 24h validity
-     const username = `${timestamp}:${userId}`;
-     const hmac = crypto.createHmac('sha1', secret);
-     hmac.update(username);
-     const credential = hmac.digest('base64');
-     return { username, credential };
-   }
-   ```
 
 ### Monitoring
 
@@ -136,4 +145,4 @@ If you don't want to self-host:
 
 - [Twilio TURN](https://www.twilio.com/stun-turn) - Pay per GB
 - [Xirsys](https://xirsys.com/) - Free tier available
-- [Metered](https://www.metered.ca/) - Free tier (currently used as fallback)
+- [Metered](https://www.metered.ca/) - Free tier (not used: Duet relays audio only through its own TURN server)

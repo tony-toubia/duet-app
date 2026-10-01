@@ -31,9 +31,9 @@ const slides: OnboardingSlide[] = [
   },
   {
     icon: '\uD83C\uDFB5',
-    title: 'Your music ducks automatically',
+    title: 'Your music keeps playing',
     description:
-      'When one of you speaks, the music volume lowers so you can hear each other clearly, then fades back up seamlessly.',
+      'Your partner’s voice plays over your music. On Android most music apps lower while they talk; on iPhone, turn on “Lower other audio” in a room.',
   },
   {
     icon: '\uD83D\uDC8C',

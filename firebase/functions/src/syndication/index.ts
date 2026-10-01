@@ -28,6 +28,7 @@ import {
 import { fetchSportsContent } from './sources/sportsdb';
 import { fetchPodcastContent } from './sources/podcastindex';
 import { fetchSpotifyContent } from './sources/spotify';
+import { AdminAuthError, requireAdmin } from '../adminAuth';
 
 // ─── Secrets ─────────────────────────────────────────────────────────
 // SportsDB uses free key '123' — no secret needed.
@@ -221,12 +222,14 @@ export const triggerContentSync = onRequest(
     ],
   },
   async (req, res) => {
-    // Basic admin check
-    const adminUids = (process.env.ADMIN_UIDS || '').split(',').filter(Boolean);
-    const uid = req.query.uid as string | undefined;
-
-    if (adminUids.length > 0 && (!uid || !adminUids.includes(uid))) {
-      res.status(403).json({ error: 'Unauthorized' });
+    // Requires an admin's Firebase ID token (Authorization: Bearer <token>).
+    // Previously this trusted a ?uid= query parameter, which anyone could
+    // supply, and allowed everyone when ADMIN_UIDS was empty.
+    try {
+      await requireAdmin(req, 'triggerContentSync');
+    } catch (err: any) {
+      const status = err instanceof AdminAuthError ? err.status : 401;
+      res.status(status).json({ error: err instanceof AdminAuthError ? err.message : 'Not authorized' });
       return;
     }
 

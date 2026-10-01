@@ -1,12 +1,12 @@
 /**
- * TURN Server Configuration
+ * Relay (TURN) and STUN configuration.
  *
- * Production TURN credentials are read from EAS environment variables
- * via expo-constants. Set TURN_SERVER_IP, TURN_USERNAME, and TURN_PASSWORD
- * as EAS environment variables.
+ * Relay credentials are fetched at runtime from the getTurnCredentials Cloud
+ * Function (see firebase/functions/src/userApi.ts); no relay host or password
+ * ships in the app binary.
  */
 
-import Constants from 'expo-constants';
+import { callFunction } from '@/services/CloudFunctions';
 
 export interface TurnServer {
   urls: string | string[];
@@ -14,60 +14,9 @@ export interface TurnServer {
   credential?: string;
 }
 
-export interface TurnConfig {
-  iceServers: TurnServer[];
-}
-
 /**
- * Production TURN server configuration
- * Reads from EAS environment variables via app.config.js extra
- */
-function getProductionTurn(): TurnServer[] {
-  const ip = Constants.expoConfig?.extra?.turnServerIp;
-  const username = Constants.expoConfig?.extra?.turnUsername;
-  const password = Constants.expoConfig?.extra?.turnPassword;
-
-  if (!ip || !username || !password) {
-    return [];
-  }
-
-  return [
-    {
-      urls: `turn:${ip}:3478`,
-      username,
-      credential: password,
-    },
-    {
-      urls: `turn:${ip}:3478?transport=tcp`,
-      username,
-      credential: password,
-    },
-  ];
-}
-
-/**
- * Fallback TURN servers (free, but less reliable for production)
- */
-const FALLBACK_TURN: TurnServer[] = [
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
-
-/**
- * STUN servers (free, no auth needed)
+ * STUN servers (free, no auth needed). They tell each device its public
+ * address so a direct connection can be attempted; they never see audio.
  */
 const STUN_SERVERS: TurnServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -75,32 +24,74 @@ const STUN_SERVERS: TurnServer[] = [
   { urls: 'stun:stun2.l.google.com:19302' },
 ];
 
-/**
- * Whether production TURN credentials are configured (vs. the free openrelay
- * fallback). Surfaced in lifecycle logs so a build silently missing its EAS
- * env vars is visible in the field.
- */
-export function hasProductionTurn(): boolean {
-  return getProductionTurn().length > 0;
+// Short-lived relay credentials from the getTurnCredentials Cloud Function.
+// Nothing about the relay is baked into the app or web bundle any more: the
+// server mints per-user credentials that expire after 24 hours.
+let relayServers: TurnServer[] = [];
+let relayExpiresAt = 0;
+let inflight: Promise<boolean> | null = null;
+
+// Refresh an hour before expiry so a long call's ICE restart gets fresh ones
+const REFRESH_MARGIN_MS = 60 * 60 * 1000;
+// Don't hold up a call for a slow cold start: connect without the relay
+// rather than not at all, and pick the credentials up on the next attempt
+const FETCH_TIMEOUT_MS = 8000;
+
+function relayValid(): boolean {
+  return relayServers.length > 0 && Date.now() < relayExpiresAt - REFRESH_MARGIN_MS;
 }
 
 /**
- * Get the full ICE server configuration
+ * Make sure relay credentials are cached and not close to expiry. Resolves
+ * true when new credentials were fetched (callers with a live connection
+ * should then apply them), false when the cache was already good or the
+ * fetch failed. Never rejects.
+ */
+export function ensureTurnCredentials(): Promise<boolean> {
+  if (relayValid()) return Promise.resolve(false);
+  if (!inflight) {
+    const fetchCreds = callFunction<{ iceServers: TurnServer[]; expiresAt: number }>('getTurnCredentials')
+      .then((res) => {
+        relayServers = Array.isArray(res?.iceServers) ? res.iceServers : [];
+        relayExpiresAt = typeof res?.expiresAt === 'number' ? res.expiresAt : 0;
+        return relayServers.length > 0;
+      })
+      .catch((error) => {
+        console.error('[TURN] Could not fetch relay credentials; only direct connections will work:', error);
+        return false;
+      });
+    const timeout = new Promise<boolean>((resolve) =>
+      setTimeout(() => {
+        if (!relayValid()) console.error('[TURN] Relay credentials request timed out');
+        resolve(false);
+      }, FETCH_TIMEOUT_MS)
+    );
+    inflight = Promise.race([fetchCreds, timeout]).finally(() => {
+      inflight = null;
+    });
+  }
+  return inflight;
+}
+
+/**
+ * Whether relay credentials are currently available. Surfaced in lifecycle
+ * logs so connections made without a relay are visible in the field.
+ */
+export function hasProductionTurn(): boolean {
+  return relayServers.length > 0 && Date.now() < relayExpiresAt;
+}
+
+/**
+ * ICE servers for a peer connection. Audio only ever relays through Duet's
+ * own TURN server; there is deliberately no third-party relay fallback.
+ * Call ensureTurnCredentials() first so the relay is included.
  */
 export function getIceServers(): TurnServer[] {
-  // Use production TURN if configured, otherwise fall back
-  const productionTurn = getProductionTurn();
-  const turnServers = productionTurn.length > 0 ? productionTurn : FALLBACK_TURN;
-
-  const servers = [...STUN_SERVERS, ...turnServers];
-  const hasTurn = turnServers.length > 0;
-  const source = productionTurn.length > 0 ? 'production' : 'fallback';
-  console.log(`[TURN] Using ${source} TURN servers (${turnServers.length} TURN, ${STUN_SERVERS.length} STUN)`);
-  if (!hasTurn) {
-    console.warn('[TURN] No TURN servers configured! Users behind symmetric NATs will not be able to connect.');
+  const relay = Date.now() < relayExpiresAt ? relayServers : [];
+  if (relay.length === 0) {
+    console.error('[TURN] No relay credentials: peers behind strict NATs will not connect.');
   }
-
-  return servers;
+  return [...STUN_SERVERS, ...relay];
 }
 
 /**
@@ -134,34 +125,8 @@ export function diagnoseTurnFailure(candidates: Array<{ candidate: string }>): {
   return { hasRelay, hasSrflx, hasHost, diagnosis };
 }
 
-/**
- * For backends that generate time-limited credentials,
- * call this function to fetch fresh credentials
- */
-export async function fetchDynamicTurnCredentials(
-  backendUrl: string
-): Promise<TurnServer[]> {
-  try {
-    const response = await fetch(`${backendUrl}/api/turn-credentials`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch TURN credentials');
-    }
-    const { username, credential, urls } = await response.json();
-    return [
-      {
-        urls,
-        username,
-        credential,
-      },
-    ];
-  } catch (error) {
-    console.warn('[TURN] Failed to fetch dynamic credentials, using fallback:', error);
-    return FALLBACK_TURN;
-  }
-}
-
 export default {
   getIceServers,
-  fetchDynamicTurnCredentials,
+  ensureTurnCredentials,
   diagnoseTurnFailure,
 };

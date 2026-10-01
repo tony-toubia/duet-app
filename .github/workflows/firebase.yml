@@ -29,7 +29,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Firebase CLI
@@ -43,18 +43,57 @@ jobs:
         working-directory: firebase/functions
         run: npm run build
 
-      - name: Deploy Database Rules
-        if: github.event.inputs.deploy_rules != 'false'
+      # Functions read their configuration from firebase/functions/.env,
+      # which is gitignored, so CI writes it from repository secrets and
+      # variables. Deploying without it would clear ADMIN_UIDS (locking
+      # everyone out of the admin API, which fails closed) and the relay
+      # settings, so the deploy stops instead.
+      - name: Write functions environment
+        if: github.event.inputs.deploy_functions != 'false'
+        working-directory: firebase/functions
+        env:
+          ADMIN_UIDS: ${{ secrets.ADMIN_UIDS }}
+          TURN_HOST: ${{ vars.TURN_HOST }}
+          TURN_TLS_HOST: ${{ vars.TURN_TLS_HOST }}
+          TURN_AUTH_MODE: ${{ vars.TURN_AUTH_MODE }}
+          TURN_STATIC_USERNAME: ${{ secrets.TURN_USERNAME }}
+          TURN_STATIC_PASSWORD: ${{ secrets.TURN_PASSWORD }}
+          REPORTS_EMAIL: ${{ vars.REPORTS_EMAIL }}
         run: |
-          # Copy rules to root for Firebase CLI
-          cp firebase/database.rules.json database.rules.json
-          firebase deploy --only database --token "${{ secrets.FIREBASE_TOKEN }}" --project "${{ secrets.FIREBASE_PROJECT_ID }}"
+          if [ -z "$ADMIN_UIDS" ] || [ -z "$TURN_HOST" ]; then
+            echo "::error::Set the ADMIN_UIDS secret and TURN_HOST variable (Settings > Secrets and variables > Actions) before deploying functions."
+            exit 1
+          fi
+          {
+            echo "ADMIN_UIDS=$ADMIN_UIDS"
+            echo "TURN_HOST=$TURN_HOST"
+            [ -n "$TURN_TLS_HOST" ] && echo "TURN_TLS_HOST=$TURN_TLS_HOST"
+            [ -n "$REPORTS_EMAIL" ] && echo "REPORTS_EMAIL=$REPORTS_EMAIL"
+            if [ "$TURN_AUTH_MODE" = "static" ]; then
+              echo "TURN_AUTH_MODE=static"
+              echo "TURN_STATIC_USERNAME=$TURN_STATIC_USERNAME"
+              echo "TURN_STATIC_PASSWORD=$TURN_STATIC_PASSWORD"
+            fi
+          } > .env
+          echo "Wrote functions .env ($(wc -l < .env) settings)"
 
+      # Functions first: the website and new app builds call them, and the
+      # rules below assume they exist (e.g. server-side friend search).
       - name: Deploy Cloud Functions
         if: github.event.inputs.deploy_functions != 'false'
         working-directory: firebase/functions
         run: |
           firebase deploy --only functions --force --token "${{ secrets.FIREBASE_TOKEN }}" --project "${{ secrets.FIREBASE_PROJECT_ID }}"
+
+      # Rules deploy automatically on push only when the AUTO_DEPLOY_RULES
+      # variable is "true"; otherwise run this workflow manually. Rule changes
+      # can break older app builds, so their timing is a release decision.
+      - name: Deploy Database Rules
+        if: (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_rules != 'false') || (github.event_name == 'push' && vars.AUTO_DEPLOY_RULES == 'true')
+        run: |
+          # Copy rules to root for Firebase CLI
+          cp firebase/database.rules.json database.rules.json
+          firebase deploy --only database --token "${{ secrets.FIREBASE_TOKEN }}" --project "${{ secrets.FIREBASE_PROJECT_ID }}"
 
   # =====================
   # TEST FUNCTIONS LOCALLY
@@ -69,7 +108,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -82,4 +121,4 @@ jobs:
 
       - name: Run tests
         working-directory: firebase/functions
-        run: npm test || echo "No tests configured yet"
+        run: npm test

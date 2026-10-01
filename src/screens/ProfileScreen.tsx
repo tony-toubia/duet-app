@@ -17,6 +17,7 @@ import { useAuthStore } from '@/hooks/useAuthStore';
 import { storageService } from '@/services/StorageService';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { referralService } from '@/services/ReferralService';
+import { adConsentService } from '@/services/AdConsentService';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { colors } from '@/theme';
 import type { ProfileScreenProps } from '@/navigation/types';
@@ -25,12 +26,14 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
   const [isUploading, setIsUploading] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [pushPermissionGranted, setPushPermissionGranted] = useState<boolean | null>(null);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referralCount, setReferralCount] = useState<number>(0);
   const [isSharing, setIsSharing] = useState(false);
   const insets = useSafeAreaInsets();
-  const { user, userProfile, isGuest, signOut, refreshProfile, preferences, updatePreferences } = useAuthStore();
+  const { user, userProfile, isGuest, signOut, deleteAccount, refreshProfile, preferences, updatePreferences } = useAuthStore();
 
   const checkPushPermission = useCallback(async () => {
     const enabled = await pushNotificationService.areNotificationsEnabled();
@@ -137,6 +140,23 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
       await signOut();
     } catch (error: any) {
       Alert.alert('Error', 'Failed to sign out. Please try again.');
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    setShowDeleteModal(false);
+    setIsDeleting(true);
+    try {
+      await deleteAccount();
+      // Auth state change takes the app back to the sign-in screen
+    } catch (error: any) {
+      setIsDeleting(false);
+      Alert.alert(
+        'Account not deleted',
+        error?.message === 'Account deletion cancelled.'
+          ? 'Deletion was cancelled. Your account has not been changed.'
+          : 'Something went wrong and your account was not deleted. Check your connection and try again, or email hello@getduet.app.'
+      );
     }
   };
 
@@ -286,10 +306,49 @@ export const ProfileScreen = ({ navigation }: ProfileScreenProps) => {
           </View>
         )}
 
+        {adConsentService.privacyOptionsRequired && (
+          <TouchableOpacity
+            style={styles.adChoicesBtn}
+            onPress={() => adConsentService.showPrivacyOptions().catch(() => {
+              Alert.alert('Error', 'Could not open ad privacy choices. Please try again.');
+            })}
+            accessibilityRole="button"
+          >
+            <Text style={styles.adChoicesText}>Ad Privacy Choices</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => setShowDeleteModal(true)}
+          disabled={isDeleting}
+          accessibilityRole="button"
+        >
+          {isDeleting ? (
+            <ActivityIndicator size="small" color={colors.textMuted} />
+          ) : (
+            <Text style={styles.deleteText}>{isGuest ? 'Delete Guest Data' : 'Delete Account'}</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
+      <ConfirmModal
+        visible={showDeleteModal}
+        title={isGuest ? 'Delete guest data?' : 'Delete your account?'}
+        message={
+          isGuest
+            ? 'This permanently deletes your guest account, friends, recent connections and settings. This cannot be undone.'
+            : 'This permanently deletes your account, profile, photo, friends, recent connections and settings, and unsubscribes you from all emails. This cannot be undone.'
+        }
+        buttons={[
+          { text: 'Delete Permanently', style: 'destructive', onPress: handleConfirmDelete },
+          { text: 'Cancel', style: 'cancel', onPress: () => setShowDeleteModal(false) },
+        ]}
+        onClose={() => setShowDeleteModal(false)}
+      />
       <ConfirmModal
         visible={showSignOutModal}
         title="Sign Out"
@@ -525,5 +584,32 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     fontSize: 16,
     fontWeight: '600',
+  },
+  adChoicesBtn: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  adChoicesText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  deleteBtn: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 24,
+    paddingVertical: 12,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  deleteText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

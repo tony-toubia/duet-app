@@ -29,6 +29,51 @@ async function api<T = any>(
   return data;
 }
 
+// Admin check: asks the server, whose ADMIN_UIDS list is the only source of
+// truth. Any failure (not signed in, not listed, list unset, network) is
+// treated as "not an admin".
+export async function checkAdmin(): Promise<boolean> {
+  try {
+    const result = await api<{ admin?: boolean }>('me');
+    return result.admin === true;
+  } catch {
+    return false;
+  }
+}
+
+// Safety reports
+export async function fetchReports(status: 'open' | 'resolved' | 'all' = 'open') {
+  return api<{ reasons: Record<string, string>; reports: any[] }>(`reports?status=${status}`);
+}
+
+export async function resolveReport(id: string, resolution: 'dismissed' | 'warned' | 'suspended', note: string) {
+  return api<{ resolved: boolean }>(`reports/${encodeURIComponent(id)}/resolve`, 'POST', { resolution, note });
+}
+
+export async function reinstateUser(uid: string) {
+  return api<{ reinstated: boolean }>(`users/${encodeURIComponent(uid)}/reinstate`, 'POST');
+}
+
+// Content Hub (manual items). Client writes to content_hub are denied by
+// database rules, so these go through the admin API.
+export async function createContentItem(data: {
+  title: string;
+  type: string;
+  deepLink: string;
+  image: string;
+  city?: string | null;
+}) {
+  return api<{ id: string }>('content-hub/items', 'POST', data);
+}
+
+export async function deleteContentItem(id: string) {
+  return api<{ deleted: boolean }>(`content-hub/items/${encodeURIComponent(id)}`, 'DELETE');
+}
+
+export async function setContentItemPinned(id: string, pinned: boolean) {
+  return api<{ pinned: boolean }>(`content-hub/items/${encodeURIComponent(id)}/pin`, 'PUT', { pinned });
+}
+
 // Segments
 export async function fetchSegments() {
   return api<{ segments: any[] }>('segments');

@@ -10,16 +10,12 @@ import type { ContentHubScreenProps } from '@/navigation/types';
 
 export const ContentHubScreen = ({ navigation }: ContentHubScreenProps) => {
   const insets = useSafeAreaInsets();
-  const userCity = useDuetStore(s => s.userCity);
   const [items, setItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // We fetch city natively whenever available inside this scope via store or fallback
   const fetchHub = async () => {
     try {
-      const data = await ContentService.fetchContent();
-      const filtered = ContentService.filterContentByCity(data, userCity); 
-      setItems(filtered);
+      setItems(await ContentService.fetchContent());
     } catch(e) {
       console.warn("Failed retrieving content", e);
     } finally {
@@ -29,7 +25,7 @@ export const ContentHubScreen = ({ navigation }: ContentHubScreenProps) => {
 
   useEffect(() => {
     fetchHub();
-  }, [userCity]);
+  }, []);
 
   const handleListenTogether = (item: ContentItem) => {
     const webrtc = useDuetStore.getState().webrtc;
