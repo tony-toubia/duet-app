@@ -1,6 +1,7 @@
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
 import { analyticsService } from './AnalyticsService';
+import { callFunction } from './CloudFunctions';
 
 export interface FriendEntry {
   status: 'pending' | 'accepted';
@@ -17,6 +18,27 @@ export interface RecentConnection {
   roomCode: string;
 }
 
+export interface PublicProfile {
+  uid: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * Read another user's public profile fields. Rules only expose displayName
+ * and avatarUrl to other users (email and the rest of the profile are
+ * owner-only), so read the two fields rather than the whole profile.
+ */
+export async function getPublicProfile(uid: string): Promise<PublicProfile | null> {
+  const base = `/users/${uid}/profile`;
+  const [nameSnap, avatarSnap] = await Promise.all([
+    database().ref(`${base}/displayName`).once('value'),
+    database().ref(`${base}/avatarUrl`).once('value'),
+  ]);
+  if (!nameSnap.exists()) return null;
+  return { uid, displayName: nameSnap.val() || 'Duet User', avatarUrl: avatarSnap.val() || null };
+}
+
 class FriendsService {
   async sendFriendRequest(targetUid: string): Promise<void> {
     const user = auth().currentUser;
@@ -25,8 +47,7 @@ class FriendsService {
     const myProfile = await database().ref(`/users/${user.uid}/profile`).once('value');
     const myData = myProfile.val() || {};
 
-    const targetProfile = await database().ref(`/users/${targetUid}/profile`).once('value');
-    const targetData = targetProfile.val();
+    const targetData = await getPublicProfile(targetUid);
     if (!targetData) throw new Error('User not found.');
 
     const updates: Record<string, any> = {};
@@ -124,31 +145,11 @@ class FriendsService {
     const user = auth().currentUser;
     if (!user) return null;
 
-    const snapshot = await database()
-      .ref('/users')
-      .orderByChild('profile/email')
-      .equalTo(trimmed)
-      .limitToFirst(1)
-      .once('value');
-
-    let result: { uid: string; displayName: string; avatarUrl: string | null } | null = null;
-
-    snapshot.forEach((child) => {
-      const uid = child.key;
-      if (uid && uid !== user.uid) {
-        const profile = child.val()?.profile;
-        if (profile) {
-          result = {
-            uid,
-            displayName: profile.displayName || 'Duet User',
-            avatarUrl: profile.avatarUrl || null,
-          };
-        }
-      }
-      return undefined;
+    // Server-side lookup: returns only uid, display name and photo
+    const { user: found } = await callFunction<{ user: PublicProfile | null }>('searchUserByEmail', {
+      email: trimmed,
     });
-
-    return result;
+    return found && found.uid !== user.uid ? found : null;
   }
 
   async getFriendCode(): Promise<string | null> {
@@ -204,15 +205,7 @@ class FriendsService {
     const uid = snap.val();
     if (!uid || uid === user.uid) return null;
 
-    const profileSnap = await database().ref(`/users/${uid}/profile`).once('value');
-    const profile = profileSnap.val();
-    if (!profile) return null;
-
-    return {
-      uid,
-      displayName: profile.displayName || 'Duet User',
-      avatarUrl: profile.avatarUrl || null,
-    };
+    return getPublicProfile(uid);
   }
 }
 

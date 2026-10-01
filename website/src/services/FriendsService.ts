@@ -6,12 +6,11 @@ import {
   onValue,
   query,
   orderByChild,
-  equalTo,
-  limitToFirst,
   limitToLast,
   serverTimestamp,
 } from 'firebase/database';
 import { firebaseAuth, firebaseDb } from './firebase';
+import { callFunction } from './CloudFunctions';
 
 export interface FriendEntry {
   status: 'pending' | 'accepted';
@@ -28,6 +27,27 @@ export interface RecentConnection {
   roomCode: string;
 }
 
+export interface PublicProfile {
+  uid: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * Read another user's public profile fields. Rules only expose displayName
+ * and avatarUrl to other users (email and the rest of the profile are
+ * owner-only), so read the two fields rather than the whole profile.
+ */
+export async function getPublicProfile(uid: string): Promise<PublicProfile | null> {
+  const base = `/users/${uid}/profile`;
+  const [nameSnap, avatarSnap] = await Promise.all([
+    get(ref(firebaseDb, `${base}/displayName`)),
+    get(ref(firebaseDb, `${base}/avatarUrl`)),
+  ]);
+  if (!nameSnap.exists()) return null;
+  return { uid, displayName: nameSnap.val() || 'Duet User', avatarUrl: avatarSnap.val() || null };
+}
+
 class FriendsService {
   async sendFriendRequest(targetUid: string): Promise<void> {
     const user = firebaseAuth.currentUser;
@@ -36,8 +56,7 @@ class FriendsService {
     const mySnap = await get(ref(firebaseDb, `/users/${user.uid}/profile`));
     const myData = mySnap.val() || {};
 
-    const targetSnap = await get(ref(firebaseDb, `/users/${targetUid}/profile`));
-    const targetData = targetSnap.val();
+    const targetData = await getPublicProfile(targetUid);
     if (!targetData) throw new Error('User not found.');
 
     const updates: Record<string, any> = {};
@@ -135,31 +154,11 @@ class FriendsService {
     const user = firebaseAuth.currentUser;
     if (!user) return null;
 
-    const q = query(
-      ref(firebaseDb, '/users'),
-      orderByChild('profile/email'),
-      equalTo(trimmed),
-      limitToFirst(1)
-    );
-
-    const snapshot = await get(q);
-    let result: { uid: string; displayName: string; avatarUrl: string | null } | null = null;
-
-    snapshot.forEach((child) => {
-      const uid = child.key;
-      if (uid && uid !== user.uid) {
-        const profile = child.val()?.profile;
-        if (profile) {
-          result = {
-            uid,
-            displayName: profile.displayName || 'Duet User',
-            avatarUrl: profile.avatarUrl || null,
-          };
-        }
-      }
+    // Server-side lookup: returns only uid, display name and photo
+    const { user: found } = await callFunction<{ user: PublicProfile | null }>('searchUserByEmail', {
+      email: trimmed,
     });
-
-    return result;
+    return found && found.uid !== user.uid ? found : null;
   }
 
   async getFriendCode(): Promise<string | null> {
@@ -215,15 +214,7 @@ class FriendsService {
     const uid = snap.val();
     if (!uid || uid === user.uid) return null;
 
-    const profileSnap = await get(ref(firebaseDb, `/users/${uid}/profile`));
-    const profile = profileSnap.val();
-    if (!profile) return null;
-
-    return {
-      uid,
-      displayName: profile.displayName || 'Duet User',
-      avatarUrl: profile.avatarUrl || null,
-    };
+    return getPublicProfile(uid);
   }
 }
 

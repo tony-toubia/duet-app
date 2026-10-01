@@ -9,7 +9,7 @@ import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { PartySignalingService } from '@/services/PartySignalingService';
 import { crashlyticsService } from '@/services/CrashlyticsService';
 import { pushNotificationService } from '@/services/PushNotificationService';
-import { friendsService } from '@/services/FriendsService';
+import { friendsService, getPublicProfile } from '@/services/FriendsService';
 import { eventTrackingService } from '@/services/EventTrackingService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '@/navigation/navigationRef';
@@ -699,8 +699,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Record recent connection before cleanup
     if (partnerId && partnerId !== 'partner' && roomCode) {
       try {
-        const profileSnap = await database().ref(`/users/${partnerId}/profile`).once('value');
-        const profile = profileSnap.val();
+        // Only the partner's public fields are readable (not the whole profile)
+        const profile = await getPublicProfile(partnerId);
         if (profile) {
           await friendsService.recordRecentConnection(
             partnerId,

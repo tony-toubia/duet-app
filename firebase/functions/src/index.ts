@@ -19,9 +19,11 @@ import {
   reengagementEmailHtml,
 } from './marketing/templates';
 import { logEvent } from './marketing/events';
+import { checkRateLimit } from './rateLimit';
 import { computeAllSegments } from './marketing/segments';
 import { processAllJourneys, enrollUserInJourney } from './marketing/journeys';
 export { marketingApi } from './marketing/admin-api';
+export { searchUserByEmail } from './userApi';
 
 initializeApp();
 
@@ -768,34 +770,7 @@ export const processEmailQueue = onSchedule(
 );
 
 // ─── Rate Limiting ──────────────────────────────────────────────────
-
-/**
- * Rate limit check helper. Uses a counter at /rateLimits/{userId}/{action}.
- * Returns true if within limit, false if rate limited.
- */
-async function checkRateLimit(
-  userId: string,
-  action: string,
-  maxPerWindow: number,
-  windowMs: number
-): Promise<boolean> {
-  const now = Date.now();
-  const ref = db.ref(`/rateLimits/${userId}/${action}`);
-  const snap = await ref.once('value');
-  const entries: number[] = snap.val() || [];
-
-  // Filter to only entries within the window
-  const recent = entries.filter((ts: number) => now - ts < windowMs);
-
-  if (recent.length >= maxPerWindow) {
-    return false; // Rate limited
-  }
-
-  // Add current timestamp and keep only recent entries
-  recent.push(now);
-  await ref.set(recent);
-  return true;
-}
+// checkRateLimit lives in ./rateLimit so the user-facing callables share it.
 
 /**
  * Rate limit room creation: max 10 rooms per user per hour.

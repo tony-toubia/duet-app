@@ -123,13 +123,11 @@
 
     // User profiles and push tokens
     "users": {
-      // No bulk reads. Signed-in users may only run the exact-match email
-      // lookup used by friend search (orderByChild profile/email, equalTo,
-      // limitToFirst 1). A plain read of /users used to return every user's
-      // email, push tokens, preferences and last partner to any signed-in
-      // user, including anonymous guests.
-      ".read": "auth != null && query.orderByChild == 'profile/email' && query.equalTo != null && query.limitToFirst == 1",
-      // Index for email search
+      // No client reads of /users as a collection. Friend search by email
+      // runs server-side (searchUserByEmail callable) and returns only uid,
+      // display name and photo; a client query here used to expose the
+      // matched user's whole record (email, push tokens, preferences).
+      // Index kept for server-side (admin SDK) email queries.
       ".indexOn": ["profile/email"],
 
       "$userId": {
@@ -139,16 +137,19 @@
         ".write": "$userId == auth.uid",
 
         "profile": {
-          // Display name and photo are shown to friends and room partners
-          ".read": "auth != null",
+          // Only display name and photo are visible to other signed-in users
+          // (friends and room partners). Email and the rest of the profile
+          // are readable by the owner only, via $userId/.read above.
           ".validate": "newData.hasChildren(['displayName'])",
           "displayName": {
+            ".read": "auth != null",
             ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 100"
           },
           "email": {
             ".validate": "newData.isString() || newData.val() == null"
           },
           "avatarUrl": {
+            ".read": "auth != null",
             ".validate": "newData.isString() || newData.val() == null"
           },
           "createdAt": {
@@ -204,8 +205,12 @@
         ".read": "$userId == auth.uid",
 
         "$friendId": {
-          // Either user can write (for sending/accepting requests)
-          ".write": "auth.uid == $userId || auth.uid == $friendId",
+          // The list owner can write their own entries. The other person may
+          // only: remove the entry (unfriend/decline); create or refresh a
+          // pending request they initiated; or accept a request the owner
+          // sent them. A stranger can no longer mark themselves "accepted" in
+          // someone's list (which would grant them that person's presence).
+          ".write": "auth.uid == $userId || (auth.uid == $friendId && (!newData.exists() || (newData.child('status').val() == 'pending' && newData.child('initiatedBy').val() == auth.uid && (!data.exists() || data.child('status').val() == 'pending')) || (newData.child('status').val() == 'accepted' && data.child('initiatedBy').val() == $userId)))",
           ".validate": "newData.hasChildren(['status', 'displayName', 'initiatedBy'])",
 
           "status": {
@@ -242,8 +247,9 @@
     // Presence/online status
     "status": {
       "$userId": {
-        // Anyone authenticated can read status (for friend list online indicators)
-        ".read": "auth != null",
+        // Online status and last-seen are visible to the user and to their
+        // accepted friends only (friend list online indicators)
+        ".read": "auth != null && ($userId == auth.uid || root.child('friends').child($userId).child(auth.uid).child('status').val() == 'accepted')",
         // Only the user can write their own status
         ".write": "$userId == auth.uid",
 

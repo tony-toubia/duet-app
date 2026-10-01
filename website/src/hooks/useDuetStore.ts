@@ -6,7 +6,7 @@ import { SignalingService } from '@/services/SignalingService';
 import { PartySignalingService } from '@/services/PartySignalingService';
 import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { WebAudioEngine } from '@/audio/WebAudioEngine';
-import { friendsService } from '@/services/FriendsService';
+import { friendsService, getPublicProfile } from '@/services/FriendsService';
 import { useAuthStore } from './useAuthStore';
 import { lifecycle } from '@/services/LifecycleLog';
 
@@ -415,8 +415,8 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     // Record recent connection before cleanup
     if (partnerId && partnerId !== 'partner' && roomCode) {
       try {
-        const profileSnap = await firebaseGet(ref(firebaseDb, `/users/${partnerId}/profile`));
-        const profile = profileSnap.val();
+        // Only the partner's public fields are readable (not the whole profile)
+        const profile = await getPublicProfile(partnerId);
         if (profile) {
           await friendsService.recordRecentConnection(
             partnerId,
