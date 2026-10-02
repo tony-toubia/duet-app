@@ -158,12 +158,35 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Submit to Google Play
-        run: eas submit --platform android --latest --non-interactive
-        env:
-          EXPO_GOOGLE_PLAY_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT }}
+      # eas submit evaluates app.config.js, whose config plugins must resolve
+      - name: Install dependencies
+        run: npm ci
 
+      # Store credentials come from EAS (expo.dev → project → Credentials):
+      # an App Store Connect API key for iOS and a Google service account key
+      # for Android. Each platform is submitted even if the other fails.
       - name: Submit to App Store
-        run: eas submit --platform ios --latest --non-interactive
-        env:
-          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        id: submit_ios
+        continue-on-error: true
+        run: |
+          # Newest finished production build (not a PR preview build)
+          BUILD_ID=$(eas build:list --platform ios --build-profile production --status finished --limit 1 --json --non-interactive | jq -r '.[0].id')
+          echo "Submitting ios build $BUILD_ID"
+          eas submit --platform ios --id "$BUILD_ID" --non-interactive
+
+      - name: Submit to Google Play
+        id: submit_android
+        continue-on-error: true
+        run: |
+          # Newest finished production build (not a PR preview build)
+          BUILD_ID=$(eas build:list --platform android --build-profile production --status finished --limit 1 --json --non-interactive | jq -r '.[0].id')
+          echo "Submitting android build $BUILD_ID"
+          eas submit --platform android --id "$BUILD_ID" --non-interactive
+
+      - name: Report submission result
+        run: |
+          echo "App Store: ${{ steps.submit_ios.outcome }} · Google Play: ${{ steps.submit_android.outcome }}"
+          if [ "${{ steps.submit_ios.outcome }}" != "success" ] || [ "${{ steps.submit_android.outcome }}" != "success" ]; then
+            echo "::error::A store submission failed; see the step logs above. The builds are on EAS and can be submitted with 'npx eas-cli submit --platform <ios|android> --latest'."
+            exit 1
+          fi
