@@ -9,9 +9,17 @@ export interface AudioSetupResult {
 }
 
 export interface AudioDataEvent {
-  audio: string; // base64 encoded
+  /** base64 float32 PCM, when PCM capture is on (the default) */
+  audio?: string;
+  /** comma-separated base64 20 ms Opus packets, when Opus capture is on; may be empty while the encoder primes */
+  opus?: string;
   sampleRate: number;
   channels: number;
+}
+
+export interface CodecSupport {
+  opusEncode: boolean;
+  opusDecode: boolean;
 }
 
 export interface VoiceActivityEvent {
@@ -81,6 +89,38 @@ export const DuetAudio = {
     channels: number = 1
   ): Promise<PlayAudioResult> {
     return await DuetAudioManager.playAudio(base64Audio, sampleRate, channels);
+  },
+
+  /**
+   * Which codecs this device can encode and decode. Builds without Opus
+   * support in the native module report neither.
+   */
+  async getCodecSupport(): Promise<CodecSupport> {
+    if (typeof DuetAudioManager?.getCodecSupport !== 'function') {
+      return { opusEncode: false, opusDecode: false };
+    }
+    try {
+      const result = await DuetAudioManager.getCodecSupport();
+      return { opusEncode: !!result?.opusEncode, opusDecode: !!result?.opusDecode };
+    } catch {
+      return { opusEncode: false, opusDecode: false };
+    }
+  },
+
+  /**
+   * Choose which formats captured audio is delivered in (see onAudioData).
+   * Default: PCM only.
+   */
+  setCaptureFormats(pcm: boolean, opus: boolean): void {
+    DuetAudioManager.setCaptureFormats?.(pcm, opus);
+  },
+
+  /**
+   * Play comma-separated base64 Opus packets from one remote stream. Each
+   * streamId (one per partner) keeps its own decoder state.
+   */
+  async playOpus(streamId: string, packets: string): Promise<PlayAudioResult> {
+    return await DuetAudioManager.playOpus(streamId, packets);
   },
 
   /**

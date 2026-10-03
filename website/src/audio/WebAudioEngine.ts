@@ -9,15 +9,55 @@
  *   - 48kHz mono
  *   - 960 samples per chunk (20ms)
  *   - Base64 encoded for data channel transport
+ *
+ * Opus (src/lib/audioProtocol.ts) uses the browser's WebCodecs encoder and
+ * decoder where available: 20 ms packets, 48 kHz mono, 32 kbps.
  */
 
 import { float32ToBase64, base64ToFloat32 } from './base64';
 import { resample } from './resample';
+import type { CapturedAudio } from '@/lib/audioProtocol';
+
+export interface CodecSupport {
+  opusEncode: boolean;
+  opusDecode: boolean;
+}
 
 export interface WebAudioEngineCallbacks {
-  onAudioData: (base64: string, sampleRate: number, channels: number) => void;
+  /** Captured audio, in whichever formats are enabled (see setCaptureFormats) */
+  onAudioData: (captured: CapturedAudio) => void;
   onVoiceActivity: (speaking: boolean) => void;
   onError: (error: Error) => void;
+  /** The Opus encoder failed; Opus capture has been switched off */
+  onOpusEncoderError?: () => void;
+  /** An Opus decoder failed (counts toward giving up on Opus playback) */
+  onOpusDecodeError?: () => void;
+}
+
+const OPUS_CONFIG = { codec: 'opus', sampleRate: 48000, numberOfChannels: 1 } as const;
+const OPUS_BITRATE = 32000;
+const OPUS_PACKET_US = 20000;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function base64ToBytes(b64: string): Uint8Array | null {
+  try {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+interface OpusStream {
+  decoder: AudioDecoder;
+  timestamp: number;
 }
 
 export class WebAudioEngine {
@@ -31,8 +71,156 @@ export class WebAudioEngine {
   private isDeafened = false;
   private browserSampleRate = 48000;
 
+  // Opus state
+  private capturePcm = true;
+  private captureOpus = false;
+  private encoder: AudioEncoder | null = null;
+  private encoderTimestamp = 0;
+  private decoders = new Map<string, OpusStream>();
+
   constructor(callbacks: WebAudioEngineCallbacks) {
     this.callbacks = callbacks;
+  }
+
+  /** Whether this browser can encode and decode Opus with WebCodecs. */
+  static async getCodecSupport(): Promise<CodecSupport> {
+    const check = async (fn: () => Promise<{ supported?: boolean }>): Promise<boolean> => {
+      try {
+        return (await fn()).supported === true;
+      } catch {
+        return false;
+      }
+    };
+    const opusEncode =
+      typeof AudioEncoder !== 'undefined' &&
+      typeof AudioData !== 'undefined' &&
+      (await check(() => AudioEncoder.isConfigSupported({ ...OPUS_CONFIG, bitrate: OPUS_BITRATE })));
+    const opusDecode =
+      typeof AudioDecoder !== 'undefined' &&
+      typeof EncodedAudioChunk !== 'undefined' &&
+      (await check(() => AudioDecoder.isConfigSupported({ ...OPUS_CONFIG })));
+    return { opusEncode, opusDecode };
+  }
+
+  /** Choose which formats captured audio is delivered in. Default: PCM only. */
+  setCaptureFormats(pcm: boolean, opus: boolean): void {
+    this.capturePcm = pcm;
+    this.captureOpus = opus;
+    if (!opus) this.closeEncoder();
+  }
+
+  private ensureEncoder(): AudioEncoder | null {
+    if (this.encoder) return this.encoder;
+    try {
+      const encoder = new AudioEncoder({
+        output: (chunk) => {
+          const bytes = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(bytes);
+          // Packets go out on their own, to Opus peers only
+          this.callbacks.onAudioData({ opus: bytesToBase64(bytes), sampleRate: 48000, channels: 1 });
+        },
+        error: (e) => {
+          console.warn('[WebAudio] Opus encoder error:', e);
+          this.closeEncoder();
+          this.captureOpus = false;
+          this.callbacks.onOpusEncoderError?.();
+        },
+      });
+      encoder.configure({ ...OPUS_CONFIG, bitrate: OPUS_BITRATE, opus: { frameDuration: OPUS_PACKET_US, format: 'opus' } });
+      this.encoder = encoder;
+      this.encoderTimestamp = 0;
+      return encoder;
+    } catch (e) {
+      console.warn('[WebAudio] Opus encoder unavailable:', e);
+      this.captureOpus = false;
+      this.callbacks.onOpusEncoderError?.();
+      return null;
+    }
+  }
+
+  private closeEncoder(): void {
+    if (!this.encoder) return;
+    try {
+      if (this.encoder.state !== 'closed') this.encoder.close();
+    } catch {
+      // already closed
+    }
+    this.encoder = null;
+  }
+
+  private encodeOpus(samples: Float32Array): void {
+    const encoder = this.ensureEncoder();
+    if (!encoder || encoder.state !== 'configured') return;
+    const data = new AudioData({
+      format: 'f32',
+      sampleRate: 48000,
+      numberOfFrames: samples.length,
+      numberOfChannels: 1,
+      timestamp: this.encoderTimestamp,
+      data: new Float32Array(samples),
+    });
+    this.encoderTimestamp += Math.round((samples.length * 1e6) / 48000);
+    try {
+      encoder.encode(data);
+    } finally {
+      data.close();
+    }
+  }
+
+  private getDecoder(streamId: string): OpusStream | null {
+    const existing = this.decoders.get(streamId);
+    if (existing && existing.decoder.state === 'configured') return existing;
+    try {
+      const decoder = new AudioDecoder({
+        output: (audio) => {
+          try {
+            const samples = new Float32Array(audio.numberOfFrames);
+            audio.copyTo(samples, { planeIndex: 0, format: 'f32-planar' });
+            this.playSamples(samples, audio.sampleRate);
+          } finally {
+            audio.close();
+          }
+        },
+        error: (e) => {
+          console.warn('[WebAudio] Opus decoder error:', e);
+          this.decoders.delete(streamId);
+          this.callbacks.onOpusDecodeError?.();
+        },
+      });
+      decoder.configure({ ...OPUS_CONFIG });
+      const stream = { decoder, timestamp: 0 };
+      this.decoders.set(streamId, stream);
+      return stream;
+    } catch (e) {
+      console.warn('[WebAudio] Opus decoder unavailable:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Play comma-separated base64 Opus packets from one remote stream. Returns
+   * false if they couldn't be decoded.
+   */
+  playOpus(streamId: string, packets: string): boolean {
+    if (this.isDeafened || !this.playbackNode) return true;
+    const stream = this.getDecoder(streamId);
+    if (!stream) return false;
+    let ok = true;
+    for (const b64 of packets.split(',')) {
+      const bytes = b64 ? base64ToBytes(b64) : null;
+      if (!bytes || bytes.length === 0) {
+        ok = false;
+        continue;
+      }
+      try {
+        stream.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: stream.timestamp, data: bytes }));
+        stream.timestamp += OPUS_PACKET_US;
+      } catch (e) {
+        console.warn('[WebAudio] Opus decode failed:', e);
+        ok = false;
+      }
+    }
+    return ok;
   }
 
   async setup(): Promise<{ sampleRate: number }> {
@@ -84,8 +272,19 @@ export class WebAudioEngine {
           samples = resample(samples, this.browserSampleRate, 48000);
         }
 
-        const base64 = float32ToBase64(samples);
-        this.callbacks.onAudioData(base64, 48000, 1);
+        // Encoded packets arrive asynchronously via the encoder's output
+        // callback. While Opus is on, PCM chunks carry opus: '' so Opus peers
+        // skip them (see chooseAudioMessage).
+        const opusOn = this.captureOpus;
+        if (opusOn) this.encodeOpus(samples);
+        if (this.capturePcm) {
+          this.callbacks.onAudioData({
+            audio: float32ToBase64(samples),
+            ...(opusOn ? { opus: '' } : {}),
+            sampleRate: 48000,
+            channels: 1,
+          });
+        }
       } else if (event.data.type === 'voiceActivity') {
         this.callbacks.onVoiceActivity(event.data.speaking);
       }
@@ -104,6 +303,16 @@ export class WebAudioEngine {
   }
 
   stop(): void {
+    this.closeEncoder();
+    this.decoders.forEach(({ decoder }) => {
+      try {
+        if (decoder.state !== 'closed') decoder.close();
+      } catch {
+        // already closed
+      }
+    });
+    this.decoders.clear();
+
     // Stop microphone tracks
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => track.stop());
@@ -135,8 +344,11 @@ export class WebAudioEngine {
    */
   playAudio(base64: string, sampleRate: number = 48000, channels: number = 1): void {
     if (this.isDeafened || !this.playbackNode) return;
+    this.playSamples(base64ToFloat32(base64), sampleRate);
+  }
 
-    let samples = base64ToFloat32(base64);
+  private playSamples(samples: Float32Array, sampleRate: number): void {
+    if (this.isDeafened || !this.playbackNode) return;
 
     // Resample if incoming sample rate differs from our playback rate
     if (sampleRate !== this.browserSampleRate) {

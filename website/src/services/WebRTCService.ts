@@ -1,5 +1,13 @@
 import { getIceServers, ensureTurnCredentials } from '@/config/turn';
 import { lifecycle } from './LifecycleLog';
+import {
+  AudioCodec,
+  CapturedAudio,
+  CodecNegotiator,
+  chooseAudioMessage,
+  formatPcmMessage,
+  parseDataChannelMessage,
+} from '@/lib/audioProtocol';
 
 const getRtcConfig = (): RTCConfiguration => ({
   iceServers: getIceServers(),
@@ -20,10 +28,22 @@ export interface AudioPacket {
   channels: number;
 }
 
+export interface OpusPacket {
+  packets: string; // comma-separated base64 Opus packets
+  sampleRate: number;
+  channels: number;
+}
+
 export interface WebRTCCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onAudioData: (data: AudioPacket) => void;
+  onOpusData?: (data: OpusPacket) => void;
+  /** What the partner can decode changed */
+  onCodecChange?: () => void;
+  /** Codecs this browser can decode right now (default: none) */
+  localDecodes?: () => readonly AudioCodec[];
   onReaction?: (emoji: string) => void;
+  onDeepLink?: (url: string) => void;
   onIceRestartOffer: (offer: RTCSessionDescriptionInit) => void;
   onError: (error: Error) => void;
 }
@@ -40,8 +60,46 @@ export class WebRTCService {
   private isOfferer = false;
   private onlineHandler: (() => void) | null = null;
 
+  // Which audio codec the partner decodes, negotiated on each channel
+  private negotiator: CodecNegotiator;
+
   constructor(callbacks: WebRTCCallbacks) {
     this.callbacks = callbacks;
+    this.negotiator = new CodecNegotiator({
+      send: (msg) => this.sendRaw(msg),
+      localDecodes: () => callbacks.localDecodes?.() ?? [],
+      onChange: () => callbacks.onCodecChange?.(),
+    });
+  }
+
+  /** Whether the partner, on the current channel, has announced it decodes Opus. */
+  get peerDecodesOpus(): boolean {
+    return this.negotiator.peerDecodesOpus;
+  }
+
+  get dataChannelOpen(): boolean {
+    return this.dataChannel?.readyState === 'open';
+  }
+
+  /** Re-tell the partner what this browser decodes (after it changed). */
+  reannounceCodecs(): void {
+    this.negotiator.reannounce();
+  }
+
+  /** (Re)start the codec exchange whenever the partner behind the channel may have changed. */
+  private restartNegotiation(): void {
+    if (this.dataChannel?.readyState === 'open') this.negotiator.start();
+    else this.negotiator.reset();
+  }
+
+  private sendRaw(msg: string): void {
+    if (this.dataChannel?.readyState === 'open') {
+      try {
+        this.dataChannel.send(msg);
+      } catch (e) {
+        console.warn('[WebRTC] Data channel send failed:', e);
+      }
+    }
   }
 
   get connectionState(): ConnectionState {
@@ -80,6 +138,8 @@ export class WebRTCService {
           case 'connected':
             this.cancelIceRestart();
             this.iceRestartCount = 0;
+            // After a reconnect the partner may be a different app instance
+            if (this._connectionState !== 'connected') this.restartNegotiation();
             this.setConnectionState('connected');
             break;
           case 'disconnected':
@@ -153,6 +213,7 @@ export class WebRTCService {
     }
 
     this.setConnectionState('connecting');
+    this.restartNegotiation();
 
     console.log('[WebRTC] Setting remote description (offer)');
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -213,11 +274,18 @@ export class WebRTCService {
     }
   }
 
+  /**
+   * Send captured audio: Opus if the partner announced it, otherwise PCM
+   * (see src/lib/audioProtocol.ts for the formats).
+   */
+  sendAudio(captured: CapturedAudio): void {
+    const msg = chooseAudioMessage(captured, this.negotiator.peerDecodesOpus);
+    if (msg) this.sendRaw(msg);
+  }
+
+  /** Send PCM audio: "A|sampleRate|channels|base64Audio" (the format every app version reads). */
   sendAudioData(base64Audio: string, sampleRate: number = 48000, channels: number = 1): void {
-    if (this.dataChannel?.readyState === 'open') {
-      const packet: AudioPacket = { audio: base64Audio, sampleRate, channels };
-      this.dataChannel.send(JSON.stringify(packet));
-    }
+    this.sendRaw(formatPcmMessage(base64Audio, sampleRate, channels));
   }
 
   sendReaction(emoji: string): void {
@@ -228,35 +296,45 @@ export class WebRTCService {
 
   private setupDataChannel(channel: RTCDataChannel): void {
     this.dataChannel = channel;
+    this.negotiator.reset();
 
     channel.onopen = () => {
       console.log('[WebRTC] Data channel opened');
+      this.negotiator.start();
     };
 
     channel.onclose = () => {
       console.log('[WebRTC] Data channel closed');
+      if (this.dataChannel === channel) this.negotiator.reset();
     };
 
     channel.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'reaction') {
-          this.callbacks.onReaction?.(data.emoji);
-        } else {
-          this.callbacks.onAudioData(data as AudioPacket);
-        }
-      } catch {
-        this.callbacks.onAudioData({
-          audio: event.data,
-          sampleRate: 48000,
-          channels: 1,
-        });
+      const msg = parseDataChannelMessage(event.data);
+      switch (msg.kind) {
+        case 'pcm':
+          this.callbacks.onAudioData({ audio: msg.audio, sampleRate: msg.sampleRate, channels: msg.channels });
+          break;
+        case 'opus':
+          this.callbacks.onOpusData?.({ packets: msg.packets, sampleRate: msg.sampleRate, channels: msg.channels });
+          break;
+        case 'caps':
+          this.negotiator.handleCaps(msg.decodes, msg.ack);
+          break;
+        case 'link':
+          this.callbacks.onDeepLink?.(msg.url);
+          break;
+        case 'reaction':
+          this.callbacks.onReaction?.(msg.emoji);
+          break;
       }
     };
 
     channel.onerror = (error) => {
       console.error('[WebRTC] Data channel error:', error);
     };
+
+    // A channel received from the partner may already be open
+    if (channel.readyState === 'open') this.negotiator.start();
   }
 
   onLocalIceCandidate: ((candidate: RTCIceCandidate) => void) | null = null;
@@ -331,6 +409,7 @@ export class WebRTCService {
   close(): void {
     console.log('[WebRTC] Closing connection');
     this.cancelIceRestart();
+    this.negotiator.stop();
     if (this.onlineHandler && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onlineHandler);
       this.onlineHandler = null;

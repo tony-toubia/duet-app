@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { ref, get as firebaseGet, set as firebaseSet, serverTimestamp } from 'firebase/database';
 import { firebaseAuth, firebaseDb } from '@/services/firebase';
-import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
+import { WebRTCService, ConnectionState, OpusPacket } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { PartySignalingService } from '@/services/PartySignalingService';
 import { PartyWebRTCService } from '@/services/PartyWebRTCService';
@@ -10,6 +10,7 @@ import { friendsService, getPublicProfile } from '@/services/FriendsService';
 import { blockService } from '@/services/BlockService';
 import { useAuthStore } from './useAuthStore';
 import { lifecycle } from '@/services/LifecycleLog';
+import { AudioCodec, CaptureFormatController, DecodeHealth } from '@/lib/audioProtocol';
 
 interface DuetState {
   connectionState: ConnectionState;
@@ -45,15 +46,64 @@ interface DuetState {
   nudgeReconnect: () => void;
 }
 
+// ─── Audio codecs ────────────────────────────────────────────────────
+// Opus is used with partners that announce it (app 0.2.3+, this site);
+// PCM otherwise. See src/lib/audioProtocol.ts.
+
+let opusDecodeSupported = false;
+let getStore: (() => DuetState) | null = null;
+
+const captureFormats = new CaptureFormatController((pcm, opus) => {
+  console.log(`[Audio] Capture formats: pcm=${pcm} opus=${opus}`);
+  getStore?.().audioEngine?.setCaptureFormats(pcm, opus);
+});
+
+// If Opus playback keeps failing in this browser, stop announcing it so
+// partners switch back to PCM
+const decodeHealth = new DecodeHealth(() => {
+  console.warn('[Audio] Opus playback failing; falling back to PCM');
+  const state = getStore?.();
+  state?.webrtc?.reannounceCodecs();
+  state?.partyWebrtc?.reannounceCodecs();
+});
+
+const localDecodes = (): readonly AudioCodec[] =>
+  opusDecodeSupported && !decodeHealth.opusDisabled ? ['opus'] : [];
+
+/** Recompute capture formats from what the connected partners decode. */
+function refreshCaptureFormats(): void {
+  const state = getStore?.();
+  const peers: boolean[] = [];
+  if (state?.webrtc?.dataChannelOpen) peers.push(state.webrtc.peerDecodesOpus);
+  if (state?.partyWebrtc) peers.push(...state.partyWebrtc.peerCodecs());
+  captureFormats.setPeers(peers);
+}
+
+function playOpus(streamId: string, packet: OpusPacket): void {
+  const engine = getStore?.().audioEngine;
+  if (!engine) return;
+  if (engine.playOpus(streamId, packet.packets)) decodeHealth.success();
+  else decodeHealth.failure();
+}
+
 async function createAndStartAudioEngine(
   set: (partial: Partial<DuetState>) => void,
   get: () => DuetState
 ): Promise<WebAudioEngine> {
+  getStore = get;
+  const support = await WebAudioEngine.getCodecSupport();
+  opusDecodeSupported = support.opusDecode;
+  console.log('[Audio] Opus support:', support);
+
   const engine = new WebAudioEngine({
-    onAudioData: (base64, sampleRate, channels) => {
-      const { webrtc } = get();
-      webrtc?.sendAudioData(base64, sampleRate, channels);
+    onAudioData: (captured) => {
+      const { webrtc, partyWebrtc } = get();
+      if (captured.opus) captureFormats.onCaptured(captured);
+      webrtc?.sendAudio(captured);
+      partyWebrtc?.sendAudio(captured);
     },
+    onOpusEncoderError: () => captureFormats.markEncoderFailed(),
+    onOpusDecodeError: () => decodeHealth.failure(),
     onVoiceActivity: (speaking) => {
       set({ isSpeaking: speaking });
     },
@@ -64,6 +114,11 @@ async function createAndStartAudioEngine(
 
   await engine.setup();
   await engine.start();
+
+  // The engine starts PCM-only; apply what the current partners need
+  captureFormats.setCanEncode(support.opusEncode);
+  const { pcm, opus } = captureFormats.formats;
+  engine.setCaptureFormats(pcm, opus);
 
   // Apply current VAD sensitivity
   const { vadSensitivity } = get();
@@ -173,6 +228,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onOpusData: (packet) => {
+        playOpus('partner', packet);
+        set({ isPartnerSpeaking: true });
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+      },
+      onCodecChange: refreshCaptureFormats,
+      localDecodes,
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
@@ -272,6 +334,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onOpusData: (uid, packet) => {
+        playOpus(uid, packet);
+        set({ isPartnerSpeaking: true });
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+      },
+      onCodecChange: refreshCaptureFormats,
+      localDecodes,
       onReaction: (_uid, emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
@@ -359,6 +428,13 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },
+      onOpusData: (packet) => {
+        playOpus('partner', packet);
+        set({ isPartnerSpeaking: true });
+        setTimeout(() => set({ isPartnerSpeaking: false }), 500);
+      },
+      onCodecChange: refreshCaptureFormats,
+      localDecodes,
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
@@ -466,6 +542,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     const { partyWebrtc, partySignaling } = get();
     partyWebrtc?.close();
     await partySignaling?.leave();
+    captureFormats.setPeers([]);
 
     lifecycle('room.left', { roomCode: roomCode || '' });
 
