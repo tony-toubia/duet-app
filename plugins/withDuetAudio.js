@@ -65,14 +65,33 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var duckingCheckHandler: android.os.Handler? = null
     private var duckingCheckRunnable: Runnable? = null
 
-    // Pre-duck buffer: hold first packets while ducking takes effect
-    private val preDuckBufferMs = 40L // Buffer first ~40ms of audio for ducking to kick in
-    private var preDuckBuffer: MutableList<FloatArray> = mutableListOf()
-    private var isDuckingTransition = false
+    // Partner audio: one jitter buffer per remote stream (partner), summed by
+    // the mixer thread into the one AudioTrack, so people talking at the same
+    // time are heard together instead of queued one after another. Each
+    // buffer waits for 40 ms before playing (absorbs network jitter and gives
+    // ducking time to kick in) and caps its backlog at 300 ms.
+    private val streams = HashMap<String, PcmJitterBuffer>() // guarded by itself
+    private val trackLock = Any()
+    @Volatile private var isMixing = false
+    private var mixThread: Thread? = null
 
     // Audio route tracking for dynamic AEC mode
     private var isSpeakerRoute = false
     private var audioDeviceCallback: AudioDeviceCallback? = null
+
+    // Opus (MediaCodec). PCM capture stays on by default so older partners keep
+    // working; JS turns Opus on once a partner announces it can decode it, and
+    // PCM off when nobody needs it. The encoder is only touched on the recording
+    // thread; decoders (one per remote stream) only on the native-modules thread.
+    @Volatile private var capturePcm = true
+    @Volatile private var captureOpus = false
+    private var opusEncoder: MediaCodec? = null
+    private var opusEncoderPtsUs = 0L
+    private var opusDecoderPtsUs = 0L
+    private val opusDecoders = HashMap<String, MediaCodec>()
+    private val opusMime = "audio/opus"
+    private val opusSampleRate = 48000
+    private val opusBitRate = 32000
 
     override fun getName() = "DuetAudioManager"
 
@@ -206,8 +225,6 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             audioManager?.abandonAudioFocus(null)
         }
         hasDuckingFocus = false
-        isDuckingTransition = false
-        preDuckBuffer.clear()
     }
 
     // Schedule a check to unduck after silence
@@ -308,6 +325,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
             setupAudioRecord()
             setupAudioTrack()
+            startMixer()
             startRecording()
 
             promise.resolve(Arguments.createMap().apply {
@@ -354,7 +372,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         setupAudioTrackWithSampleRate(playbackSampleRate)
     }
 
-    private fun setupAudioTrackWithSampleRate(sampleRate: Int) {
+    private fun setupAudioTrackWithSampleRate(sampleRate: Int) = synchronized(trackLock) {
         // Stop and release existing track if any
         audioTrack?.let {
             if (it.state == AudioTrack.STATE_INITIALIZED) {
@@ -409,6 +427,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
                     processInputBuffer(buffer, read)
                 }
             }
+            releaseOpusEncoder()
         }
     }
 
@@ -420,9 +439,14 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         audioRecord?.release()
         audioRecord = null
 
-        try { audioTrack?.stop() } catch (_: Exception) {}
-        audioTrack?.release()
-        audioTrack = null
+        stopMixer()
+        synchronized(trackLock) {
+            try { audioTrack?.stop() } catch (_: Exception) {}
+            audioTrack?.release()
+            audioTrack = null
+        }
+
+        releaseOpusDecoders()
 
         echoCanceler?.release()
         echoCanceler = null
@@ -514,12 +538,271 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
                 nativeAudioPacketCount = 0
                 lastNativeAudioLogTime = now
             }
-            val base64 = floatArrayToBase64(buffer, length)
-            sendEvent("onAudioData", Arguments.createMap().apply {
-                putString("audio", base64)
-                putInt("sampleRate", captureSampleRate)
-                putInt("channels", 1)
+            val pcm = if (capturePcm) floatArrayToBase64(buffer, length) else null
+            val opus = if (captureOpus) {
+                if (opusEncoder == null) opusEncoder = createOpusEncoder()
+                // May be empty while the encoder fills its first frame
+                encodeOpus(buffer, length)
+            } else {
+                null
+            }
+            if (pcm != null || opus != null) {
+                sendEvent("onAudioData", Arguments.createMap().apply {
+                    if (pcm != null) putString("audio", pcm)
+                    if (opus != null) putString("opus", opus)
+                    putInt("sampleRate", captureSampleRate)
+                    putInt("channels", 1)
+                })
+            }
+        }
+
+        // Opus was switched off: drop the encoder (it's recreated when needed)
+        if (!captureOpus && opusEncoder != null) releaseOpusEncoder()
+    }
+
+    // =====================
+    // OPUS
+    // =====================
+
+    private fun hasOpusCodec(encoder: Boolean): Boolean {
+        // The platform Opus encoder arrived in Android 10
+        if (encoder && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        return try {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                info.isEncoder == encoder && info.supportedTypes.any { it.equals(opusMime, ignoreCase = true) }
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    @ReactMethod
+    fun getCodecSupport(promise: Promise) {
+        promise.resolve(Arguments.createMap().apply {
+            putBoolean("opusEncode", hasOpusCodec(true))
+            putBoolean("opusDecode", hasOpusCodec(false))
+        })
+    }
+
+    @ReactMethod
+    fun setCaptureFormats(pcm: Boolean, opus: Boolean) {
+        android.util.Log.d("DuetAudio", "Capture formats: pcm=" + pcm + " opus=" + opus)
+        capturePcm = pcm
+        captureOpus = opus
+    }
+
+    private fun createOpusEncoder(): MediaCodec? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        var codec: MediaCodec? = null
+        return try {
+            val format = MediaFormat.createAudioFormat(opusMime, opusSampleRate, 1)
+            format.setInteger(MediaFormat.KEY_BIT_RATE, opusBitRate)
+            format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 960 * 2 * 4)
+            codec = MediaCodec.createEncoderByType(opusMime)
+            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+            opusEncoderPtsUs = 0L
+            codec
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Opus encoder unavailable: " + e.message)
+            try { codec?.release() } catch (_: Exception) {}
+            null
+        }
+    }
+
+    private fun releaseOpusEncoder() {
+        val codec = opusEncoder ?: return
+        opusEncoder = null
+        try { codec.stop() } catch (_: Exception) {}
+        try { codec.release() } catch (_: Exception) {}
+    }
+
+    /** Encode one 20 ms chunk; returns base64 packets joined by commas ("" if none were ready). */
+    private fun encodeOpus(buffer: FloatArray, length: Int): String {
+        val codec = opusEncoder ?: return ""
+        val packets = ArrayList<String>()
+        try {
+            val inIndex = codec.dequeueInputBuffer(5000)
+            if (inIndex >= 0) {
+                val input = codec.getInputBuffer(inIndex)
+                if (input != null) {
+                    input.clear()
+                    input.order(ByteOrder.nativeOrder())
+                    val count = minOf(length, input.remaining() / 2)
+                    for (i in 0 until count) {
+                        input.putShort((buffer[i].coerceIn(-1f, 1f) * 32767f).toInt().toShort())
+                    }
+                    codec.queueInputBuffer(inIndex, 0, count * 2, opusEncoderPtsUs, 0)
+                    opusEncoderPtsUs += count * 1000000L / opusSampleRate
+                }
+            }
+            val info = MediaCodec.BufferInfo()
+            while (true) {
+                val outIndex = codec.dequeueOutputBuffer(info, 0)
+                if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) break
+                if (outIndex < 0) continue // format or buffers changed
+                val out = codec.getOutputBuffer(outIndex)
+                val isConfig = (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+                if (out != null && info.size > 0 && !isConfig) {
+                    val bytes = ByteArray(info.size)
+                    out.position(info.offset)
+                    out.limit(info.offset + info.size)
+                    out.get(bytes)
+                    packets.add(Base64.encodeToString(bytes, Base64.NO_WRAP))
+                }
+                codec.releaseOutputBuffer(outIndex, false)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Opus encode failed: " + e.message)
+            releaseOpusEncoder()
+        }
+        return packets.joinToString(",")
+    }
+
+    private fun createOpusDecoder(): MediaCodec? {
+        var codec: MediaCodec? = null
+        return try {
+            val format = MediaFormat.createAudioFormat(opusMime, opusSampleRate, 1)
+            // OpusHead identification header (RFC 7845): mono, 48 kHz, no pre-skip
+            val head = ByteBuffer.allocate(19).order(ByteOrder.LITTLE_ENDIAN)
+            head.put("OpusHead".toByteArray(Charsets.US_ASCII))
+            head.put(1.toByte()) // version
+            head.put(1.toByte()) // channels
+            head.putShort(0.toShort()) // pre-skip
+            head.putInt(opusSampleRate)
+            head.putShort(0.toShort()) // output gain
+            head.put(0.toByte()) // channel mapping family
+            head.flip()
+            val codecDelayNs = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder())
+            codecDelayNs.putLong(0L)
+            codecDelayNs.flip()
+            val seekPreRollNs = ByteBuffer.allocate(8).order(ByteOrder.nativeOrder())
+            seekPreRollNs.putLong(80000000L)
+            seekPreRollNs.flip()
+            format.setByteBuffer("csd-0", head)
+            format.setByteBuffer("csd-1", codecDelayNs)
+            format.setByteBuffer("csd-2", seekPreRollNs)
+            codec = MediaCodec.createDecoderByType(opusMime)
+            codec.configure(format, null, null, 0)
+            codec.start()
+            codec
+        } catch (e: Exception) {
+            android.util.Log.w("DuetAudio", "Opus decoder unavailable: " + e.message)
+            try { codec?.release() } catch (_: Exception) {}
+            null
+        }
+    }
+
+    private fun releaseOpusDecoders() {
+        for (codec in opusDecoders.values) {
+            try { codec.stop() } catch (_: Exception) {}
+            try { codec.release() } catch (_: Exception) {}
+        }
+        opusDecoders.clear()
+    }
+
+    /** Decode one Opus packet, appending the PCM it produced to out. */
+    private fun decodeOpusPacket(codec: MediaCodec, packet: ByteArray, out: ArrayList<FloatArray>) {
+        val inIndex = codec.dequeueInputBuffer(10000)
+        if (inIndex < 0) return
+        val input = codec.getInputBuffer(inIndex) ?: return
+        input.clear()
+        input.put(packet)
+        codec.queueInputBuffer(inIndex, 0, packet.size, opusDecoderPtsUs, 0)
+        opusDecoderPtsUs += 20000L
+
+        // The software decoder runs on its own thread: wait briefly for this
+        // packet's output so the end of a sentence isn't held until the next one
+        val info = MediaCodec.BufferInfo()
+        var gotOutput = false
+        while (true) {
+            val outIndex = codec.dequeueOutputBuffer(info, if (gotOutput) 0L else 10000L)
+            if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) break
+            if (outIndex < 0) continue // format or buffers changed
+            val buf = codec.getOutputBuffer(outIndex)
+            if (buf != null && info.size > 0) {
+                buf.position(info.offset)
+                buf.limit(info.offset + info.size)
+                val floatOut = codec.outputFormat.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
+                    codec.outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING) == AudioFormat.ENCODING_PCM_FLOAT
+                val ordered = buf.slice().order(ByteOrder.nativeOrder())
+                if (floatOut) {
+                    val floats = ordered.asFloatBuffer()
+                    val arr = FloatArray(floats.remaining())
+                    floats.get(arr)
+                    out.add(arr)
+                } else {
+                    val shorts = ordered.asShortBuffer()
+                    val arr = FloatArray(shorts.remaining())
+                    for (i in arr.indices) arr[i] = shorts.get(i) / 32768f
+                    out.add(arr)
+                }
+                gotOutput = true
+            }
+            codec.releaseOutputBuffer(outIndex, false)
+        }
+    }
+
+    /**
+     * Decode comma-separated base64 Opus packets from one remote stream (a
+     * partner) and play them. Each stream keeps its own decoder state.
+     */
+    @ReactMethod
+    fun playOpus(streamId: String, packets: String, promise: Promise) {
+        if (isDeafened) {
+            promise.resolve(Arguments.createMap().apply {
+                putBoolean("played", false)
+                putString("reason", "deafened")
             })
+            return
+        }
+
+        val codec = opusDecoders[streamId] ?: createOpusDecoder()?.also { opusDecoders[streamId] = it }
+        if (codec == null) {
+            promise.reject("CODEC_ERROR", "Opus decoding unavailable")
+            return
+        }
+
+        try {
+            val chunks = ArrayList<FloatArray>()
+            for (encoded in packets.split(',')) {
+                if (encoded.isEmpty()) continue
+                val bytes = try {
+                    Base64.decode(encoded, Base64.NO_WRAP)
+                } catch (e: IllegalArgumentException) {
+                    continue
+                }
+                if (bytes.isNotEmpty()) decodeOpusPacket(codec, bytes, chunks)
+            }
+
+            val total = chunks.sumOf { it.size }
+            if (total == 0) {
+                promise.resolve(Arguments.createMap().apply {
+                    putBoolean("played", false)
+                    putString("reason", "empty")
+                })
+                return
+            }
+            val pcm = FloatArray(total)
+            var pos = 0
+            for (chunk in chunks) {
+                System.arraycopy(chunk, 0, pcm, pos, chunk.size)
+                pos += chunk.size
+            }
+
+            enqueuePlayback(streamId, pcm)
+
+            promise.resolve(Arguments.createMap().apply {
+                putBoolean("played", true)
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("DuetAudio", "playOpus failed: " + e.message)
+            // Start this stream over with a fresh decoder next time
+            opusDecoders.remove(streamId)?.let {
+                try { it.stop() } catch (_: Exception) {}
+                try { it.release() } catch (_: Exception) {}
+            }
+            promise.reject("PLAYBACK_ERROR", "Failed to play audio: " + e.message)
         }
     }
 
@@ -533,8 +816,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun playAudio(base64Audio: String, sampleRate: Double, channels: Int, promise: Promise) {
+        playPcm("partner", base64Audio, sampleRate, channels, promise)
+    }
+
+    /** Play base64 float32 PCM from one remote stream (a partner). */
+    @ReactMethod
+    fun playPcm(streamId: String, base64Audio: String, sampleRate: Double, channels: Int, promise: Promise) {
         if (isDeafened) {
-            android.util.Log.d("DuetAudio", "playAudio: skipped (deafened)")
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", false)
                 putString("reason", "deafened")
@@ -543,60 +831,99 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
 
         try {
-            val receivedSampleRate = sampleRate.toInt()
-
-            // Check if we need to reconfigure AudioTrack for different sample rate
-            if (receivedSampleRate != playbackSampleRate && receivedSampleRate > 0) {
-                android.util.Log.d("DuetAudio", "Sample rate changed from ${'$'}playbackSampleRate to ${'$'}receivedSampleRate, reconfiguring AudioTrack")
-                setupAudioTrackWithSampleRate(receivedSampleRate)
-            }
-
-            val floatArray = base64ToFloatArray(base64Audio)
-
-            // If ducking is not active, this is the start of a new speech burst.
-            // Request ducking and buffer the first packets so Android has time to
-            // lower media volume before we write audio to the AudioTrack.
-            if (!hasDuckingFocus) {
-                requestDuckingFocus()
-                lastAudioPlayTime = System.currentTimeMillis()
-                isDuckingTransition = true
-                preDuckBuffer.add(floatArray)
-                android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
-
-                // Schedule flush after a short delay to let ducking take effect
-                duckingCheckHandler?.postDelayed({
-                    if (isDuckingTransition) {
-                        isDuckingTransition = false
-                        // Flush all buffered packets to AudioTrack
-                        for (buffered in preDuckBuffer) {
-                            audioTrack?.write(buffered, 0, buffered.size, AudioTrack.WRITE_NON_BLOCKING)
-                        }
-                        android.util.Log.d("DuetAudio", "playAudio: flushed ${'$'}{preDuckBuffer.size} buffered packets after duck transition")
-                        preDuckBuffer.clear()
-                    }
-                }, preDuckBufferMs)
-            } else if (isDuckingTransition) {
-                // Still in the ducking transition window — keep buffering
-                lastAudioPlayTime = System.currentTimeMillis()
-                preDuckBuffer.add(floatArray)
-                android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
-            } else {
-                // Normal path: ducking already active, write directly
-                lastAudioPlayTime = System.currentTimeMillis()
-                val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
-                android.util.Log.d("DuetAudio", "playAudio: received ${'$'}{base64Audio.length} bytes, decoded ${'$'}{floatArray.size} samples at ${'$'}receivedSampleRate Hz, wrote ${'$'}written to AudioTrack")
-            }
-
-            // Schedule unduck after silence
-            scheduleDuckingTimeout()
+            var samples = base64ToFloatArray(base64Audio)
+            val rate = sampleRate.toInt()
+            // The mixer runs at 48 kHz; every client sends that, but convert just in case
+            if (rate > 0 && rate != playbackSampleRate) samples = resampleLinear(samples, rate, playbackSampleRate)
+            enqueuePlayback(streamId, samples)
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", true)
             })
         } catch (e: Exception) {
-            android.util.Log.e("DuetAudio", "playAudio failed: ${'$'}{e.message}")
-            promise.reject("PLAYBACK_ERROR", "Failed to play audio: ${'$'}{e.message}")
+            android.util.Log.e("DuetAudio", "playPcm failed: " + e.message)
+            promise.reject("PLAYBACK_ERROR", "Failed to play audio: " + e.message)
         }
+    }
+
+    /** Stop and remove a stream's buffer and decoder (the partner left). */
+    @ReactMethod
+    fun releaseStream(streamId: String) {
+        synchronized(streams) { streams.remove(streamId) }
+        opusDecoders.remove(streamId)?.let {
+            try { it.stop() } catch (_: Exception) {}
+            try { it.release() } catch (_: Exception) {}
+        }
+    }
+
+    /** Queue decoded partner audio on its stream, ducking other apps while partners talk. */
+    private fun enqueuePlayback(streamId: String, samples: FloatArray) {
+        if (!hasDuckingFocus) requestDuckingFocus()
+        lastAudioPlayTime = System.currentTimeMillis()
+        val buffer = synchronized(streams) {
+            streams.getOrPut(streamId) { PcmJitterBuffer(19200, 1920, 14400, 4800) }
+        }
+        buffer.write(samples, samples.size)
+        scheduleDuckingTimeout()
+    }
+
+    private fun startMixer() {
+        if (isMixing) return
+        isMixing = true
+        mixThread = thread(name = "DuetMixer") {
+            val frame = 480 // 10 ms at 48 kHz
+            val mix = FloatArray(frame)
+            while (isMixing) {
+                java.util.Arrays.fill(mix, 0f)
+                val current = synchronized(streams) { streams.values.toList() }
+                var active = 0
+                for (stream in current) {
+                    if (stream.mixInto(mix, frame) > 0) active++
+                }
+                if (active == 0) {
+                    // Nobody talking: let the track drain rather than feed it silence
+                    try { Thread.sleep(5) } catch (_: InterruptedException) {}
+                    continue
+                }
+                if (active > 1) {
+                    for (i in 0 until frame) mix[i] = mix[i].coerceIn(-1f, 1f)
+                }
+                // Blocking write paces this loop to real time
+                val written = synchronized(trackLock) {
+                    try {
+                        audioTrack?.write(mix, 0, frame, AudioTrack.WRITE_BLOCKING) ?: -1
+                    } catch (e: Exception) {
+                        -1
+                    }
+                }
+                if (written < 0) {
+                    try { Thread.sleep(10) } catch (_: InterruptedException) {}
+                }
+            }
+        }
+    }
+
+    private fun stopMixer() {
+        isMixing = false
+        try { mixThread?.join(200) } catch (_: InterruptedException) {}
+        mixThread = null
+        synchronized(streams) { streams.clear() }
+    }
+
+    private fun resampleLinear(input: FloatArray, fromRate: Int, toRate: Int): FloatArray {
+        if (input.isEmpty() || fromRate == toRate) return input
+        val outLength = (input.size.toLong() * toRate / fromRate).toInt()
+        val out = FloatArray(outLength)
+        val step = fromRate.toDouble() / toRate
+        for (i in 0 until outLength) {
+            val pos = i * step
+            val index = pos.toInt()
+            val frac = (pos - index).toFloat()
+            val a = input[minOf(index, input.size - 1)]
+            val b = input[minOf(index + 1, input.size - 1)]
+            out[i] = a + (b - a) * frac
+        }
+        return out
     }
 
     @ReactMethod
@@ -615,6 +942,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     fun setDeafened(deafened: Boolean) {
         android.util.Log.d("DuetAudio", "setDeafened called: ${'$'}deafened")
         isDeafened = deafened
+        if (deafened) synchronized(streams) { streams.values.forEach { it.clear() } }
     }
 
     @ReactMethod
@@ -771,6 +1099,73 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun removeListeners(count: Int) {}
+}
+
+/**
+ * Jitter buffer for one remote audio stream: a ring of float samples.
+ * Playback starts once primeSamples are queued and restarts that wait after
+ * running dry. The backlog is capped: past maxSamples the oldest audio is
+ * dropped down to targetSamples, so overlapping talk or a network burst
+ * can't build up a growing delay.
+ */
+internal class PcmJitterBuffer(
+    private val capacity: Int,
+    private val primeSamples: Int,
+    private val maxSamples: Int,
+    private val targetSamples: Int
+) {
+    private val ring = FloatArray(capacity)
+    private var readPos = 0
+    private var size = 0
+    private var primed = false
+    var dropped = 0L
+        private set
+
+    @Synchronized
+    fun write(samples: FloatArray, count: Int) {
+        for (i in 0 until count) {
+            if (size == capacity) {
+                readPos = (readPos + 1) % capacity
+                size--
+                dropped++
+            }
+            ring[(readPos + size) % capacity] = samples[i]
+            size++
+        }
+        if (size > maxSamples) {
+            val skip = size - targetSamples
+            readPos = (readPos + skip) % capacity
+            size -= skip
+            dropped += skip
+        }
+    }
+
+    /** Add up to n queued samples into out; returns how many were added. */
+    @Synchronized
+    fun mixInto(out: FloatArray, n: Int): Int {
+        if (!primed) {
+            if (size < primeSamples) return 0
+            primed = true
+        }
+        val count = minOf(n, size)
+        for (i in 0 until count) {
+            out[i] += ring[readPos]
+            readPos = (readPos + 1) % capacity
+        }
+        size -= count
+        if (size == 0) primed = false
+        return count
+    }
+
+    @Synchronized
+    fun available(): Int = size
+
+    @Synchronized
+    fun clear() {
+        readPos = 0
+        size = 0
+        primed = false
+    }
 }
 `;
 
@@ -955,8 +1350,19 @@ class DuetAudioManager: RCTEventEmitter {
 
   // Pre-duck buffer: hold first packets while ducking takes effect (mirrors Android 40ms buffer)
   private let preDuckBufferSec: TimeInterval = 0.04 // 40ms
-  private var preDuckBuffer: [(Data, AVAudioFormat)] = []
+  private var preDuckBuffer: [(AVAudioPlayerNode, Data, AVAudioFormat)] = []
   private var isDuckingTransition = false
+
+  // One player per remote stream (partner), all feeding the mixer, so people
+  // talking at the same time are heard together instead of queued one after
+  // another. Each stream's backlog is capped so overlapping talk or a network
+  // burst can't build up a growing delay: past the cap, new audio is dropped
+  // until the stream catches up. playerNode stays for the keep-alive silence.
+  private var streamPlayers: [String: AVAudioPlayerNode] = [:]
+  private let playersLock = NSLock()
+  private var queuedFrames: [ObjectIdentifier: Int] = [:]
+  private let queueLock = NSLock()
+  private let maxQueuedFrames = 14400 // 300 ms at 48 kHz
 
   // Audio route tracking
   private var isSpeakerRoute = false
@@ -967,6 +1373,19 @@ class DuetAudioManager: RCTEventEmitter {
   // Keep-alive: schedule silent buffers so iOS doesn't suspend the app during silence
   private var keepAliveTimer: DispatchSourceTimer?
   private let keepAliveIntervalSec: TimeInterval = 5.0
+
+  // Opus (Apple's built-in codec). PCM capture stays on by default so older
+  // partners keep working; JS turns Opus on once a partner announces it can
+  // decode it, and PCM off when nobody needs it. The encoder and its sample
+  // FIFO are only touched on the tap thread; decoders (one per remote
+  // stream) only on this module's method queue.
+  private var capturePcm = true
+  private var captureOpus = false
+  private var opusEncoder: AVAudioConverter?
+  private var opusFifo: [Float] = []
+  private var opusDecoders: [String: AVAudioConverter] = [:]
+  private let opusFrameSize: AVAudioFrameCount = 960 // 20 ms at 48 kHz
+  private let opusBitRate = 32000
 
   // MARK: - RCTEventEmitter
 
@@ -1128,9 +1547,9 @@ class DuetAudioManager: RCTEventEmitter {
       self.isDuckingTransition = false
 
       // Flush all buffered packets
-      for (data, format) in self.preDuckBuffer {
+      for (player, data, format) in self.preDuckBuffer {
         if let buffer = self.dataToBuffer(data, format: format) {
-          self.playerNode?.scheduleBuffer(buffer, completionHandler: nil)
+          self.schedule(buffer, on: player)
         }
       }
       print("[DuetAudio] Flushed \\(self.preDuckBuffer.count) pre-duck buffered packets")
@@ -1301,12 +1720,21 @@ class DuetAudioManager: RCTEventEmitter {
     stopKeepAliveTimer()
     audioEngine?.inputNode.removeTap(onBus: 0)
     playerNode?.stop()
+    playersLock.lock()
+    let players = Array(streamPlayers.values)
+    streamPlayers.removeAll()
+    playersLock.unlock()
+    players.forEach { $0.stop() }
     audioEngine?.stop()
+    queueLock.lock()
+    queuedFrames.removeAll()
+    queueLock.unlock()
 
     audioEngine = nil
     playerNode = nil
     mixerNode = nil
     audioConverter = nil
+    opusDecoders.removeAll()
 
     // Clean up ducking state
     duckingTimeoutTimer?.cancel()
@@ -1390,6 +1818,12 @@ class DuetAudioManager: RCTEventEmitter {
       }
     }
 
+    // Opus was switched off: drop the encoder (it's recreated when needed)
+    if !captureOpus && opusEncoder != nil {
+      opusEncoder = nil
+      opusFifo.removeAll()
+    }
+
     // Only send audio data when speaking (saves bandwidth)
     if isSpeaking {
       // Resample to standard 48kHz if needed for cross-platform consistency
@@ -1406,14 +1840,218 @@ class DuetAudioManager: RCTEventEmitter {
         outputBuffer = buffer
       }
 
-      if let data = bufferToBase64(outputBuffer) {
-        safeSendEvent(name: "onAudioData", body: [
-          "audio": data,
-          "sampleRate": outputSampleRate,  // Always send at standard rate
-          "channels": channels
-        ])
+      var body: [String: Any] = [
+        "sampleRate": outputSampleRate,  // Always send at standard rate
+        "channels": channels
+      ]
+      if capturePcm, let data = bufferToBase64(outputBuffer) {
+        body["audio"] = data
+      }
+      if captureOpus {
+        if opusEncoder == nil {
+          opusEncoder = makeOpusEncoder()
+          opusFifo.removeAll()
+        }
+        // May be empty while the encoder fills its first frame
+        body["opus"] = encodeOpus(outputBuffer)
+      }
+      if body["audio"] != nil || body["opus"] != nil {
+        safeSendEvent(name: "onAudioData", body: body)
+      }
+    } else if !opusFifo.isEmpty {
+      // Speech ended: don't carry a partial frame into the next burst
+      opusFifo.removeAll()
+    }
+  }
+
+  // MARK: - Opus
+
+  private func makeOpusFormat() -> AVAudioFormat? {
+    var desc = AudioStreamBasicDescription(
+      mSampleRate: outputSampleRate,
+      mFormatID: kAudioFormatOpus,
+      mFormatFlags: 0,
+      mBytesPerPacket: 0,
+      mFramesPerPacket: opusFrameSize,
+      mBytesPerFrame: 0,
+      mChannelsPerFrame: channels,
+      mBitsPerChannel: 0,
+      mReserved: 0
+    )
+    return AVAudioFormat(streamDescription: &desc)
+  }
+
+  private func makeOpusEncoder() -> AVAudioConverter? {
+    guard let opus = makeOpusFormat(),
+          let pcm = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels),
+          let encoder = AVAudioConverter(from: pcm, to: opus) else {
+      print("[DuetAudio] Opus encoder unavailable")
+      return nil
+    }
+    // Only pick a bit rate the encoder lists; an unsupported value raises
+    if let rates = encoder.availableEncodeBitRates?.map({ $0.intValue }), !rates.isEmpty {
+      encoder.bitRate = rates.filter { $0 >= opusBitRate }.min() ?? rates.max() ?? opusBitRate
+    }
+    return encoder
+  }
+
+  private func makeOpusDecoder() -> AVAudioConverter? {
+    guard let opus = makeOpusFormat(),
+          let pcm = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels) else {
+      return nil
+    }
+    return AVAudioConverter(from: opus, to: pcm)
+  }
+
+  /// Append 48 kHz samples to the FIFO and encode every complete 20 ms frame.
+  /// Returns base64 packets joined by commas ("" if no frame was complete).
+  private func encodeOpus(_ buffer: AVAudioPCMBuffer) -> String {
+    guard let encoder = opusEncoder, let samples = buffer.floatChannelData?[0] else { return "" }
+    opusFifo.append(contentsOf: UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)))
+
+    let frame = Int(opusFrameSize)
+    var packets: [String] = []
+    while opusFifo.count >= frame {
+      guard let pcm = AVAudioPCMBuffer(pcmFormat: encoder.inputFormat, frameCapacity: opusFrameSize),
+            let dest = pcm.floatChannelData?[0] else { break }
+      pcm.frameLength = opusFrameSize
+      opusFifo.withUnsafeBufferPointer { src in
+        if let base = src.baseAddress {
+          memcpy(dest, base, frame * MemoryLayout<Float>.size)
+        }
+      }
+      opusFifo.removeFirst(frame)
+      packets.append(contentsOf: encodeOpusFrame(pcm, with: encoder))
+    }
+    return packets.joined(separator: ",")
+  }
+
+  private func encodeOpusFrame(_ pcm: AVAudioPCMBuffer, with encoder: AVAudioConverter) -> [String] {
+    let maxPacketSize = encoder.maximumOutputPacketSize > 0 ? encoder.maximumOutputPacketSize : 1500
+    let output = AVAudioCompressedBuffer(format: encoder.outputFormat, packetCapacity: 4, maximumPacketSize: maxPacketSize)
+    var supplied = false
+    var error: NSError?
+    let status = encoder.convert(to: output, error: &error) { _, inputStatus in
+      if supplied {
+        inputStatus.pointee = .noDataNow
+        return nil
+      }
+      supplied = true
+      inputStatus.pointee = .haveData
+      return pcm
+    }
+    guard status != .error, let descriptions = output.packetDescriptions else {
+      if status == .error {
+        print("[DuetAudio] Opus encode error: \\(error?.localizedDescription ?? "unknown")")
+      }
+      return []
+    }
+    var packets: [String] = []
+    for i in 0..<Int(output.packetCount) {
+      let desc = descriptions[i]
+      guard desc.mDataByteSize > 0 else { continue }
+      let data = Data(bytes: output.data.advanced(by: Int(desc.mStartOffset)), count: Int(desc.mDataByteSize))
+      packets.append(data.base64EncodedString())
+    }
+    return packets
+  }
+
+  private func decodeOpusPacket(_ packet: Data, with decoder: AVAudioConverter) -> Data? {
+    let input = AVAudioCompressedBuffer(format: decoder.inputFormat, packetCapacity: 1, maximumPacketSize: packet.count)
+    packet.withUnsafeBytes { raw in
+      if let base = raw.baseAddress {
+        input.data.copyMemory(from: base, byteCount: packet.count)
       }
     }
+    input.byteLength = UInt32(packet.count)
+    input.packetCount = 1
+    input.packetDescriptions?.pointee = AudioStreamPacketDescription(
+      mStartOffset: 0,
+      mVariableFramesInPacket: 0,
+      mDataByteSize: UInt32(packet.count)
+    )
+
+    // One Opus packet holds at most 120 ms
+    guard let output = AVAudioPCMBuffer(pcmFormat: decoder.outputFormat, frameCapacity: 5760) else { return nil }
+    var supplied = false
+    var error: NSError?
+    let status = decoder.convert(to: output, error: &error) { _, inputStatus in
+      if supplied {
+        inputStatus.pointee = .noDataNow
+        return nil
+      }
+      supplied = true
+      inputStatus.pointee = .haveData
+      return input
+    }
+    if status == .error {
+      print("[DuetAudio] Opus decode error: \\(error?.localizedDescription ?? "unknown")")
+      return nil
+    }
+    guard output.frameLength > 0 else { return nil }
+    return bufferToData(output)
+  }
+
+  @objc
+  func getCodecSupport(_ resolve: @escaping RCTPromiseResolveBlock,
+                       reject: @escaping RCTPromiseRejectBlock) {
+    var encode = false
+    var decode = false
+    if let opus = makeOpusFormat(),
+       let pcm = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels) {
+      encode = AVAudioConverter(from: pcm, to: opus) != nil
+      decode = AVAudioConverter(from: opus, to: pcm) != nil
+    }
+    resolve(["opusEncode": encode, "opusDecode": decode])
+  }
+
+  @objc
+  func setCaptureFormats(_ pcm: Bool, opus: Bool) {
+    capturePcm = pcm
+    captureOpus = opus
+    print("[DuetAudio] Capture formats: pcm=\\(pcm) opus=\\(opus)")
+  }
+
+  /// Decode comma-separated base64 Opus packets from one remote stream (a
+  /// partner) and play them. Each stream keeps its own decoder state.
+  @objc
+  func playOpus(_ streamId: String,
+                packets: String,
+                resolve: @escaping RCTPromiseResolveBlock,
+                reject: @escaping RCTPromiseRejectBlock) {
+    guard !isDeafened else {
+      resolve(["played": false, "reason": "deafened"])
+      return
+    }
+    guard playerNode != nil else {
+      reject("PLAYBACK_ERROR", "Player not initialized", nil)
+      return
+    }
+
+    let decoder: AVAudioConverter
+    if let existing = opusDecoders[streamId] {
+      decoder = existing
+    } else if let created = makeOpusDecoder() {
+      opusDecoders[streamId] = created
+      decoder = created
+    } else {
+      reject("CODEC_ERROR", "Opus decoding unavailable", nil)
+      return
+    }
+
+    var pcm = Data()
+    for packet in packets.split(separator: ",") {
+      guard let bytes = Data(base64Encoded: String(packet)), !bytes.isEmpty else { continue }
+      if let decoded = decodeOpusPacket(bytes, with: decoder) {
+        pcm.append(decoded)
+      }
+    }
+    guard !pcm.isEmpty,
+          let format = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels) else {
+      resolve(["played": false, "reason": "empty"])
+      return
+    }
+    enqueuePartnerAudio(streamId, pcm, format: format, resolve: resolve)
   }
 
   private func resampleBuffer(_ inputBuffer: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
@@ -1470,9 +2108,31 @@ class DuetAudioManager: RCTEventEmitter {
       return
     }
 
-    guard let player = playerNode,
+    playPcm("partner", base64Audio: base64Audio, sampleRate: sampleRate, channels: channels, resolve: resolve, reject: reject)
+  }
+
+  /// Play base64 float32 PCM from one remote stream (a partner).
+  @objc
+  func playPcm(_ streamId: String,
+               base64Audio: String,
+               sampleRate: Double,
+               channels: Int,
+               resolve: @escaping RCTPromiseResolveBlock,
+               reject: @escaping RCTPromiseRejectBlock) {
+    guard !isDeafened else {
+      resolve(["played": false, "reason": "deafened"])
+      return
+    }
+
+    guard playerNode != nil,
           let data = Data(base64Encoded: base64Audio) else {
       reject("PLAYBACK_ERROR", "Invalid audio data or player not initialized", nil)
+      return
+    }
+
+    // Stream players run at 48 kHz mono; every client sends that
+    guard sampleRate == outputSampleRate, channels == Int(self.channels) else {
+      resolve(["played": false, "reason": "unsupported format"])
       return
     }
 
@@ -1481,6 +2141,81 @@ class DuetAudioManager: RCTEventEmitter {
       channels: AVAudioChannelCount(channels)
     )!
 
+    enqueuePartnerAudio(streamId, data, format: format, resolve: resolve)
+  }
+
+  /// Stop and remove a stream's player and decoder (the partner left).
+  @objc
+  func releaseStream(_ streamId: String) {
+    playersLock.lock()
+    let player = streamPlayers.removeValue(forKey: streamId)
+    playersLock.unlock()
+    opusDecoders.removeValue(forKey: streamId)
+    guard let player = player else { return }
+    player.stop()
+    audioEngine?.detach(player)
+    queueLock.lock()
+    queuedFrames.removeValue(forKey: ObjectIdentifier(player))
+    queueLock.unlock()
+  }
+
+  /// The player for a stream, created and connected to the mixer on first use.
+  private func player(for streamId: String) -> AVAudioPlayerNode? {
+    playersLock.lock()
+    defer { playersLock.unlock() }
+    if let existing = streamPlayers[streamId] { return existing }
+    guard let engine = audioEngine,
+          let mixer = mixerNode,
+          let format = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels) else {
+      return nil
+    }
+    let player = AVAudioPlayerNode()
+    engine.attach(player)
+    // Connecting to a mixer uses its next free input bus, so streams mix
+    engine.connect(player, to: mixer, format: format)
+    if engine.isRunning { player.play() }
+    streamPlayers[streamId] = player
+    print("[DuetAudio] Added player for stream \(streamId) (\(streamPlayers.count) total)")
+    return player
+  }
+
+  /// Schedule audio on a stream's player, unless that stream is already
+  /// maxQueuedFrames behind, in which case the chunk is dropped to catch up.
+  private func schedule(_ buffer: AVAudioPCMBuffer, on player: AVAudioPlayerNode) {
+    let key = ObjectIdentifier(player)
+    let frames = Int(buffer.frameLength)
+    queueLock.lock()
+    let queued = queuedFrames[key] ?? 0
+    if queued + frames > maxQueuedFrames {
+      queueLock.unlock()
+      return
+    }
+    queuedFrames[key] = queued + frames
+    queueLock.unlock()
+
+    // Restart a player stopped by an interruption (only while the engine runs:
+    // play() on a stopped engine raises)
+    if !player.isPlaying, audioEngine?.isRunning == true {
+      player.play()
+    }
+    player.scheduleBuffer(buffer) { [weak self] in
+      guard let self = self else { return }
+      self.queueLock.lock()
+      self.queuedFrames[key] = max(0, (self.queuedFrames[key] ?? 0) - frames)
+      self.queueLock.unlock()
+    }
+  }
+
+  /// Play decoded float32 partner audio, handling on-demand ducking.
+  private func enqueuePartnerAudio(_ streamId: String,
+                                   _ data: Data,
+                                   format: AVAudioFormat,
+                                   resolve: @escaping RCTPromiseResolveBlock) {
+    guard let player = player(for: streamId) else {
+      resolve(["played": false, "reason": "stopped"])
+      return
+    }
+
     lastPartnerAudioTime = CACurrentMediaTime()
 
     // On-demand ducking: request ducking when partner audio first arrives,
@@ -1488,7 +2223,7 @@ class DuetAudioManager: RCTEventEmitter {
     if !isDuckingActive && duckingEnabled {
       // Start of a new speech burst — request ducking and buffer
       requestDucking()
-      preDuckBuffer.append((data, format))
+      preDuckBuffer.append((player, data, format))
       scheduleDuckingTimeout()
       resolve(["played": true])
       return
@@ -1496,7 +2231,7 @@ class DuetAudioManager: RCTEventEmitter {
 
     if isDuckingTransition {
       // Still in the ducking transition window — keep buffering
-      preDuckBuffer.append((data, format))
+      preDuckBuffer.append((player, data, format))
       scheduleDuckingTimeout()
       resolve(["played": true])
       return
@@ -1504,12 +2239,7 @@ class DuetAudioManager: RCTEventEmitter {
 
     // Normal path: ducking already active or not enabled — write directly
     if let buffer = dataToBuffer(data, format: format) {
-      // Ensure player is still playing (can stop after audio session interruption)
-      if !player.isPlaying {
-        print("[DuetAudio] Player was stopped, restarting")
-        player.play()
-      }
-      player.scheduleBuffer(buffer, completionHandler: nil)
+      schedule(buffer, on: player)
     }
 
     // Schedule unduck after silence
@@ -1653,16 +2383,18 @@ class DuetAudioManager: RCTEventEmitter {
 
   // MARK: - Utility Functions
 
-  private func bufferToBase64(_ buffer: AVAudioPCMBuffer) -> String? {
+  private func bufferToData(_ buffer: AVAudioPCMBuffer) -> Data? {
     guard let channelData = buffer.floatChannelData else { return nil }
 
     let frameLength = Int(buffer.frameLength)
-    let data = Data(
+    return Data(
       bytes: channelData[0],
       count: frameLength * MemoryLayout<Float>.size
     )
+  }
 
-    return data.base64EncodedString()
+  private func bufferToBase64(_ buffer: AVAudioPCMBuffer) -> String? {
+    return bufferToData(buffer)?.base64EncodedString()
   }
 
   private func dataToBuffer(_ data: Data, format: AVAudioFormat) -> AVAudioPCMBuffer? {
@@ -1711,6 +2443,10 @@ class DuetAudioManager: RCTEventEmitter {
         try session.setActive(true)
         try audioEngine?.start()
         playerNode?.play()
+        playersLock.lock()
+        let players = Array(streamPlayers.values)
+        playersLock.unlock()
+        players.forEach { $0.play() }
         safeSendEvent(name: "onConnectionStateChange", body: ["state": "resumed"])
         print("[DuetAudio] Engine resumed after interruption")
       } catch {
@@ -1814,6 +2550,26 @@ RCT_EXTERN_METHOD(stopAudioEngine:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(playAudio:(NSString *)base64Audio
                   sampleRate:(double)sampleRate
                   channels:(int)channels
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(getCodecSupport:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(setCaptureFormats:(BOOL)pcm
+                  opus:(BOOL)opus)
+
+RCT_EXTERN_METHOD(playPcm:(NSString *)streamId
+                  base64Audio:(NSString *)base64Audio
+                  sampleRate:(double)sampleRate
+                  channels:(int)channels
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(releaseStream:(NSString *)streamId)
+
+RCT_EXTERN_METHOD(playOpus:(NSString *)streamId
+                  packets:(NSString *)packets
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 

@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { Platform, PermissionsAndroid, Linking } from 'react-native';
 import database from '@react-native-firebase/database';
 import auth from '@react-native-firebase/auth';
-import { DuetAudio } from '@/native/DuetAudio';
-import { WebRTCService, ConnectionState } from '@/services/WebRTCService';
+import { DuetAudio, CodecSupport } from '@/native/DuetAudio';
+import { WebRTCService, ConnectionState, OpusPacket } from '@/services/WebRTCService';
 import { SignalingService } from '@/services/SignalingService';
 import { PartyWebRTCService } from '@/services/PartyWebRTCService';
 import { PartySignalingService } from '@/services/PartySignalingService';
@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigationRef } from '@/navigation/navigationRef';
 import { callForegroundService } from '@/services/CallForegroundService';
 import { lifecycle } from '@/services/LifecycleLog';
+import { AudioCodec, CaptureFormatController, DecodeHealth } from '@/lib/audioProtocol';
 
 export interface PendingAlert {
   title: string;
@@ -130,6 +131,50 @@ function clearSpeakingTimers(): void {
   partySpeakingTimers.clear();
 }
 
+// ─── Audio codecs ────────────────────────────────────────────────────
+// Opus is used with partners that announce it (0.2.3+); PCM otherwise. See
+// src/lib/audioProtocol.ts.
+
+let codecSupport: CodecSupport = { opusEncode: false, opusDecode: false };
+let getStore: (() => DuetState) | null = null;
+
+const captureFormats = new CaptureFormatController((pcm, opus) => {
+  console.log(`[Audio] Capture formats: pcm=${pcm} opus=${opus}`);
+  DuetAudio.setCaptureFormats(pcm, opus);
+});
+
+// If Opus playback keeps failing on this device, stop announcing it so
+// partners switch back to PCM
+const decodeHealth = new DecodeHealth(() => {
+  crashlyticsService.log('[Audio] Opus playback failing; falling back to PCM');
+  const state = getStore?.();
+  state?.webrtc?.reannounceCodecs();
+  state?.partyWebrtc?.reannounceCodecs();
+});
+
+const localDecodes = (): readonly AudioCodec[] =>
+  codecSupport.opusDecode && !decodeHealth.opusDisabled ? ['opus'] : [];
+
+/** Recompute capture formats from what the connected partners decode. */
+function refreshCaptureFormats(): void {
+  const state = getStore?.();
+  const peers: boolean[] = [];
+  if (state?.webrtc && state.webrtc.getDataChannelState() === 'open') peers.push(state.webrtc.peerDecodesOpus);
+  if (state?.partyWebrtc) peers.push(...state.partyWebrtc.peerCodecs());
+  captureFormats.setPeers(peers);
+}
+
+/** Play Opus from one partner, tracking whether decoding works on this device. */
+async function playOpus(streamId: string, packet: OpusPacket): Promise<void> {
+  try {
+    const result = await DuetAudio.playOpus(streamId, packet.packets);
+    if (result?.played || result?.reason === 'deafened') decodeHealth.success();
+    else decodeHealth.failure();
+  } catch (e) {
+    decodeHealth.failure();
+  }
+}
+
 /**
  * Build the party-mode signaling + WebRTC service pair with identical wiring
  * for both the host (createPartyRoom) and joiner (joinPartyRoom) paths.
@@ -171,6 +216,7 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
     },
     onParticipantLeft: (uid) => {
       get().partyWebrtc?.removePeer(uid);
+      DuetAudio.releaseStream(uid);
       set((state) => ({ partyParticipants: state.partyParticipants.filter((p) => p.uid !== uid) }));
     },
     onRoomDeleted: () => {
@@ -186,9 +232,15 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
       }));
     },
     onAudioData: async (uid, packet) => {
-      await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
+      await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels, uid);
       markPartyParticipantSpeaking(set, uid);
     },
+    onOpusData: async (uid, packet) => {
+      await playOpus(uid, packet);
+      markPartyParticipantSpeaking(set, uid);
+    },
+    onCodecChange: refreshCaptureFormats,
+    localDecodes,
     onIceRestartOffer: async (uid, offer) => {
       await partySignaling.sendOffer(uid, offer);
     },
@@ -284,6 +336,11 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       const audioResult = await DuetAudio.setupAudioSession();
       crashlyticsService.logAudioSetup(Platform.OS, audioResult.sampleRate);
 
+      getStore = get;
+      codecSupport = await DuetAudio.getCodecSupport();
+      captureFormats.setCanEncode(codecSupport.opusEncode);
+      crashlyticsService.log(`[Audio] Opus encode=${codecSupport.opusEncode} decode=${codecSupport.opusDecode}`);
+
       // Set up audio event listeners
       DuetAudio.onVoiceActivity((event) => {
         set({ isSpeaking: event.speaking });
@@ -302,7 +359,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           audioPacketCount = 0;
           lastAudioLogTime = now;
         }
-        webrtc?.sendAudioData(data.audio, data.sampleRate, data.channels);
+        captureFormats.onCaptured(data);
+        webrtc?.sendAudio(data);
+        get().partyWebrtc?.sendAudio(data);
       });
 
       DuetAudio.onConnectionStateChange((event) => {
@@ -424,6 +483,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
         markPartnerSpeaking(set);
       },
+      onOpusData: async (packet) => {
+        await playOpus('partner', packet);
+        markPartnerSpeaking(set);
+      },
+      onCodecChange: refreshCaptureFormats,
+      localDecodes,
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
@@ -589,6 +654,12 @@ export const useDuetStore = create<DuetState>((set, get) => ({
         await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
         markPartnerSpeaking(set);
       },
+      onOpusData: async (packet) => {
+        await playOpus('partner', packet);
+        markPartnerSpeaking(set);
+      },
+      onCodecChange: refreshCaptureFormats,
+      localDecodes,
       onReaction: (emoji) => {
         set({ incomingReaction: { emoji, id: Date.now() } });
       },
@@ -755,6 +826,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
     await signaling?.leave();
     partyWebrtc?.close();
     await partySignaling?.leave();
+    captureFormats.setPeers([]);
 
     // Stop the Android foreground service notification (no-op on iOS).
     // Idempotent: safe to call whether the room was a duet or a party.

@@ -1,6 +1,14 @@
 import { getIceServers, ensureTurnCredentials } from '@/config/turn';
-import type { AudioPacket } from './WebRTCService';
+import type { AudioPacket, OpusPacket } from './WebRTCService';
 import { lifecycle } from './LifecycleLog';
+import {
+  AudioCodec,
+  CapturedAudio,
+  CodecNegotiator,
+  chooseAudioMessage,
+  formatPcmMessage,
+  parseDataChannelMessage,
+} from '@/lib/audioProtocol';
 
 export type PartyConnectionState =
   | 'disconnected'
@@ -12,6 +20,11 @@ export type PartyConnectionState =
 export interface PartyWebRTCCallbacks {
   onConnectionStateChange: (uid: string, state: PartyConnectionState) => void;
   onAudioData: (uid: string, data: AudioPacket) => void;
+  onOpusData?: (uid: string, data: OpusPacket) => void;
+  /** What some peer can decode changed */
+  onCodecChange?: () => void;
+  /** Codecs this browser can decode right now (default: none) */
+  localDecodes?: () => readonly AudioCodec[];
   onReaction?: (uid: string, emoji: string) => void;
   onDeepLink?: (uid: string, url: string) => void;
   onIceRestartOffer: (uid: string, offer: RTCSessionDescriptionInit) => void;
@@ -33,9 +46,31 @@ class PeerContext {
   public isOfferer = false;
   public iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
   public iceRestartCount = 0;
+  public negotiator: CodecNegotiator;
 
-  constructor(pc: RTCPeerConnection) {
+  constructor(pc: RTCPeerConnection, callbacks: PartyWebRTCCallbacks) {
     this.pc = pc;
+    this.negotiator = new CodecNegotiator({
+      send: (msg) => this.send(msg),
+      localDecodes: () => callbacks.localDecodes?.() ?? [],
+      onChange: () => callbacks.onCodecChange?.(),
+    });
+  }
+
+  send(msg: string): void {
+    if (this.dataChannel?.readyState === 'open') {
+      try {
+        this.dataChannel.send(msg);
+      } catch (e) {
+        console.warn('[PartyWebRTC] Data channel send failed:', e);
+      }
+    }
+  }
+
+  /** (Re)start the codec exchange whenever the peer behind the channel may have changed. */
+  restartNegotiation(): void {
+    if (this.dataChannel?.readyState === 'open') this.negotiator.start();
+    else this.negotiator.reset();
   }
 }
 
@@ -61,7 +96,7 @@ export class PartyWebRTCService {
 
   private createPeerConnection(uid: string): PeerContext {
     const pc = new RTCPeerConnection(getRtcConfig());
-    const context = new PeerContext(pc);
+    const context = new PeerContext(pc, this.callbacks);
     this.peers.set(uid, context);
 
     pc.onicecandidate = (event) => {
@@ -76,6 +111,7 @@ export class PartyWebRTCService {
       const state = pc.connectionState;
       switch (state) {
         case 'connected':
+          if (context.state !== 'connected') context.restartNegotiation();
           context.state = 'connected';
           this.cancelIceRestart(context);
           context.iceRestartCount = 0;
@@ -135,6 +171,7 @@ export class PartyWebRTCService {
     let context = this.peers.get(fromUid);
     if (!context) context = this.createPeerConnection(fromUid);
 
+    context.restartNegotiation();
     await context.pc.setRemoteDescription(new RTCSessionDescription(offer));
     context.remoteDescriptionSet = true;
 
@@ -197,17 +234,35 @@ export class PartyWebRTCService {
     }
   }
 
-  sendAudioData(
-    base64Audio: string,
-    sampleRate: number = 48000,
-    channels: number = 1
-  ): void {
-    const payload = `A|${sampleRate}|${channels}|${base64Audio}`;
+  /**
+   * Send captured audio to every peer, each in the format it decodes: Opus if
+   * it announced Opus, otherwise PCM.
+   */
+  sendAudio(captured: CapturedAudio): void {
     this.peers.forEach((context) => {
-      if (context.dataChannel?.readyState === 'open') {
-        context.dataChannel.send(payload);
-      }
+      const msg = chooseAudioMessage(captured, context.negotiator.peerDecodesOpus);
+      if (msg) context.send(msg);
     });
+  }
+
+  /** Send PCM audio to every peer: "A|sampleRate|channels|base64Audio". */
+  sendAudioData(base64Audio: string, sampleRate: number = 48000, channels: number = 1): void {
+    const payload = formatPcmMessage(base64Audio, sampleRate, channels);
+    this.peers.forEach((context) => context.send(payload));
+  }
+
+  /** Whether each peer with an open channel decodes Opus. */
+  peerCodecs(): boolean[] {
+    const result: boolean[] = [];
+    this.peers.forEach((context) => {
+      if (context.dataChannel?.readyState === 'open') result.push(context.negotiator.peerDecodesOpus);
+    });
+    return result;
+  }
+
+  /** Re-tell every peer what this browser decodes (after it changed). */
+  reannounceCodecs(): void {
+    this.peers.forEach((context) => context.negotiator.reannounce());
   }
 
   sendReaction(emoji: string): void {
@@ -223,6 +278,7 @@ export class PartyWebRTCService {
     const context = this.peers.get(uid);
     if (context) {
       this.cancelIceRestart(context);
+      context.negotiator.stop();
       context.dataChannel?.close();
       context.pc.close();
       this.peers.delete(uid);
@@ -311,44 +367,37 @@ export class PartyWebRTCService {
     channel: RTCDataChannel
   ) {
     context.dataChannel = channel;
+    context.negotiator.reset();
+
+    channel.onopen = () => context.negotiator.start();
+    channel.onclose = () => {
+      // Only if this is still the peer's channel (a renegotiation may have replaced it)
+      if (context.dataChannel === channel) context.negotiator.reset();
+    };
 
     channel.onmessage = (event) => {
-      const msg: string = event.data;
-      if (msg.startsWith('A|')) {
-        const firstPipe = 2;
-        const secondPipe = msg.indexOf('|', firstPipe);
-        const thirdPipe = msg.indexOf('|', secondPipe + 1);
-        this.callbacks.onAudioData(uid, {
-          audio: msg.substring(thirdPipe + 1),
-          sampleRate: parseInt(msg.substring(firstPipe, secondPipe), 10),
-          channels: parseInt(msg.substring(secondPipe + 1, thirdPipe), 10),
-        });
-        return;
-      }
-
-      if (msg.startsWith('C|')) {
-        const parts = msg.split('|');
-        if (parts.length >= 3) {
-          this.callbacks.onDeepLink?.(uid, parts[2]);
-        }
-        return;
-      }
-
-      try {
-        const data = JSON.parse(msg);
-        if (data.type === 'reaction') {
-          this.callbacks.onReaction?.(uid, data.emoji);
-        } else {
-          this.callbacks.onAudioData(uid, data as AudioPacket);
-        }
-      } catch {
-        this.callbacks.onAudioData(uid, {
-          audio: msg,
-          sampleRate: 48000,
-          channels: 1,
-        });
+      const msg = parseDataChannelMessage(event.data);
+      switch (msg.kind) {
+        case 'pcm':
+          this.callbacks.onAudioData(uid, { audio: msg.audio, sampleRate: msg.sampleRate, channels: msg.channels });
+          break;
+        case 'opus':
+          this.callbacks.onOpusData?.(uid, { packets: msg.packets, sampleRate: msg.sampleRate, channels: msg.channels });
+          break;
+        case 'caps':
+          context.negotiator.handleCaps(msg.decodes, msg.ack);
+          break;
+        case 'link':
+          this.callbacks.onDeepLink?.(uid, msg.url);
+          break;
+        case 'reaction':
+          this.callbacks.onReaction?.(uid, msg.emoji);
+          break;
       }
     };
+
+    // A channel received from the peer may already be open
+    if (channel.readyState === 'open') context.negotiator.start();
   }
 
   close(): void {
@@ -358,6 +407,7 @@ export class PartyWebRTCService {
     }
     this.peers.forEach((context) => {
       this.cancelIceRestart(context);
+      context.negotiator.stop();
       context.dataChannel?.close();
       context.pc.close();
     });
