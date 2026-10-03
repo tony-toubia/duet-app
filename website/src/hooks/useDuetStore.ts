@@ -310,6 +310,7 @@ export const useDuetStore = create<DuetState>((set, get) => ({
       onParticipantLeft: (uid) => {
         console.log('[PartyStore] Participant left:', uid);
         get().partyWebrtc?.removePeer(uid);
+        get().audioEngine?.releaseStream(uid);
       },
       onRoomDeleted: () => {
         console.log('[PartyStore] Room was deleted');
@@ -328,9 +329,9 @@ export const useDuetStore = create<DuetState>((set, get) => ({
           set({ connectionState: 'connected' });
         }
       },
-      onAudioData: (_uid, packet) => {
+      onAudioData: (uid, packet) => {
         const { audioEngine } = get();
-        audioEngine?.playAudio(packet.audio, packet.sampleRate, packet.channels);
+        audioEngine?.playAudio(packet.audio, packet.sampleRate, packet.channels, uid);
         set({ isPartnerSpeaking: true });
         setTimeout(() => set({ isPartnerSpeaking: false }), 500);
       },

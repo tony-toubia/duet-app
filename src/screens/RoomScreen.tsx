@@ -25,6 +25,7 @@ import { MediaPlayer } from '@/components/MediaPlayer';
 import { VoiceSensitivity } from '@/components/VoiceSensitivity';
 import { NavigationWidget } from '@/components/NavigationWidget';
 import { RoomNativeAd } from '@/components/RoomNativeAd';
+import { DuetAudio } from '@/native/DuetAudio';
 import { MatchBanner } from '@/components/MatchBanner';
 import { GuestRoomTimer } from '@/components/GuestRoomTimer';
 import { ReactionBar } from '@/components/ReactionBar';
@@ -229,6 +230,7 @@ export const RoomScreen = ({ navigation }: RoomScreenProps) => {
     if (roomType === 'party') {
       // Stop connecting with them; the rest of the group carries on
       useDuetStore.getState().partyWebrtc?.removePeer(uid);
+      DuetAudio.releaseStream(uid);
       useDuetStore.setState((state) => ({
         partyParticipants: state.partyParticipants.filter((p) => p.uid !== uid),
       }));

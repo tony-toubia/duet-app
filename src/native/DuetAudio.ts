@@ -86,9 +86,20 @@ export const DuetAudio = {
   async playAudio(
     base64Audio: string,
     sampleRate: number = 48000,
-    channels: number = 1
+    channels: number = 1,
+    streamId: string = 'partner'
   ): Promise<PlayAudioResult> {
+    // Each stream (partner) plays through its own queue and the streams are
+    // mixed, so people talking at once are heard together
+    if (typeof DuetAudioManager.playPcm === 'function') {
+      return await DuetAudioManager.playPcm(streamId, base64Audio, sampleRate, channels);
+    }
     return await DuetAudioManager.playAudio(base64Audio, sampleRate, channels);
+  },
+
+  /** Release a stream's playback queue and decoder (the partner left). */
+  releaseStream(streamId: string): void {
+    DuetAudioManager.releaseStream?.(streamId);
   },
 
   /**

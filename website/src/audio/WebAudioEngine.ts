@@ -176,7 +176,7 @@ export class WebAudioEngine {
           try {
             const samples = new Float32Array(audio.numberOfFrames);
             audio.copyTo(samples, { planeIndex: 0, format: 'f32-planar' });
-            this.playSamples(samples, audio.sampleRate);
+            this.playSamples(samples, audio.sampleRate, streamId);
           } finally {
             audio.close();
           }
@@ -342,12 +342,27 @@ export class WebAudioEngine {
    * Play received audio from partner.
    * Decodes base64 Float32 data and feeds to the playback worklet.
    */
-  playAudio(base64: string, sampleRate: number = 48000, channels: number = 1): void {
+  playAudio(base64: string, sampleRate: number = 48000, channels: number = 1, streamId: string = 'partner'): void {
     if (this.isDeafened || !this.playbackNode) return;
-    this.playSamples(base64ToFloat32(base64), sampleRate);
+    this.playSamples(base64ToFloat32(base64), sampleRate, streamId);
   }
 
-  private playSamples(samples: Float32Array, sampleRate: number): void {
+  /** Forget a stream's playback queue and decoder (the partner left). */
+  releaseStream(streamId: string): void {
+    this.playbackNode?.port.postMessage({ type: 'release', stream: streamId });
+    const stream = this.decoders.get(streamId);
+    if (stream) {
+      try {
+        if (stream.decoder.state !== 'closed') stream.decoder.close();
+      } catch {
+        // already closed
+      }
+      this.decoders.delete(streamId);
+    }
+  }
+
+  /** Queue audio on a stream; the playback worklet mixes all streams. */
+  private playSamples(samples: Float32Array, sampleRate: number, streamId: string): void {
     if (this.isDeafened || !this.playbackNode) return;
 
     // Resample if incoming sample rate differs from our playback rate
@@ -356,7 +371,7 @@ export class WebAudioEngine {
     }
 
     this.playbackNode.port.postMessage(
-      { type: 'audio', samples },
+      { type: 'audio', stream: streamId, samples },
       [samples.buffer]
     );
   }

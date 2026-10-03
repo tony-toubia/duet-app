@@ -65,10 +65,15 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     private var duckingCheckHandler: android.os.Handler? = null
     private var duckingCheckRunnable: Runnable? = null
 
-    // Pre-duck buffer: hold first packets while ducking takes effect
-    private val preDuckBufferMs = 40L // Buffer first ~40ms of audio for ducking to kick in
-    private var preDuckBuffer: MutableList<FloatArray> = mutableListOf()
-    private var isDuckingTransition = false
+    // Partner audio: one jitter buffer per remote stream (partner), summed by
+    // the mixer thread into the one AudioTrack, so people talking at the same
+    // time are heard together instead of queued one after another. Each
+    // buffer waits for 40 ms before playing (absorbs network jitter and gives
+    // ducking time to kick in) and caps its backlog at 300 ms.
+    private val streams = HashMap<String, PcmJitterBuffer>() // guarded by itself
+    private val trackLock = Any()
+    @Volatile private var isMixing = false
+    private var mixThread: Thread? = null
 
     // Audio route tracking for dynamic AEC mode
     private var isSpeakerRoute = false
@@ -220,8 +225,6 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
             audioManager?.abandonAudioFocus(null)
         }
         hasDuckingFocus = false
-        isDuckingTransition = false
-        preDuckBuffer.clear()
     }
 
     // Schedule a check to unduck after silence
@@ -322,6 +325,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
             setupAudioRecord()
             setupAudioTrack()
+            startMixer()
             startRecording()
 
             promise.resolve(Arguments.createMap().apply {
@@ -368,7 +372,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         setupAudioTrackWithSampleRate(playbackSampleRate)
     }
 
-    private fun setupAudioTrackWithSampleRate(sampleRate: Int) {
+    private fun setupAudioTrackWithSampleRate(sampleRate: Int) = synchronized(trackLock) {
         // Stop and release existing track if any
         audioTrack?.let {
             if (it.state == AudioTrack.STATE_INITIALIZED) {
@@ -435,9 +439,12 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         audioRecord?.release()
         audioRecord = null
 
-        try { audioTrack?.stop() } catch (_: Exception) {}
-        audioTrack?.release()
-        audioTrack = null
+        stopMixer()
+        synchronized(trackLock) {
+            try { audioTrack?.stop() } catch (_: Exception) {}
+            audioTrack?.release()
+            audioTrack = null
+        }
 
         releaseOpusDecoders()
 
@@ -783,8 +790,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
                 pos += chunk.size
             }
 
-            if (playbackSampleRate != opusSampleRate) setupAudioTrackWithSampleRate(opusSampleRate)
-            enqueuePlayback(pcm)
+            enqueuePlayback(streamId, pcm)
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", true)
@@ -810,8 +816,13 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun playAudio(base64Audio: String, sampleRate: Double, channels: Int, promise: Promise) {
+        playPcm("partner", base64Audio, sampleRate, channels, promise)
+    }
+
+    /** Play base64 float32 PCM from one remote stream (a partner). */
+    @ReactMethod
+    fun playPcm(streamId: String, base64Audio: String, sampleRate: Double, channels: Int, promise: Promise) {
         if (isDeafened) {
-            android.util.Log.d("DuetAudio", "playAudio: skipped (deafened)")
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", false)
                 putString("reason", "deafened")
@@ -820,64 +831,99 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
         }
 
         try {
-            val receivedSampleRate = sampleRate.toInt()
-
-            // Check if we need to reconfigure AudioTrack for different sample rate
-            if (receivedSampleRate != playbackSampleRate && receivedSampleRate > 0) {
-                android.util.Log.d("DuetAudio", "Sample rate changed from ${'$'}playbackSampleRate to ${'$'}receivedSampleRate, reconfiguring AudioTrack")
-                setupAudioTrackWithSampleRate(receivedSampleRate)
-            }
-
-            val floatArray = base64ToFloatArray(base64Audio)
-            enqueuePlayback(floatArray)
+            var samples = base64ToFloatArray(base64Audio)
+            val rate = sampleRate.toInt()
+            // The mixer runs at 48 kHz; every client sends that, but convert just in case
+            if (rate > 0 && rate != playbackSampleRate) samples = resampleLinear(samples, rate, playbackSampleRate)
+            enqueuePlayback(streamId, samples)
 
             promise.resolve(Arguments.createMap().apply {
                 putBoolean("played", true)
             })
         } catch (e: Exception) {
-            android.util.Log.e("DuetAudio", "playAudio failed: ${'$'}{e.message}")
-            promise.reject("PLAYBACK_ERROR", "Failed to play audio: ${'$'}{e.message}")
+            android.util.Log.e("DuetAudio", "playPcm failed: " + e.message)
+            promise.reject("PLAYBACK_ERROR", "Failed to play audio: " + e.message)
         }
     }
 
-    /** Write decoded float partner audio to the AudioTrack, handling on-demand ducking. */
-    private fun enqueuePlayback(floatArray: FloatArray) {
-        // If ducking is not active, this is the start of a new speech burst.
-        // Request ducking and buffer the first packets so Android has time to
-        // lower media volume before we write audio to the AudioTrack.
-        if (!hasDuckingFocus) {
-            requestDuckingFocus()
-            lastAudioPlayTime = System.currentTimeMillis()
-            isDuckingTransition = true
-            preDuckBuffer.add(floatArray)
-            android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
-
-            // Schedule flush after a short delay to let ducking take effect
-            duckingCheckHandler?.postDelayed({
-                if (isDuckingTransition) {
-                    isDuckingTransition = false
-                    // Flush all buffered packets to AudioTrack
-                    for (buffered in preDuckBuffer) {
-                        audioTrack?.write(buffered, 0, buffered.size, AudioTrack.WRITE_NON_BLOCKING)
-                    }
-                    android.util.Log.d("DuetAudio", "playAudio: flushed ${'$'}{preDuckBuffer.size} buffered packets after duck transition")
-                    preDuckBuffer.clear()
-                }
-            }, preDuckBufferMs)
-        } else if (isDuckingTransition) {
-            // Still in the ducking transition window — keep buffering
-            lastAudioPlayTime = System.currentTimeMillis()
-            preDuckBuffer.add(floatArray)
-            android.util.Log.d("DuetAudio", "playAudio: buffering packet during duck transition (${'$'}{preDuckBuffer.size} buffered)")
-        } else {
-            // Normal path: ducking already active, write directly
-            lastAudioPlayTime = System.currentTimeMillis()
-            val written = audioTrack?.write(floatArray, 0, floatArray.size, AudioTrack.WRITE_NON_BLOCKING) ?: 0
-            android.util.Log.d("DuetAudio", "playAudio: wrote ${'$'}written of ${'$'}{floatArray.size} samples at ${'$'}playbackSampleRate Hz to AudioTrack")
+    /** Stop and remove a stream's buffer and decoder (the partner left). */
+    @ReactMethod
+    fun releaseStream(streamId: String) {
+        synchronized(streams) { streams.remove(streamId) }
+        opusDecoders.remove(streamId)?.let {
+            try { it.stop() } catch (_: Exception) {}
+            try { it.release() } catch (_: Exception) {}
         }
+    }
 
-        // Schedule unduck after silence
+    /** Queue decoded partner audio on its stream, ducking other apps while partners talk. */
+    private fun enqueuePlayback(streamId: String, samples: FloatArray) {
+        if (!hasDuckingFocus) requestDuckingFocus()
+        lastAudioPlayTime = System.currentTimeMillis()
+        val buffer = synchronized(streams) {
+            streams.getOrPut(streamId) { PcmJitterBuffer(19200, 1920, 14400, 4800) }
+        }
+        buffer.write(samples, samples.size)
         scheduleDuckingTimeout()
+    }
+
+    private fun startMixer() {
+        if (isMixing) return
+        isMixing = true
+        mixThread = thread(name = "DuetMixer") {
+            val frame = 480 // 10 ms at 48 kHz
+            val mix = FloatArray(frame)
+            while (isMixing) {
+                java.util.Arrays.fill(mix, 0f)
+                val current = synchronized(streams) { streams.values.toList() }
+                var active = 0
+                for (stream in current) {
+                    if (stream.mixInto(mix, frame) > 0) active++
+                }
+                if (active == 0) {
+                    // Nobody talking: let the track drain rather than feed it silence
+                    try { Thread.sleep(5) } catch (_: InterruptedException) {}
+                    continue
+                }
+                if (active > 1) {
+                    for (i in 0 until frame) mix[i] = mix[i].coerceIn(-1f, 1f)
+                }
+                // Blocking write paces this loop to real time
+                val written = synchronized(trackLock) {
+                    try {
+                        audioTrack?.write(mix, 0, frame, AudioTrack.WRITE_BLOCKING) ?: -1
+                    } catch (e: Exception) {
+                        -1
+                    }
+                }
+                if (written < 0) {
+                    try { Thread.sleep(10) } catch (_: InterruptedException) {}
+                }
+            }
+        }
+    }
+
+    private fun stopMixer() {
+        isMixing = false
+        try { mixThread?.join(200) } catch (_: InterruptedException) {}
+        mixThread = null
+        synchronized(streams) { streams.clear() }
+    }
+
+    private fun resampleLinear(input: FloatArray, fromRate: Int, toRate: Int): FloatArray {
+        if (input.isEmpty() || fromRate == toRate) return input
+        val outLength = (input.size.toLong() * toRate / fromRate).toInt()
+        val out = FloatArray(outLength)
+        val step = fromRate.toDouble() / toRate
+        for (i in 0 until outLength) {
+            val pos = i * step
+            val index = pos.toInt()
+            val frac = (pos - index).toFloat()
+            val a = input[minOf(index, input.size - 1)]
+            val b = input[minOf(index + 1, input.size - 1)]
+            out[i] = a + (b - a) * frac
+        }
+        return out
     }
 
     @ReactMethod
@@ -896,6 +942,7 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
     fun setDeafened(deafened: Boolean) {
         android.util.Log.d("DuetAudio", "setDeafened called: ${'$'}deafened")
         isDeafened = deafened
+        if (deafened) synchronized(streams) { streams.values.forEach { it.clear() } }
     }
 
     @ReactMethod
@@ -1052,6 +1099,73 @@ class DuetAudioManager(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun removeListeners(count: Int) {}
+}
+
+/**
+ * Jitter buffer for one remote audio stream: a ring of float samples.
+ * Playback starts once primeSamples are queued and restarts that wait after
+ * running dry. The backlog is capped: past maxSamples the oldest audio is
+ * dropped down to targetSamples, so overlapping talk or a network burst
+ * can't build up a growing delay.
+ */
+internal class PcmJitterBuffer(
+    private val capacity: Int,
+    private val primeSamples: Int,
+    private val maxSamples: Int,
+    private val targetSamples: Int
+) {
+    private val ring = FloatArray(capacity)
+    private var readPos = 0
+    private var size = 0
+    private var primed = false
+    var dropped = 0L
+        private set
+
+    @Synchronized
+    fun write(samples: FloatArray, count: Int) {
+        for (i in 0 until count) {
+            if (size == capacity) {
+                readPos = (readPos + 1) % capacity
+                size--
+                dropped++
+            }
+            ring[(readPos + size) % capacity] = samples[i]
+            size++
+        }
+        if (size > maxSamples) {
+            val skip = size - targetSamples
+            readPos = (readPos + skip) % capacity
+            size -= skip
+            dropped += skip
+        }
+    }
+
+    /** Add up to n queued samples into out; returns how many were added. */
+    @Synchronized
+    fun mixInto(out: FloatArray, n: Int): Int {
+        if (!primed) {
+            if (size < primeSamples) return 0
+            primed = true
+        }
+        val count = minOf(n, size)
+        for (i in 0 until count) {
+            out[i] += ring[readPos]
+            readPos = (readPos + 1) % capacity
+        }
+        size -= count
+        if (size == 0) primed = false
+        return count
+    }
+
+    @Synchronized
+    fun available(): Int = size
+
+    @Synchronized
+    fun clear() {
+        readPos = 0
+        size = 0
+        primed = false
+    }
 }
 `;
 
@@ -1236,8 +1350,19 @@ class DuetAudioManager: RCTEventEmitter {
 
   // Pre-duck buffer: hold first packets while ducking takes effect (mirrors Android 40ms buffer)
   private let preDuckBufferSec: TimeInterval = 0.04 // 40ms
-  private var preDuckBuffer: [(Data, AVAudioFormat)] = []
+  private var preDuckBuffer: [(AVAudioPlayerNode, Data, AVAudioFormat)] = []
   private var isDuckingTransition = false
+
+  // One player per remote stream (partner), all feeding the mixer, so people
+  // talking at the same time are heard together instead of queued one after
+  // another. Each stream's backlog is capped so overlapping talk or a network
+  // burst can't build up a growing delay: past the cap, new audio is dropped
+  // until the stream catches up. playerNode stays for the keep-alive silence.
+  private var streamPlayers: [String: AVAudioPlayerNode] = [:]
+  private let playersLock = NSLock()
+  private var queuedFrames: [ObjectIdentifier: Int] = [:]
+  private let queueLock = NSLock()
+  private let maxQueuedFrames = 14400 // 300 ms at 48 kHz
 
   // Audio route tracking
   private var isSpeakerRoute = false
@@ -1422,9 +1547,9 @@ class DuetAudioManager: RCTEventEmitter {
       self.isDuckingTransition = false
 
       // Flush all buffered packets
-      for (data, format) in self.preDuckBuffer {
+      for (player, data, format) in self.preDuckBuffer {
         if let buffer = self.dataToBuffer(data, format: format) {
-          self.playerNode?.scheduleBuffer(buffer, completionHandler: nil)
+          self.schedule(buffer, on: player)
         }
       }
       print("[DuetAudio] Flushed \\(self.preDuckBuffer.count) pre-duck buffered packets")
@@ -1595,7 +1720,15 @@ class DuetAudioManager: RCTEventEmitter {
     stopKeepAliveTimer()
     audioEngine?.inputNode.removeTap(onBus: 0)
     playerNode?.stop()
+    playersLock.lock()
+    let players = Array(streamPlayers.values)
+    streamPlayers.removeAll()
+    playersLock.unlock()
+    players.forEach { $0.stop() }
     audioEngine?.stop()
+    queueLock.lock()
+    queuedFrames.removeAll()
+    queueLock.unlock()
 
     audioEngine = nil
     playerNode = nil
@@ -1918,7 +2051,7 @@ class DuetAudioManager: RCTEventEmitter {
       resolve(["played": false, "reason": "empty"])
       return
     }
-    enqueuePartnerAudio(pcm, format: format, resolve: resolve)
+    enqueuePartnerAudio(streamId, pcm, format: format, resolve: resolve)
   }
 
   private func resampleBuffer(_ inputBuffer: AVAudioPCMBuffer, using converter: AVAudioConverter) -> AVAudioPCMBuffer? {
@@ -1975,9 +2108,31 @@ class DuetAudioManager: RCTEventEmitter {
       return
     }
 
+    playPcm("partner", base64Audio: base64Audio, sampleRate: sampleRate, channels: channels, resolve: resolve, reject: reject)
+  }
+
+  /// Play base64 float32 PCM from one remote stream (a partner).
+  @objc
+  func playPcm(_ streamId: String,
+               base64Audio: String,
+               sampleRate: Double,
+               channels: Int,
+               resolve: @escaping RCTPromiseResolveBlock,
+               reject: @escaping RCTPromiseRejectBlock) {
+    guard !isDeafened else {
+      resolve(["played": false, "reason": "deafened"])
+      return
+    }
+
     guard playerNode != nil,
           let data = Data(base64Encoded: base64Audio) else {
       reject("PLAYBACK_ERROR", "Invalid audio data or player not initialized", nil)
+      return
+    }
+
+    // Stream players run at 48 kHz mono; every client sends that
+    guard sampleRate == outputSampleRate, channels == Int(self.channels) else {
+      resolve(["played": false, "reason": "unsupported format"])
       return
     }
 
@@ -1986,14 +2141,77 @@ class DuetAudioManager: RCTEventEmitter {
       channels: AVAudioChannelCount(channels)
     )!
 
-    enqueuePartnerAudio(data, format: format, resolve: resolve)
+    enqueuePartnerAudio(streamId, data, format: format, resolve: resolve)
+  }
+
+  /// Stop and remove a stream's player and decoder (the partner left).
+  @objc
+  func releaseStream(_ streamId: String) {
+    playersLock.lock()
+    let player = streamPlayers.removeValue(forKey: streamId)
+    playersLock.unlock()
+    opusDecoders.removeValue(forKey: streamId)
+    guard let player = player else { return }
+    player.stop()
+    audioEngine?.detach(player)
+    queueLock.lock()
+    queuedFrames.removeValue(forKey: ObjectIdentifier(player))
+    queueLock.unlock()
+  }
+
+  /// The player for a stream, created and connected to the mixer on first use.
+  private func player(for streamId: String) -> AVAudioPlayerNode? {
+    playersLock.lock()
+    defer { playersLock.unlock() }
+    if let existing = streamPlayers[streamId] { return existing }
+    guard let engine = audioEngine,
+          let mixer = mixerNode,
+          let format = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: channels) else {
+      return nil
+    }
+    let player = AVAudioPlayerNode()
+    engine.attach(player)
+    // Connecting to a mixer uses its next free input bus, so streams mix
+    engine.connect(player, to: mixer, format: format)
+    if engine.isRunning { player.play() }
+    streamPlayers[streamId] = player
+    print("[DuetAudio] Added player for stream \(streamId) (\(streamPlayers.count) total)")
+    return player
+  }
+
+  /// Schedule audio on a stream's player, unless that stream is already
+  /// maxQueuedFrames behind, in which case the chunk is dropped to catch up.
+  private func schedule(_ buffer: AVAudioPCMBuffer, on player: AVAudioPlayerNode) {
+    let key = ObjectIdentifier(player)
+    let frames = Int(buffer.frameLength)
+    queueLock.lock()
+    let queued = queuedFrames[key] ?? 0
+    if queued + frames > maxQueuedFrames {
+      queueLock.unlock()
+      return
+    }
+    queuedFrames[key] = queued + frames
+    queueLock.unlock()
+
+    // Restart a player stopped by an interruption (only while the engine runs:
+    // play() on a stopped engine raises)
+    if !player.isPlaying, audioEngine?.isRunning == true {
+      player.play()
+    }
+    player.scheduleBuffer(buffer) { [weak self] in
+      guard let self = self else { return }
+      self.queueLock.lock()
+      self.queuedFrames[key] = max(0, (self.queuedFrames[key] ?? 0) - frames)
+      self.queueLock.unlock()
+    }
   }
 
   /// Play decoded float32 partner audio, handling on-demand ducking.
-  private func enqueuePartnerAudio(_ data: Data,
+  private func enqueuePartnerAudio(_ streamId: String,
+                                   _ data: Data,
                                    format: AVAudioFormat,
                                    resolve: @escaping RCTPromiseResolveBlock) {
-    guard let player = playerNode else {
+    guard let player = player(for: streamId) else {
       resolve(["played": false, "reason": "stopped"])
       return
     }
@@ -2005,7 +2223,7 @@ class DuetAudioManager: RCTEventEmitter {
     if !isDuckingActive && duckingEnabled {
       // Start of a new speech burst — request ducking and buffer
       requestDucking()
-      preDuckBuffer.append((data, format))
+      preDuckBuffer.append((player, data, format))
       scheduleDuckingTimeout()
       resolve(["played": true])
       return
@@ -2013,7 +2231,7 @@ class DuetAudioManager: RCTEventEmitter {
 
     if isDuckingTransition {
       // Still in the ducking transition window — keep buffering
-      preDuckBuffer.append((data, format))
+      preDuckBuffer.append((player, data, format))
       scheduleDuckingTimeout()
       resolve(["played": true])
       return
@@ -2021,12 +2239,7 @@ class DuetAudioManager: RCTEventEmitter {
 
     // Normal path: ducking already active or not enabled — write directly
     if let buffer = dataToBuffer(data, format: format) {
-      // Ensure player is still playing (can stop after audio session interruption)
-      if !player.isPlaying {
-        print("[DuetAudio] Player was stopped, restarting")
-        player.play()
-      }
-      player.scheduleBuffer(buffer, completionHandler: nil)
+      schedule(buffer, on: player)
     }
 
     // Schedule unduck after silence
@@ -2230,6 +2443,10 @@ class DuetAudioManager: RCTEventEmitter {
         try session.setActive(true)
         try audioEngine?.start()
         playerNode?.play()
+        playersLock.lock()
+        let players = Array(streamPlayers.values)
+        playersLock.unlock()
+        players.forEach { $0.play() }
         safeSendEvent(name: "onConnectionStateChange", body: ["state": "resumed"])
         print("[DuetAudio] Engine resumed after interruption")
       } catch {
@@ -2341,6 +2558,15 @@ RCT_EXTERN_METHOD(getCodecSupport:(RCTPromiseResolveBlock)resolve
 
 RCT_EXTERN_METHOD(setCaptureFormats:(BOOL)pcm
                   opus:(BOOL)opus)
+
+RCT_EXTERN_METHOD(playPcm:(NSString *)streamId
+                  base64Audio:(NSString *)base64Audio
+                  sampleRate:(double)sampleRate
+                  channels:(int)channels
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(releaseStream:(NSString *)streamId)
 
 RCT_EXTERN_METHOD(playOpus:(NSString *)streamId
                   packets:(NSString *)packets

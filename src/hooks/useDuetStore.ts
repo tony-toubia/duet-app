@@ -216,6 +216,7 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
     },
     onParticipantLeft: (uid) => {
       get().partyWebrtc?.removePeer(uid);
+      DuetAudio.releaseStream(uid);
       set((state) => ({ partyParticipants: state.partyParticipants.filter((p) => p.uid !== uid) }));
     },
     onRoomDeleted: () => {
@@ -231,7 +232,7 @@ function buildPartyServices(set: StoreSet, get: () => DuetState) {
       }));
     },
     onAudioData: async (uid, packet) => {
-      await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels);
+      await DuetAudio.playAudio(packet.audio, packet.sampleRate, packet.channels, uid);
       markPartyParticipantSpeaking(set, uid);
     },
     onOpusData: async (uid, packet) => {
